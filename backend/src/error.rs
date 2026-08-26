@@ -49,6 +49,23 @@ impl AppError {
         )
     }
 
+    /// Retags a foreign-key violation with the field that caused it.
+    ///
+    /// SQLite reports every FK failure as the bare string "FOREIGN KEY
+    /// constraint failed" — no column, no table, nothing to parse. Only the
+    /// caller knows which reference it was satisfying, so the caller names it.
+    /// Any other error passes through unchanged.
+    pub fn fk_as(self, field: &str, message: &str) -> Self {
+        let is_fk = matches!(&self, AppError::Db(e)
+            if e.as_database_error().is_some_and(|d| d.is_foreign_key_violation()));
+
+        if is_fk {
+            AppError::validation([(field, message)])
+        } else {
+            self
+        }
+    }
+
     pub fn parts(self) -> (StatusCode, ErrorBody) {
         match self {
             AppError::NotFound(what) => (
@@ -84,15 +101,14 @@ impl AppError {
                         );
                     }
                     if dbe.is_foreign_key_violation() {
+                        // No field: SQLite does not say which reference failed, and a handler
+                        // that knows should have called `fk_as` before this point.
                         return (
                             StatusCode::UNPROCESSABLE_ENTITY,
                             ErrorBody {
                                 error: "validation",
                                 message: "A referenced record does not exist".into(),
-                                fields: vec![FieldError {
-                                    field: "module_id".into(),
-                                    message: "That module does not exist".into(),
-                                }],
+                                fields: vec![],
                             },
                         );
                     }
@@ -138,5 +154,96 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body.error, "not_found");
         assert!(body.fields.is_empty());
+    }
+
+    /// Helper to create an in-memory SQLite connection for provocation tests.
+    async fn in_memory_db() -> sqlx::sqlite::SqliteConnection {
+        use sqlx::sqlite::SqliteConnectOptions;
+        use sqlx::ConnectOptions;
+
+        SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .connect()
+            .await
+            .unwrap()
+    }
+
+    /// A real SQLite foreign-key violation. `sqlx`'s `DatabaseError` cannot be
+    /// constructed by hand, so provoke one.
+    fn fk_error() -> AppError {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut conn = in_memory_db().await;
+                sqlx::query("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+                    .execute(&mut conn).await.unwrap();
+                sqlx::query(
+                    "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id))")
+                    .execute(&mut conn).await.unwrap();
+                let err = sqlx::query("INSERT INTO child (parent_id) VALUES (99)")
+                    .execute(&mut conn).await.unwrap_err();
+                assert!(err.as_database_error().unwrap().is_foreign_key_violation());
+                AppError::Db(err)
+            })
+    }
+
+    /// A real SQLite unique-constraint violation. Used to verify that `fk_as` leaves
+    /// non-FK database errors untouched.
+    fn unique_violation() -> AppError {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut conn = in_memory_db().await;
+                sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT UNIQUE)")
+                    .execute(&mut conn).await.unwrap();
+                sqlx::query("INSERT INTO items (name) VALUES ('test')")
+                    .execute(&mut conn).await.unwrap();
+                let err = sqlx::query("INSERT INTO items (name) VALUES ('test')")
+                    .execute(&mut conn).await.unwrap_err();
+                assert!(err.as_database_error().unwrap().is_unique_violation());
+                AppError::Db(err)
+            })
+    }
+
+    #[test]
+    fn fk_as_leaves_non_fk_errors_alone() {
+        // Test with Validation error
+        let err = AppError::validation([("name", "Name must not be empty")])
+            .fk_as("deck_id", "That deck does not exist");
+        let (status, body) = err.parts();
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body.fields[0].field, "name", "fk_as must not rewrite Validation errors");
+
+        // Test with UNIQUE constraint violation to prove the guard checks specifically
+        // for FK violations, not all Db errors
+        let (status, body) = unique_violation()
+            .fk_as("deck_id", "That deck does not exist")
+            .parts();
+        assert_eq!(status, StatusCode::CONFLICT, "fk_as must not rewrite UNIQUE violations");
+        assert_eq!(body.error, "conflict");
+    }
+
+    #[test]
+    fn untagged_fk_violation_names_no_field() {
+        // Regression guard: the blanket branch used to claim "module_id" for every
+        // foreign key in the schema. Naming the wrong field is worse than naming none.
+        let (status, body) = fk_error().parts();
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body.fields.is_empty());
+    }
+
+    #[test]
+    fn fk_as_tags_the_caller_s_field() {
+        let (status, body) = fk_error()
+            .fk_as("deck_id", "That deck does not exist")
+            .parts();
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body.fields[0].field, "deck_id");
+        assert_eq!(body.fields[0].message, "That deck does not exist");
     }
 }

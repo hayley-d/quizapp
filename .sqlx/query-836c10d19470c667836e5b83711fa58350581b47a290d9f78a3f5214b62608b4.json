@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\", text, normalised, is_primary AS \"is_primary!: bool\"\n           FROM accepted WHERE card_id = ? ORDER BY is_primary DESC, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "text",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "normalised",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_primary!: bool",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "836c10d19470c667836e5b83711fa58350581b47a290d9f78a3f5214b62608b4"
+}

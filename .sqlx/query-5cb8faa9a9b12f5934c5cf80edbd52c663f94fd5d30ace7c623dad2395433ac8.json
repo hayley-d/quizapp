@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO choices (card_id, text_md, is_correct, position)\n             VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "5cb8faa9a9b12f5934c5cf80edbd52c663f94fd5d30ace7c623dad2395433ac8"
+}

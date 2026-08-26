@@ -70,7 +70,11 @@ pub struct PatchDeck {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/decks", get(list).post(create))
-        .route("/decks/{id}", axum::routing::patch(patch))
+        .route("/decks/{id}", get(get_one).patch(patch))
+}
+
+async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<DeckDto>> {
+    Ok(Json(fetch_one(&st.pool, id).await?))
 }
 
 async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckDto> {
@@ -188,7 +192,8 @@ async fn create(
         description
     )
     .fetch_one(&st.pool)
-    .await?;
+    .await
+    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
 
     Ok((StatusCode::CREATED, Json(fetch_one(&st.pool, id).await?)))
 }
@@ -228,7 +233,8 @@ async fn patch(
         id
     )
     .execute(&st.pool)
-    .await?;
+    .await
+    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
 
     Ok(Json(fetch_one(&st.pool, id).await?))
 }

@@ -117,8 +117,10 @@ rather than a scan that re-normalises every row. Normalisation is:
 
 1. Unicode NFKC
 2. Lowercase
-3. Trim, collapse internal whitespace runs to a single space
-4. Strip punctuation
+3. Replace non-alphanumeric characters with spaces
+4. Collapse internal whitespace runs to a single space and trim
+
+Non-alphanumeric characters become spaces rather than being deleted so that "k-means" and "k means" produce the same key, which is the case this normalisation exists to handle.
 
 `is_primary` marks the wording shown as "the answer" when the student is wrong.
 
@@ -155,6 +157,7 @@ GET  /api/modules                  list modules
 POST /api/modules                  create
 GET  /api/decks                    list decks (filter by module)
 POST /api/decks                    create
+GET  /api/decks/:id                one deck, with module_name and card_count
 PATCH /api/decks/:id               rename, re-parent, edit description
 
 GET  /api/cards                    list (filter by deck, kind, archived)
@@ -162,6 +165,8 @@ GET  /api/cards/:id                full card incl. choices/accepted (authoring v
 POST /api/cards                    create; choices/accepted nested, one transaction
 PATCH /api/cards/:id               update; nested children replaced in one transaction
 POST /api/cards/:id/archive        archive
+POST /api/cards/:id/unarchive      restore; not in the original design, added so the
+                                    deck screen's show-archived toggle has something to undo
 POST /api/cards/:id/image          multipart upload -> data/images/, returns path
 
 POST /api/sessions                 {mode, deck_ids | module_id, target_count?}

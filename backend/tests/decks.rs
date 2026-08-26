@@ -286,6 +286,39 @@ async fn patch_unknown_deck_is_404() {
 }
 
 #[tokio::test]
+async fn get_by_id_returns_the_same_shape_as_the_list() {
+    let app = common::spawn_app().await;
+    let mid = module(&app, "COS781").await;
+    let (_, created) = app
+        .post("/api/decks", json!({
+            "module_id": mid, "name": "Test 1", "description": "Ch 1-3"
+        }))
+        .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, fetched) = app.get(&format!("/api/decks/{id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fetched["id"], id);
+    assert_eq!(fetched["name"], "Test 1");
+    assert_eq!(fetched["module_id"], mid);
+    assert_eq!(fetched["module_name"], "COS781");
+    assert_eq!(fetched["description"], "Ch 1-3");
+    assert_eq!(fetched["card_count"], 0);
+
+    let (_, list) = app.get("/api/decks").await;
+    let from_list = list.as_array().unwrap().iter().find(|d| d["id"] == id).unwrap();
+    assert_eq!(fetched, *from_list, "GET by id must match the list's shape exactly");
+}
+
+#[tokio::test]
+async fn get_unknown_deck_is_404() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.get("/api/decks/9999").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+}
+
+#[tokio::test]
 async fn duplicate_name_in_module_conflicts() {
     let app = common::spawn_app().await;
     let mid = module(&app, "COS781").await;
