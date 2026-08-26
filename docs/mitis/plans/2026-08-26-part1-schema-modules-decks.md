@@ -25,7 +25,7 @@ Bibble palette tokens are in place so nothing gets built against throwaway colou
 modules/decks REST API, plus a React frontend scaffold with a working `/decks` screen.
 
 **Architecture:** Single Rust crate at the repo root (so the built bundle can later be
-embedded with `rust-embed` without restructuring), `web/` for the Vite app. sqlx
+embedded with `rust-embed` without restructuring), `frontend/` for the Vite app. sqlx
 compile-time-checked queries with a committed `.sqlx` offline cache. Integration tests drive
 the axum `Router` in-process via `tower::ServiceExt::oneshot` against a temp SQLite file —
 no ports, no fixtures to clean up.
@@ -50,27 +50,33 @@ endpoints yet). Their **tables** are created in Task 2; only their endpoints are
 
 ```
 quizapp/
-  Cargo.toml
-  .sqlx/                      # committed sqlx offline query cache
-  migrations/
-    0001_init.sql             # ALL eight tables
-  src/
-    main.rs                   # bootstrap: tracing, config, pool, migrate, serve
-    config.rs                 # env-driven config (bind addr, database url, data dir)
-    db.rs                     # pool creation + run_migrations
-    error.rs                  # AppError -> structured JSON field errors
-    state.rs                  # AppState { pool }
-    routes/
-      mod.rs                  # api_router() assembly
+  Cargo.toml                  # workspace manifest: members = ["backend"]
+  Cargo.lock                  # shared, workspace-level
+  .sqlx/                      # committed sqlx offline query cache (workspace-wide)
+  rust-toolchain.toml          # pins stable for the whole repo
+  data/                       # git-ignored: quizapp.db, later images/
+  backend/
+    Cargo.toml                # package "quizapp"
+    migrations/
+      0001_init.sql           # ALL eight tables
+    src/
+      main.rs                 # bootstrap: tracing, config, pool, migrate, serve
+      lib.rs                  # module tree + app(state) router builder
+      config.rs               # env-driven config (bind addr, database url, data dir)
+      db.rs                   # pool creation + run_migrations
+      error.rs                # AppError -> structured JSON field errors
+      state.rs                # AppState { pool }
+      routes/
+        mod.rs                # api_router() assembly
+        health.rs
+        modules.rs
+        decks.rs
+    tests/
+      common/mod.rs           # test app harness (temp db + oneshot helpers)
       health.rs
       modules.rs
       decks.rs
-  tests/
-    common/mod.rs             # test app harness (temp db + oneshot helpers)
-    health.rs
-    modules.rs
-    decks.rs
-  web/
+  frontend/
     package.json  vite.config.ts  tsconfig.json  components.json  index.html
     src/
       main.tsx  App.tsx
@@ -83,7 +89,24 @@ quizapp/
       pages/DecksPage.tsx
       pages/StubPage.tsx      # placeholder for /study and /stats
   README.md                   # dev runbook
+  docs/
 ```
+
+**Backend and frontend are peers.** The root `Cargo.toml` is a workspace manifest, not a
+package, so `cargo run` / `cargo test` / `cargo clippy` still work from the repo root with no
+flags, `target/` and `Cargo.lock` stay shared at the root, and the cwd-relative
+`DATABASE_URL` default keeps resolving to `data/` at the root rather than `backend/data/`.
+
+**sqlx commands run from the repo root too**, using the workspace flags, so the offline cache
+sits at the root `.sqlx/` and `DATABASE_URL` stays root-relative:
+
+    cargo sqlx migrate run --source backend/migrations
+    cargo sqlx prepare --workspace
+
+Running them from inside `backend/` instead would resolve `sqlite://data/...` to
+`backend/data/` — don't. `sqlx::migrate!("./migrations")` in the code resolves against
+`CARGO_MANIFEST_DIR` (= `backend/`), so it stays `"./migrations"` and needs no change.
+
 
 **Files that change together live together:** each route module owns its own request/response
 DTOs and its validation — there is no shared `models.rs` grab-bag.
@@ -114,13 +137,13 @@ maps these automatically for SQLite.
 **sqlx offline cache is part of every backend change.** After editing SQL or a migration:
 
 ```bash
-cargo sqlx migrate run          # against DATABASE_URL=sqlite://data/quizapp.db
-cargo sqlx prepare              # regenerates .sqlx/
-git add .sqlx migrations
+cargo sqlx migrate run --source backend/migrations   # DATABASE_URL=sqlite://data/quizapp.db
+cargo sqlx prepare --workspace                      # regenerates .sqlx/
+git add .sqlx backend/migrations
 ```
 
 A build that fails with `set DATABASE_URL to use query macros online` means the cache is
-stale — re-run `cargo sqlx prepare`. CI-less solo project, so this is the one manual
+stale — re-run `cargo sqlx prepare --workspace`. CI-less solo project, so this is the one manual
 discipline the macro choice costs.
 
 ---
@@ -131,8 +154,8 @@ discipline the macro choice costs.
 `GET /api/health`, and `cargo test` runs green.
 
 **Files:**
-- Create: `Cargo.toml`, `rust-toolchain.toml`, `src/main.rs`, `src/config.rs`,
-  `src/state.rs`, `src/routes/mod.rs`, `src/routes/health.rs`
+- Create: `Cargo.toml`, `rust-toolchain.toml`, `backend/src/main.rs`, `backend/src/config.rs`,
+  `backend/src/state.rs`, `backend/src/routes/mod.rs`, `backend/src/routes/health.rs`
 - Modify: `.gitignore` (add `.env`)
 
 **Acceptance Criteria:**
@@ -178,7 +201,7 @@ http-body-util = "0.1"
 channel = "stable"
 ```
 
-- [ ] **Step 3: `src/config.rs`**
+- [ ] **Step 3: `backend/src/config.rs`**
 
 ```rust
 #[derive(Debug, Clone)]
@@ -202,7 +225,7 @@ impl Config {
 }
 ```
 
-- [ ] **Step 4: `src/state.rs`**
+- [ ] **Step 4: `backend/src/state.rs`**
 
 ```rust
 use sqlx::SqlitePool;
@@ -213,7 +236,7 @@ pub struct AppState {
 }
 ```
 
-- [ ] **Step 5: `src/routes/health.rs`**
+- [ ] **Step 5: `backend/src/routes/health.rs`**
 
 ```rust
 use axum::{routing::get, Json, Router};
@@ -230,7 +253,7 @@ async fn health() -> Json<Value> {
 }
 ```
 
-- [ ] **Step 6: `src/routes/mod.rs`**
+- [ ] **Step 6: `backend/src/routes/mod.rs`**
 
 ```rust
 pub mod health;
@@ -243,7 +266,7 @@ pub fn api_router() -> Router<AppState> {
 }
 ```
 
-- [ ] **Step 7: `src/main.rs`** — DB wiring lands in Task 2; for now build the pool lazily so
+- [ ] **Step 7: `backend/src/main.rs`** — DB wiring lands in Task 2; for now build the pool lazily so
       the binary compiles and runs without a schema.
 
 ```rust
@@ -295,12 +318,12 @@ curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/api/nope   # 404
 - [ ] **Step 9: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock rust-toolchain.toml src .gitignore
+git add Cargo.toml backend/Cargo.toml Cargo.lock rust-toolchain.toml backend/src .gitignore
 git commit -m "feat: axum skeleton with config and health endpoint"
 ```
 
 ```json:metadata
-{"files":["Cargo.toml","rust-toolchain.toml","src/main.rs","src/config.rs","src/state.rs","src/routes/mod.rs","src/routes/health.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["cargo run serves GET /api/health as 200 {\"status\":\"ok\"}","bind addr and database url read from env with defaults","clippy clean with -D warnings","unknown route returns 404"],"modelTier":"mechanical"}
+{"files":["Cargo.toml","backend/Cargo.toml","rust-toolchain.toml","backend/src/main.rs","backend/src/config.rs","backend/src/state.rs","backend/src/routes/mod.rs","backend/src/routes/health.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["cargo run serves GET /api/health as 200 {\"status\":\"ok\"}","bind addr and database url read from env with defaults","clippy clean with -D warnings","unknown route returns 404"],"modelTier":"mechanical"}
 ```
 
 ---
@@ -311,8 +334,8 @@ git commit -m "feat: axum skeleton with config and health endpoint"
 migrations run automatically at startup; the `.sqlx` offline cache is committed.
 
 **Files:**
-- Create: `migrations/0001_init.sql`, `src/db.rs`, `tests/common/mod.rs`, `tests/health.rs`
-- Modify: `src/main.rs` (call `db::connect`), `src/routes/health.rs` (add a DB ping)
+- Create: `backend/migrations/0001_init.sql`, `backend/src/db.rs`, `backend/tests/common/mod.rs`, `backend/tests/health.rs`
+- Modify: `backend/src/main.rs` (call `db::connect`), `backend/src/routes/health.rs` (add a DB ping)
 
 **Acceptance Criteria:**
 - [ ] All eight tables exist after startup: `modules`, `decks`, `cards`, `choices`,
@@ -334,7 +357,7 @@ migrations run automatically at startup; the `.sqlx` offline cache is committed.
 cargo install sqlx-cli --no-default-features --features rustls,sqlite
 ```
 
-- [ ] **Step 2: `migrations/0001_init.sql`** — the full spec data model. `schedule` is here
+- [ ] **Step 2: `backend/migrations/0001_init.sql`** — the full spec data model. `schedule` is here
       from day one deliberately (spec: "Schedule exists from day one") so no migration ever
       runs over hand-written cards.
 
@@ -432,7 +455,7 @@ CREATE INDEX idx_schedule_due ON schedule(due_at);
       "Archiving, not deleting"); the missing cascade makes a stray delete fail loudly
       instead of silently rewriting history.
 
-- [ ] **Step 3: `src/db.rs`** — `foreign_keys` is per-connection in SQLite, so set it on
+- [ ] **Step 3: `backend/src/db.rs`** — `foreign_keys` is per-connection in SQLite, so set it on
       every pooled connection, not once at startup.
 
 ```rust
@@ -456,7 +479,7 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
 }
 ```
 
-- [ ] **Step 4: Wire it into `src/main.rs`** — replace the `SqlitePool::connect` line:
+- [ ] **Step 4: Wire it into `backend/src/main.rs`** — replace the `SqlitePool::connect` line:
 
 ```rust
 mod db;
@@ -465,7 +488,7 @@ std::fs::create_dir_all(&config.data_dir)?;
 let pool = db::connect(&config.database_url).await?;
 ```
 
-- [ ] **Step 5: `tests/common/mod.rs`** — the harness every later integration test reuses.
+- [ ] **Step 5: `backend/tests/common/mod.rs`** — the harness every later integration test reuses.
       Drives the `Router` in-process, so no ports and no server lifecycle.
 
 ```rust
@@ -525,9 +548,9 @@ impl TestApp {
 }
 ```
 
-- [ ] **Step 6: Make the crate testable as a library** — add `src/lib.rs` exposing the
+- [ ] **Step 6: Make the crate testable as a library** — add `backend/src/lib.rs` exposing the
       modules and an `app()` builder, and reduce `main.rs` to the binary entrypoint that
-      calls it. `Cargo.toml` gains nothing; a `src/lib.rs` alongside `src/main.rs` is
+      calls it. `Cargo.toml` gains nothing; a `backend/src/lib.rs` alongside `backend/src/main.rs` is
       picked up automatically.
 
 ```rust
@@ -549,12 +572,12 @@ pub fn app(state: state::AppState) -> Router {
 }
 ```
 
-`src/main.rs` then becomes: init tracing, `Config::from_env()`, `create_dir_all`,
+`backend/src/main.rs` then becomes: init tracing, `Config::from_env()`, `create_dir_all`,
 `db::connect`, `let app = quizapp::app(AppState { pool })`, bind, serve. Delete the
 `mod config; mod routes; mod state;` lines from `main.rs` — they now live in `lib.rs`.
-Create `src/error.rs` as an empty file for now so `lib.rs` compiles; Task 3 fills it.
+Create `backend/src/error.rs` as an empty file for now so `lib.rs` compiles; Task 3 fills it.
 
-- [ ] **Step 7: `tests/health.rs`** — the failing test first.
+- [ ] **Step 7: `backend/tests/health.rs`** — the failing test first.
 
 ```rust
 mod common;
@@ -577,7 +600,7 @@ async fn migration_creates_all_tables() {
 }
 ```
 
-- [ ] **Step 8: Schema assertions** — add to `tests/health.rs`, using a pool directly so the
+- [ ] **Step 8: Schema assertions** — add to `backend/tests/health.rs`, using a pool directly so the
       raw constraints are exercised, not just the HTTP surface.
 
 ```rust
@@ -633,20 +656,20 @@ async fn schema_has_all_tables_and_constraints() {
 ```bash
 cargo test --test health          # expect PASS
 export DATABASE_URL="sqlite://data/quizapp.db?mode=rwc"
-cargo sqlx migrate run
-cargo sqlx prepare
+cargo sqlx migrate run --source backend/migrations
+cargo sqlx prepare --workspace
 SQLX_OFFLINE=true cargo build     # expect success
 ```
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add migrations src tests .sqlx Cargo.toml Cargo.lock
+git add backend/migrations backend/src backend/tests .sqlx Cargo.toml Cargo.lock
 git commit -m "feat: initial schema migration for all eight tables"
 ```
 
 ```json:metadata
-{"files":["migrations/0001_init.sql","src/db.rs","src/lib.rs","src/main.rs","tests/common/mod.rs","tests/health.rs"],"verifyCommand":"cargo test --test health && SQLX_OFFLINE=true cargo build","acceptanceCriteria":["all eight spec tables exist after migration","cards.kind CHECK rejects an unknown kind","foreign keys enforced on every pooled connection","duplicate deck name rejected within a module and among module-less decks","fresh data dir is created and migrated at startup",".sqlx offline cache committed and SQLX_OFFLINE build succeeds"],"modelTier":"standard"}
+{"files":["backend/migrations/0001_init.sql","backend/src/db.rs","backend/src/lib.rs","backend/src/main.rs","backend/tests/common/mod.rs","backend/tests/health.rs"],"verifyCommand":"cargo test --test health && SQLX_OFFLINE=true cargo build","acceptanceCriteria":["all eight spec tables exist after migration","cards.kind CHECK rejects an unknown kind","foreign keys enforced on every pooled connection","duplicate deck name rejected within a module and among module-less decks","fresh data dir is created and migrated at startup",".sqlx offline cache committed and SQLX_OFFLINE build succeeds"],"modelTier":"standard"}
 ```
 
 ---
@@ -657,8 +680,8 @@ git commit -m "feat: initial schema migration for all eight tables"
 with inline-renderable `fields`.
 
 **Files:**
-- Create/replace: `src/error.rs`
-- Test: `src/error.rs` (`#[cfg(test)]` unit tests — pure serialisation, no DB)
+- Create/replace: `backend/src/error.rs`
+- Test: `backend/src/error.rs` (`#[cfg(test)]` unit tests — pure serialisation, no DB)
 
 **Acceptance Criteria:**
 - [ ] `AppError::Validation` → `422` with a populated `fields` array
@@ -711,7 +734,7 @@ mod tests {
 
 Run: `cargo test error::` → FAIL, `AppError` not defined.
 
-- [ ] **Step 3: Implement `src/error.rs`**
+- [ ] **Step 3: Implement `backend/src/error.rs`**
 
 ```rust
 use axum::http::StatusCode;
@@ -827,12 +850,12 @@ Run: `cargo test error::` → PASS. Then `cargo clippy -- -D warnings`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/error.rs
+git add backend/src/error.rs
 git commit -m "feat: structured AppError with inline field errors"
 ```
 
 ```json:metadata
-{"files":["src/error.rs"],"verifyCommand":"cargo test error:: && cargo clippy -- -D warnings","acceptanceCriteria":["Validation maps to 422 with populated fields","NotFound 404 and Conflict 409 with empty fields","sqlx unique violation maps to 409 not 500","sqlx foreign key violation maps to 422 with a module_id field error","other sqlx errors map to 500 with a generic message and are logged"],"modelTier":"mechanical"}
+{"files":["backend/src/error.rs"],"verifyCommand":"cargo test error:: && cargo clippy -- -D warnings","acceptanceCriteria":["Validation maps to 422 with populated fields","NotFound 404 and Conflict 409 with empty fields","sqlx unique violation maps to 409 not 500","sqlx foreign key violation maps to 422 with a module_id field error","other sqlx errors map to 500 with a generic message and are logged"],"modelTier":"mechanical"}
 ```
 
 ---
@@ -843,8 +866,8 @@ git commit -m "feat: structured AppError with inline field errors"
 integration tests.
 
 **Files:**
-- Create: `src/routes/modules.rs`, `tests/modules.rs`
-- Modify: `src/routes/mod.rs` (merge the router)
+- Create: `backend/src/routes/modules.rs`, `backend/tests/modules.rs`
+- Modify: `backend/src/routes/mod.rs` (merge the router)
 
 **Acceptance Criteria:**
 - [ ] `GET /api/modules` → `200` with modules ordered by `name`, each `{id, name, created_at,
@@ -858,7 +881,7 @@ integration tests.
 
 **Steps:**
 
-- [ ] **Step 1: Write the failing tests — `tests/modules.rs`**
+- [ ] **Step 1: Write the failing tests — `backend/tests/modules.rs`**
 
 ```rust
 mod common;
@@ -911,7 +934,7 @@ async fn duplicate_name_conflicts() {
 
 Run: `cargo test --test modules` → FAIL (404s / compile error).
 
-- [ ] **Step 3: Implement `src/routes/modules.rs`**
+- [ ] **Step 3: Implement `backend/src/routes/modules.rs`**
 
 ```rust
 use axum::extract::State;
@@ -986,7 +1009,7 @@ Note the `AS "col!: type"` annotations — sqlx cannot infer nullability through
 subqueries and `AUTOINCREMENT` primary keys, and will error at compile time without them.
 Drop the unused `post` import if clippy flags it.
 
-- [ ] **Step 4: Register the router in `src/routes/mod.rs`**
+- [ ] **Step 4: Register the router in `backend/src/routes/mod.rs`**
 
 ```rust
 pub mod health;
@@ -1005,7 +1028,7 @@ pub fn api_router() -> Router<AppState> {
 - [ ] **Step 5: Regenerate the offline cache and run**
 
 ```bash
-DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare
+DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare --workspace
 cargo test --test modules   # expect PASS
 cargo clippy -- -D warnings
 ```
@@ -1013,12 +1036,12 @@ cargo clippy -- -D warnings
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/routes tests/modules.rs .sqlx
+git add backend/src/routes backend/tests/modules.rs .sqlx
 git commit -m "feat: modules list and create endpoints"
 ```
 
 ```json:metadata
-{"files":["src/routes/modules.rs","src/routes/mod.rs","tests/modules.rs"],"verifyCommand":"cargo test --test modules && cargo clippy -- -D warnings","acceptanceCriteria":["GET /api/modules returns modules ordered by name with deck_count","POST /api/modules returns 201 with the created module","empty or whitespace name returns 422 with a name field error","duplicate name returns 409","names are trimmed before insert"],"modelTier":"standard"}
+{"files":["backend/src/routes/modules.rs","backend/src/routes/mod.rs","backend/tests/modules.rs"],"verifyCommand":"cargo test --test modules && cargo clippy -- -D warnings","acceptanceCriteria":["GET /api/modules returns modules ordered by name with deck_count","POST /api/modules returns 201 with the created module","empty or whitespace name returns 422 with a name field error","duplicate name returns 409","names are trimmed before insert"],"modelTier":"standard"}
 ```
 
 ---
@@ -1029,8 +1052,8 @@ git commit -m "feat: modules list and create endpoints"
 `PATCH /api/decks/:id` (rename, re-parent, edit description), all tested.
 
 **Files:**
-- Create: `src/routes/decks.rs`, `tests/decks.rs`
-- Modify: `src/routes/mod.rs`
+- Create: `backend/src/routes/decks.rs`, `backend/tests/decks.rs`
+- Modify: `backend/src/routes/mod.rs`
 
 **Acceptance Criteria:**
 - [ ] `GET /api/decks` → all decks, each `{id, module_id, module_name, name, description,
@@ -1048,7 +1071,7 @@ git commit -m "feat: modules list and create endpoints"
 
 **Steps:**
 
-- [ ] **Step 1: Write the failing tests — `tests/decks.rs`**
+- [ ] **Step 1: Write the failing tests — `backend/tests/decks.rs`**
 
 ```rust
 mod common;
@@ -1180,7 +1203,7 @@ async fn duplicate_name_in_module_conflicts() {
 
 Run: `cargo test --test decks` → FAIL.
 
-- [ ] **Step 3: Implement `src/routes/decks.rs`**
+- [ ] **Step 3: Implement `backend/src/routes/decks.rs`**
 
 The PATCH body needs to distinguish "field absent" from "field explicitly `null`" — absent
 `module_id` means leave it alone, `null` means unparent. `Option<Option<i64>>` with
@@ -1399,13 +1422,13 @@ async fn patch(
 An unknown `module_id` surfaces as a SQLite foreign-key violation, which `AppError::Db`
 already maps to a `422` with a `module_id` field error (Task 3) — no extra existence check.
 
-- [ ] **Step 4: Register in `src/routes/mod.rs`** — add `pub mod decks;` and
+- [ ] **Step 4: Register in `backend/src/routes/mod.rs`** — add `pub mod decks;` and
       `.merge(decks::router())`.
 
 - [ ] **Step 5: Regenerate cache and run**
 
 ```bash
-DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare
+DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare --workspace
 cargo test          # whole suite green
 cargo clippy -- -D warnings
 ```
@@ -1413,27 +1436,27 @@ cargo clippy -- -D warnings
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/routes tests/decks.rs .sqlx
+git add backend/src/routes backend/tests/decks.rs .sqlx
 git commit -m "feat: decks list, create and patch endpoints"
 ```
 
 ```json:metadata
-{"files":["src/routes/decks.rs","src/routes/mod.rs","tests/decks.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["GET /api/decks returns decks with module_name and card_count ordered by module then name","module_id filter works for a numeric id and for the literal none","POST /api/decks accepts an absent or null module_id and returns 201","non-existent module_id returns 422 with a module_id field error","PATCH updates only supplied fields and a null module_id unparents","PATCH on an unknown id returns 404 before any write","duplicate deck name within a module returns 409"],"modelTier":"standard"}
+{"files":["backend/src/routes/decks.rs","backend/src/routes/mod.rs","backend/tests/decks.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["GET /api/decks returns decks with module_name and card_count ordered by module then name","module_id filter works for a numeric id and for the literal none","POST /api/decks accepts an absent or null module_id and returns 201","non-existent module_id returns 422 with a module_id field error","PATCH updates only supplied fields and a null module_id unparents","PATCH on an unknown id returns 404 before any write","duplicate deck name within a module returns 409"],"modelTier":"standard"}
 ```
 
 ---
 
 ## Task 6: Frontend scaffold with Bibble tokens
 
-**Goal:** `npm run dev` in `web/` serves a React app at `:5173` that proxies `/api` to axum,
+**Goal:** `npm run dev` in `frontend/` serves a React app at `:5173` that proxies `/api` to axum,
 with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/decks`,
 `/stats`.
 
 **Files:**
-- Create: `web/package.json`, `web/vite.config.ts`, `web/tsconfig.json`,
-  `web/tsconfig.node.json`, `web/index.html`, `web/components.json`, `web/src/main.tsx`,
-  `web/src/App.tsx`, `web/src/styles/globals.css`, `web/src/lib/utils.ts`,
-  `web/src/components/AppShell.tsx`, `web/src/pages/StubPage.tsx`
+- Create: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/tsconfig.json`,
+  `frontend/tsconfig.node.json`, `frontend/index.html`, `frontend/components.json`, `frontend/src/main.tsx`,
+  `frontend/src/App.tsx`, `frontend/src/styles/globals.css`, `frontend/src/lib/utils.ts`,
+  `frontend/src/components/AppShell.tsx`, `frontend/src/pages/StubPage.tsx`
 
 **Acceptance Criteria:**
 - [ ] `npm run dev` serves the app; `/decks`, `/study`, `/stats` all render the shell
@@ -1445,7 +1468,7 @@ with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/
       correct — flat colours only, no glows or gradients yet
 - [ ] Quicksand renders on headings, a clean sans on body
 
-**Verify:** `cd web && npm run build && npx tsc --noEmit` → both succeed; browser check of
+**Verify:** `cd frontend && npm run build && npx tsc --noEmit` → both succeed; browser check of
 `/decks` in light and dark
 
 **Steps:**
@@ -1454,15 +1477,15 @@ with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/
 
 ```bash
 cd /Users/hayley/Documents/side_projects/quizapp
-npm create vite@latest web -- --template react-ts
-cd web
+npm create vite@latest frontend -- --template react-ts
+cd frontend
 npm install
 npm install react-router-dom
 npm install tailwindcss @tailwindcss/vite
 npm install class-variance-authority clsx tailwind-merge lucide-react
 ```
 
-- [ ] **Step 2: `web/vite.config.ts`** — Tailwind v4 plugin plus the `/api` proxy (same-origin
+- [ ] **Step 2: `frontend/vite.config.ts`** — Tailwind v4 plugin plus the `/api` proxy (same-origin
       in the browser, so no CORS layer is needed on the axum side).
 
 ```ts
@@ -1484,7 +1507,7 @@ export default defineConfig({
 Add the matching path alias to `tsconfig.json`:
 `"baseUrl": ".", "paths": { "@/*": ["./src/*"] }`.
 
-- [ ] **Step 3: `web/src/styles/globals.css`** — Bibble tokens. Tailwind v4 is CSS-first, so
+- [ ] **Step 3: `frontend/src/styles/globals.css`** — Bibble tokens. Tailwind v4 is CSS-first, so
       the theme lives here rather than in a `tailwind.config.js`. shadcn reads the
       `--background` / `--foreground` / `--primary` family of names, so define those and map
       them to the Bibble palette.
@@ -1584,7 +1607,7 @@ Add the matching path alias to `tsconfig.json`:
 }
 ```
 
-- [ ] **Step 4: Dark by default, following the OS** — in `web/index.html`, add a tiny
+- [ ] **Step 4: Dark by default, following the OS** — in `frontend/index.html`, add a tiny
       inline script before the app script so there is no light flash:
 
 ```html
@@ -1609,7 +1632,7 @@ If `init` offers to overwrite `globals.css`, decline and keep the Bibble tokens 
 generated variables use the same names, so its components pick them up as-is. If it has
 already overwritten the file, restore it from Step 3.
 
-- [ ] **Step 6: `web/src/components/AppShell.tsx`**
+- [ ] **Step 6: `frontend/src/components/AppShell.tsx`**
 
 ```tsx
 import { NavLink, Outlet } from 'react-router-dom'
@@ -1653,7 +1676,7 @@ export function AppShell() {
 }
 ```
 
-- [ ] **Step 7: `web/src/pages/StubPage.tsx`** and `web/src/App.tsx`
+- [ ] **Step 7: `frontend/src/pages/StubPage.tsx`** and `frontend/src/App.tsx`
 
 ```tsx
 // StubPage.tsx
@@ -1702,7 +1725,7 @@ Until Task 7 lands, point `/decks` at a `StubPage` too so the app compiles; swap
 - [ ] **Step 8: Verify**
 
 ```bash
-cd web
+cd frontend
 npm run build
 npx tsc --noEmit
 npm run dev      # then in the browser console: await (await fetch('/api/health')).json()
@@ -1713,12 +1736,12 @@ Backend must be running (`cargo run`) for the proxy check.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add web
+git add frontend
 git commit -m "feat: vite react scaffold with Bibble palette tokens"
 ```
 
 ```json:metadata
-{"files":["web/package.json","web/vite.config.ts","web/tsconfig.json","web/index.html","web/src/main.tsx","web/src/App.tsx","web/src/styles/globals.css","web/src/components/AppShell.tsx","web/src/pages/StubPage.tsx"],"verifyCommand":"cd web && npm run build && npx tsc --noEmit","acceptanceCriteria":["npm run dev serves the shell at /decks /study /stats","fetch('/api/health') succeeds through the Vite proxy","npm run build and tsc --noEmit both pass","Bibble tokens defined for light and dark and visibly applied","Quicksand on headings and a clean sans on body","no glow, gradient or animation work included"],"modelTier":"standard"}
+{"files":["frontend/package.json","frontend/vite.config.ts","frontend/tsconfig.json","frontend/index.html","frontend/src/main.tsx","frontend/src/App.tsx","frontend/src/styles/globals.css","frontend/src/components/AppShell.tsx","frontend/src/pages/StubPage.tsx"],"verifyCommand":"cd frontend && npm run build && npx tsc --noEmit","acceptanceCriteria":["npm run dev serves the shell at /decks /study /stats","fetch('/api/health') succeeds through the Vite proxy","npm run build and tsc --noEmit both pass","Bibble tokens defined for light and dark and visibly applied","Quicksand on headings and a clean sans on body","no glow, gradient or animation work included"],"modelTier":"standard"}
 ```
 
 ---
@@ -1730,9 +1753,9 @@ rename a deck, move it between modules, and edit its description — with server
 rendered inline and typed content never lost on a rejected save.
 
 **Files:**
-- Create: `web/src/lib/api.ts`, `web/src/pages/DecksPage.tsx`,
-  `web/src/components/ModuleDialog.tsx`, `web/src/components/DeckDialog.tsx`
-- Modify: `web/src/App.tsx` (route `/decks` to `DecksPage`)
+- Create: `frontend/src/lib/api.ts`, `frontend/src/pages/DecksPage.tsx`,
+  `frontend/src/components/ModuleDialog.tsx`, `frontend/src/components/DeckDialog.tsx`
+- Modify: `frontend/src/App.tsx` (route `/decks` to `DecksPage`)
 
 **Acceptance Criteria:**
 - [ ] Decks are listed grouped by module, with unparented decks under "No module"
@@ -1746,12 +1769,12 @@ rendered inline and typed content never lost on a rejected save.
 - [ ] Empty state reads sensibly when there are no modules and no decks
 - [ ] Layout is usable at 375px width
 
-**Verify:** `cd web && npx tsc --noEmit && npm run build`, then a browser pass through every
+**Verify:** `cd frontend && npx tsc --noEmit && npm run build`, then a browser pass through every
 acceptance criterion with `cargo run` live
 
 **Steps:**
 
-- [ ] **Step 1: `web/src/lib/api.ts`** — one client, one error type, mirroring the backend
+- [ ] **Step 1: `frontend/src/lib/api.ts`** — one client, one error type, mirroring the backend
       envelope exactly.
 
 ```ts
@@ -1814,7 +1837,7 @@ export const api = {
 }
 ```
 
-- [ ] **Step 2: `web/src/components/ModuleDialog.tsx`** — create-only dialog. The pattern
+- [ ] **Step 2: `frontend/src/components/ModuleDialog.tsx`** — create-only dialog. The pattern
       here (local error state fed from `ApiError.byField()`, dialog stays open on failure) is
       the one the card editor reuses in Part 2.
 
@@ -1885,7 +1908,7 @@ export function ModuleDialog({ onSaved }: { onSaved: () => void }) {
 }
 ```
 
-- [ ] **Step 3: `web/src/components/DeckDialog.tsx`** — one dialog for create and edit. In
+- [ ] **Step 3: `frontend/src/components/DeckDialog.tsx`** — one dialog for create and edit. In
       edit mode it diffs against the loaded deck and sends only changed keys, which is what
       makes the PATCH semantics from Task 5 correct end-to-end.
 
@@ -2003,7 +2026,7 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
 Mount `DeckDialog` with a `key` (`key={deck?.id ?? 'new'}`) so opening it for a different
 deck resets the `useState` initialisers.
 
-- [ ] **Step 4: `web/src/pages/DecksPage.tsx`**
+- [ ] **Step 4: `frontend/src/pages/DecksPage.tsx`**
 
 ```tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -2115,7 +2138,7 @@ export function DecksPage() {
 # terminal 1
 cargo run
 # terminal 2
-cd web && npm run dev
+cd frontend && npm run dev
 ```
 
 Walk every acceptance criterion: create module "COS781"; create deck "Test 1" in it; create
@@ -2127,12 +2150,12 @@ the window to 375px and confirm the layout holds.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add web
+git add frontend
 git commit -m "feat: decks screen with module and deck management"
 ```
 
 ```json:metadata
-{"files":["web/src/lib/api.ts","web/src/pages/DecksPage.tsx","web/src/components/ModuleDialog.tsx","web/src/components/DeckDialog.tsx","web/src/App.tsx"],"verifyCommand":"cd web && npx tsc --noEmit && npm run build","acceptanceCriteria":["decks listed grouped by module with a No module group","new module creates and refreshes the list","new deck creates with optional module and description","edit changes name, module including to No module, and description, sending only changed fields","422 renders inline beside the offending input with typed values intact","409 duplicate name shows on the name input","sensible empty state","usable at 375px width"],"modelTier":"standard"}
+{"files":["frontend/src/lib/api.ts","frontend/src/pages/DecksPage.tsx","frontend/src/components/ModuleDialog.tsx","frontend/src/components/DeckDialog.tsx","frontend/src/App.tsx"],"verifyCommand":"cd frontend && npx tsc --noEmit && npm run build","acceptanceCriteria":["decks listed grouped by module with a No module group","new module creates and refreshes the list","new deck creates with optional module and description","edit changes name, module including to No module, and description, sending only changed fields","422 renders inline beside the offending input with typed values intact","409 duplicate name shows on the name input","sensible empty state","usable at 375px width"],"modelTier":"standard"}
 ```
 
 ---
@@ -2151,11 +2174,11 @@ app, plus one recorded end-to-end pass over Part 1.
 - [ ] README documents: prerequisites, first-time setup, the two dev commands, env vars, and
       the `cargo sqlx prepare` rule after any SQL change
 - [ ] `cargo test` green, `cargo clippy -- -D warnings` clean,
-      `cd web && npx tsc --noEmit && npm run build` clean — all four outputs captured
+      `cd frontend && npx tsc --noEmit && npm run build` clean — all four outputs captured
 - [ ] A fresh-clone simulation works: delete `data/`, `cargo run`, DB is recreated and
       migrated, `/decks` still loads
 
-**Verify:** `cargo test && cargo clippy -- -D warnings && (cd web && npx tsc --noEmit && npm run build)`
+**Verify:** `cargo test && cargo clippy -- -D warnings && (cd frontend && npx tsc --noEmit && npm run build)`
 → all succeed; plus the fresh-`data/` check below
 
 **Steps:**
@@ -2177,13 +2200,13 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 
     mkdir -p data
     export DATABASE_URL="sqlite://data/quizapp.db?mode=rwc"
-    cargo sqlx migrate run
-    cd web && npm install && cd ..
+    cargo sqlx migrate run --source backend/migrations
+    cd frontend && npm install && cd ..
 
 ## Running (two terminals)
 
     cargo run                 # API on http://127.0.0.1:3000
-    cd web && npm run dev     # UI on http://localhost:5173 (proxies /api)
+    cd frontend && npm run dev     # UI on http://localhost:5173 (proxies /api)
 
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
@@ -2202,17 +2225,17 @@ creates and migrates `data/quizapp.db` by itself.
 sqlx checks queries at compile time against a committed offline cache:
 
     DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx migrate run
-    DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare
-    git add .sqlx migrations
+    DATABASE_URL="sqlite://data/quizapp.db?mode=rwc" cargo sqlx prepare --workspace
+    git add .sqlx backend/migrations
 
 A build failing with "set DATABASE_URL to use query macros online" means the
-cache is stale. Re-run `cargo sqlx prepare`.
+cache is stale. Re-run `cargo sqlx prepare --workspace`.
 
 ## Tests
 
     cargo test                        # unit + API integration (temp SQLite per test)
     cargo clippy -- -D warnings
-    cd web && npx tsc --noEmit && npm run build
+    cd frontend && npx tsc --noEmit && npm run build
 
 Frontend has no test framework by design (see the spec's non-goals).
 
@@ -2234,7 +2257,7 @@ git status --short
 ```bash
 cargo test
 cargo clippy -- -D warnings
-cd web && npx tsc --noEmit && npm run build && cd ..
+cd frontend && npx tsc --noEmit && npm run build && cd ..
 ```
 
 - [ ] **Step 4: Fresh-database check**
@@ -2258,7 +2281,7 @@ git commit -m "docs: dev runbook for part 1"
 ```
 
 ```json:metadata
-{"files":["README.md",".gitignore"],"verifyCommand":"cargo test && cargo clippy -- -D warnings && (cd web && npx tsc --noEmit && npm run build)","acceptanceCriteria":["README covers prerequisites, setup, dev commands, env vars and the sqlx prepare rule",".sqlx is tracked by git","cargo test green and clippy clean with captured output","web tsc and build clean with captured output","deleting data/ and running cargo run recreates and migrates the database"],"modelTier":"mechanical"}
+{"files":["README.md",".gitignore"],"verifyCommand":"cargo test && cargo clippy -- -D warnings && (cd frontend && npx tsc --noEmit && npm run build)","acceptanceCriteria":["README covers prerequisites, setup, dev commands, env vars and the sqlx prepare rule",".sqlx is tracked by git","cargo test green and clippy clean with captured output","web tsc and build clean with captured output","deleting data/ and running cargo run recreates and migrates the database"],"modelTier":"mechanical"}
 ```
 
 ---
@@ -2271,7 +2294,7 @@ git commit -m "docs: dev runbook for part 1"
 cargo test                                   # health, schema, modules, decks, error unit tests
 cargo clippy -- -D warnings
 SQLX_OFFLINE=true cargo build                # proves the committed query cache is current
-cd web && npx tsc --noEmit && npm run build
+cd frontend && npx tsc --noEmit && npm run build
 ```
 
 **Manual browser pass** (`cargo run` + `npm run dev`, open `http://localhost:5173/decks`)
