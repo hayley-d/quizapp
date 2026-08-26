@@ -1,5 +1,8 @@
 # quizapp
 
+**Picking this up cold?** Start with [`docs/HANDOVER.md`](docs/HANDOVER.md) — current state,
+what's next, environment quirks, and the conventions that cost a fix round to learn.
+
 Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-quiz-study-app-design.md`.
 
 ## Prerequisites
