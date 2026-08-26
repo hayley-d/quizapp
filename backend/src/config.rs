@@ -2,7 +2,6 @@
 pub struct Config {
     pub bind_addr: String,
     pub database_url: String,
-    #[allow(dead_code)]
     pub data_dir: String,
 }
 

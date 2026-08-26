@@ -1,13 +1,7 @@
-mod config;
-mod routes;
-mod state;
-
-use axum::Router;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
-use config::Config;
-use state::AppState;
+use quizapp::config::Config;
+use quizapp::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -17,13 +11,9 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env();
-    let pool = sqlx::SqlitePool::connect(&config.database_url).await?;
-    let state = AppState { pool };
-
-    let app = Router::new()
-        .nest("/api", routes::api_router())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    std::fs::create_dir_all(&config.data_dir)?;
+    let pool = quizapp::db::connect(&config.database_url).await?;
+    let app = quizapp::app(AppState { pool });
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!("listening on http://{}", config.bind_addr);
