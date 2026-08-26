@@ -14,11 +14,17 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
   if (!res.ok) {
     const payload = await res.json().catch(() => null)
@@ -48,10 +54,30 @@ export type UpdateDeckInput = Partial<{
   description: string
 }>
 
+export type DeckSort = 'newest' | 'oldest'
+/** 'all' | 'none' | a module id */
+export type ModuleFilter = 'all' | 'none' | number
+
+export type DeckQuery = {
+  q?: string
+  moduleId?: ModuleFilter
+  sort?: DeckSort
+}
+
+function deckQueryString({ q, moduleId, sort }: DeckQuery): string {
+  const params = new URLSearchParams()
+  if (q && q.trim() !== '') params.set('q', q.trim())
+  if (moduleId !== undefined && moduleId !== 'all') params.set('module_id', String(moduleId))
+  if (sort) params.set('sort', sort)
+  const s = params.toString()
+  return s === '' ? '' : `?${s}`
+}
+
 export const api = {
   listModules: () => request<Module[]>('GET', '/modules'),
   createModule: (name: string) => request<Module>('POST', '/modules', { name }),
-  listDecks: () => request<Deck[]>('GET', '/decks'),
+  listDecks: (query: DeckQuery = {}, signal?: AbortSignal) =>
+    request<Deck[]>('GET', `/decks${deckQueryString(query)}`, undefined, signal),
   createDeck: (input: { name: string; module_id: number | null; description: string }) =>
     request<Deck>('POST', '/decks', input),
   // Only send keys the user actually changed — an absent module_id means
