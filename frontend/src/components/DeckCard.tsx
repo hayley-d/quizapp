@@ -1,4 +1,5 @@
 import { Pencil } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import type { Deck } from '@/lib/api'
 
 type DeckCardProps = {
@@ -36,7 +37,10 @@ export function DeckCard({ deck, onEdit, onFilterModule }: DeckCardProps) {
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 px-5 py-4">
+      <Link
+        to={`/decks/${deck.id}`}
+        className="flex flex-1 flex-col gap-1 px-5 py-4"
+      >
         <h2 className="font-display text-3xl leading-tight font-normal text-primary-foreground">
           {deck.name}
         </h2>
@@ -44,7 +48,7 @@ export function DeckCard({ deck, onEdit, onFilterModule }: DeckCardProps) {
         <span className="mt-auto pt-4 text-sm text-primary-foreground/80">
           {deck.card_count} card{deck.card_count === 1 ? '' : 's'}
         </span>
-      </div>
+      </Link>
     </article>
   )
 }

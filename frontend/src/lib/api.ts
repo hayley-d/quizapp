@@ -73,6 +73,59 @@ function deckQueryString({ q, moduleId, sort }: DeckQuery): string {
   return s === '' ? '' : `?${s}`
 }
 
+export type CardKind = 'mc_single' | 'short_answer' | 'flashcard'
+
+export type Choice = { id: number; text_md: string; is_correct: boolean; position: number }
+export type Accepted = { id: number; text: string; normalised: string; is_primary: boolean }
+
+export type CardSummary = {
+  id: number
+  deck_id: number
+  kind: CardKind
+  prompt_md: string
+  image_path: string | null
+  answer_md: string | null
+  explanation_md: string | null
+  archived: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type Card = CardSummary & { choices: Choice[]; accepted: Accepted[] }
+
+/** `position` and `normalised` are server-assigned; never send them. */
+export type ChoiceInput = { text_md: string; is_correct: boolean }
+export type AcceptedInput = { text: string; is_primary: boolean }
+
+/**
+ * The whole editable card. Unlike `updateDeck`, this is a full replace, not a
+ * sparse patch — the editor always holds the entire card, so an omitted
+ * optional means null on the server.
+ */
+export type CardInput = {
+  kind: CardKind
+  prompt_md: string
+  answer_md?: string | null
+  explanation_md?: string | null
+  choices?: ChoiceInput[]
+  accepted?: AcceptedInput[]
+}
+
+export type CardQuery = {
+  deckId?: number
+  kind?: CardKind | 'all'
+  archived?: 'true' | 'false' | 'all'
+}
+
+function cardQueryString({ deckId, kind, archived }: CardQuery): string {
+  const params = new URLSearchParams()
+  if (deckId !== undefined) params.set('deck_id', String(deckId))
+  if (kind && kind !== 'all') params.set('kind', kind)
+  if (archived) params.set('archived', archived)
+  const s = params.toString()
+  return s === '' ? '' : `?${s}`
+}
+
 export const api = {
   listModules: () => request<Module[]>('GET', '/modules'),
   createModule: (name: string) => request<Module>('POST', '/modules', { name }),
@@ -84,4 +137,16 @@ export const api = {
   // "leave it alone" on the server, while null means "unparent".
   updateDeck: (id: number, patch: UpdateDeckInput) =>
     request<Deck>('PATCH', `/decks/${id}`, patch),
+  getDeck: (id: number, signal?: AbortSignal) =>
+    request<Deck>('GET', `/decks/${id}`, undefined, signal),
+  listCards: (query: CardQuery = {}, signal?: AbortSignal) =>
+    request<CardSummary[]>('GET', `/cards${cardQueryString(query)}`, undefined, signal),
+  getCard: (id: number, signal?: AbortSignal) =>
+    request<Card>('GET', `/cards/${id}`, undefined, signal),
+  createCard: (input: CardInput & { deck_id: number }) =>
+    request<Card>('POST', '/cards', input),
+  updateCard: (id: number, input: CardInput) =>
+    request<Card>('PATCH', `/cards/${id}`, input),
+  archiveCard: (id: number) => request<Card>('POST', `/cards/${id}/archive`, {}),
+  unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
 }

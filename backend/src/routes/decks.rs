@@ -70,7 +70,11 @@ pub struct PatchDeck {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/decks", get(list).post(create))
-        .route("/decks/{id}", axum::routing::patch(patch))
+        .route("/decks/{id}", get(get_one).patch(patch))
+}
+
+async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<DeckDto>> {
+    Ok(Json(fetch_one(&st.pool, id).await?))
 }
 
 async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckDto> {
