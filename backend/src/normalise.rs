@@ -67,4 +67,14 @@ mod tests {
     fn punctuation_only_input_is_empty() {
         assert_eq!(normalise("  ---  "), "");
     }
+
+    #[test]
+    fn genuinely_different_answers_do_not_collide() {
+        // Verify that the normalisation does not over-collapse distinct answers.
+        // These pairs represent genuinely different answers a student might give
+        // to the same question (e.g., "name a machine learning algorithm").
+        assert_ne!(normalise("k-means"), normalise("k-nearest neighbours"));
+        assert_ne!(normalise("decision tree"), normalise("decision forest"));
+        assert_ne!(normalise("Naive Bayes"), normalise("Support Vector Machine"));
+    }
 }
