@@ -68,6 +68,9 @@ export function DecksPage() {
 
   useEffect(() => { void loadDecks() }, [loadDecks])
 
+  // Cancel any in-flight deck request if the page unmounts.
+  useEffect(() => () => inFlight.current?.abort(), [])
+
   function clearFilters() {
     setSearch('')
     setDebounced('')
