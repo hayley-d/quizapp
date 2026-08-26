@@ -52,6 +52,44 @@ cache is stale. Re-run `cargo sqlx prepare --workspace`.
 
 Frontend has no test framework by design (see the spec's non-goals).
 
+## Database access (DBeaver, sqlite3)
+
+SQLite is a single file, so there is no host, port, username or password.
+
+**DBeaver:** New Connection → **SQLite** → Path:
+
+    /Users/hayley/Documents/side_projects/quizapp/data/quizapp.db
+
+Leave user/password empty; let DBeaver download the SQLite JDBC driver when it offers.
+
+Two things that will bite you if you don't know them:
+
+- **Foreign keys are OFF in any client that doesn't ask for them.** `PRAGMA foreign_keys`
+  is per-connection, and the app turns it on for its own pool (`backend/src/db.rs`).
+  DBeaver does not. So a delete you run in DBeaver can orphan rows that the app itself
+  would have refused. Run `PRAGMA foreign_keys = ON;` in the DBeaver SQL editor first if
+  you intend to delete anything.
+- **Writers block each other.** The journal mode is the default (`delete`), not WAL, so
+  DBeaver holding a write transaction while the app is running gives
+  `database is locked` (the app waits 5s, then errors). Either stop `cargo run` before
+  writing from DBeaver, or switch the file to WAL once — it persists, and lets DBeaver
+  read while the app writes:
+
+      sqlite3 data/quizapp.db "PRAGMA journal_mode = WAL;"
+
+**sqlite3 CLI, from the repo root:**
+
+    sqlite3 data/quizapp.db                       # interactive shell
+    sqlite3 data/quizapp.db ".tables"             # list tables
+    sqlite3 data/quizapp.db ".schema decks"       # one table's DDL
+    sqlite3 data/quizapp.db "SELECT * FROM modules;"
+    sqlite3 data/quizapp.db "SELECT version, description, success FROM _sqlx_migrations;"
+
+Nine tables: the eight from the data model (`modules`, `decks`, `cards`, `choices`,
+`accepted`, `sessions`, `reviews`, `schedule`) plus sqlx's own `_sqlx_migrations`.
+The schema is `backend/migrations/0001_init.sql`; the data model is documented in
+`docs/mitis/specs/2026-08-26-quiz-study-app-design.md`.
+
 ## Backups
 
 The whole database is `data/quizapp.db`; images will live in `data/images/`.
