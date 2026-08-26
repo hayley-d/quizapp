@@ -1,3 +1,4 @@
+pub mod cards;
 pub mod decks;
 pub mod health;
 pub mod modules;
@@ -10,4 +11,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(health::router())
         .merge(modules::router())
         .merge(decks::router())
+        .merge(cards::router())
 }

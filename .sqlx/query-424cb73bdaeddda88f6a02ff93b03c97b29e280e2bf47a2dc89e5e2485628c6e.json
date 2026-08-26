@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\", deck_id AS \"deck_id!: i64\", kind,\n                  prompt_md, image_path, answer_md, explanation_md,\n                  archived AS \"archived!: bool\", created_at, updated_at\n           FROM cards WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "deck_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "kind",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "prompt_md",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "image_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "answer_md",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "explanation_md",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived!: bool",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "424cb73bdaeddda88f6a02ff93b03c97b29e280e2bf47a2dc89e5e2485628c6e"
+}

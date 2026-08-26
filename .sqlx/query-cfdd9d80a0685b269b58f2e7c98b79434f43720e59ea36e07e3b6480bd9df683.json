@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO accepted (card_id, text, normalised, is_primary)\n             VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "cfdd9d80a0685b269b58f2e7c98b79434f43720e59ea36e07e3b6480bd9df683"
+}
