@@ -3,6 +3,7 @@ import { AppShell } from '@/components/AppShell'
 import { StubPage } from '@/pages/StubPage'
 import { DecksPage } from '@/pages/DecksPage'
 import { DeckPage } from '@/pages/DeckPage'
+import { CardEditorPage } from '@/pages/CardEditorPage'
 
 export default function App() {
   return (
@@ -12,6 +13,8 @@ export default function App() {
           <Route path="/" element={<Navigate to="/decks" replace />} />
           <Route path="/decks" element={<DecksPage />} />
           <Route path="/decks/:id" element={<DeckPage />} />
+          <Route path="/cards/new" element={<CardEditorPage />} />
+          <Route path="/cards/:id/edit" element={<CardEditorPage />} />
           <Route
             path="/study"
             element={<StubPage title="Study" note="Session modes arrive in part 3." />}
