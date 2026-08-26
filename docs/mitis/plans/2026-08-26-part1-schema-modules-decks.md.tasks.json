@@ -12,7 +12,7 @@
       "id": 1,
       "subject": "Task 2: Migration 0001 \u2014 complete schema",
       "activeForm": "Implementing the initial schema migration",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** One migration creates all eight tables with their constraints and indexes; migrations run automatically at startup; the `.sqlx` offline cache is committed.\n\n**Files:**\n- Create: `backend/migrations/0001_init.sql`, `backend/src/db.rs`, `backend/src/lib.rs`, `backend/tests/common/mod.rs`, `backend/tests/health.rs`\n- Modify: `backend/src/main.rs` (call `db::connect`, delegate to `quizapp::app`)\n\n**Acceptance Criteria:**\n- [ ] All eight tables exist after startup: modules, decks, cards, choices, accepted, sessions, reviews, schedule\n- [ ] `cards.kind` rejects a value outside the three kinds\n- [ ] Foreign keys are enforced on every pooled connection\n- [ ] Duplicate deck name rejected within a module AND among module-less decks\n- [ ] Startup on a fresh empty `data/` dir creates the DB file and applies the migration\n- [ ] `.sqlx/` is committed and `cargo build` succeeds with `SQLX_OFFLINE=true`\n\n**Verify:** `cargo test --test health` \u2192 pass; `SQLX_OFFLINE=true cargo build` \u2192 succeeds\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 2: Migration 0001 \u2014 complete schema\"\n\n```json:metadata\n{\n  \"files\": [\n    \"backend/migrations/0001_init.sql\",\n    \"backend/src/db.rs\",\n    \"backend/src/lib.rs\",\n    \"backend/src/main.rs\",\n    \"backend/tests/common/mod.rs\",\n    \"backend/tests/health.rs\"\n  ],\n  \"verifyCommand\": \"cargo test --test health && SQLX_OFFLINE=true cargo build\",\n  \"acceptanceCriteria\": [\n    \"all eight spec tables exist after migration\",\n    \"cards.kind CHECK rejects an unknown kind\",\n    \"foreign keys enforced on every pooled connection\",\n    \"duplicate deck name rejected within a module and among module-less decks\",\n    \"fresh data dir is created and migrated at startup\",\n    \".sqlx offline cache committed and SQLX_OFFLINE build succeeds\"\n  ],\n  \"modelTier\": \"standard\"\n}\n```",
       "blockedBy": [
         0
@@ -22,7 +22,7 @@
       "id": 2,
       "subject": "Task 3: Structured AppError",
       "activeForm": "Implementing the structured error type",
-      "status": "pending",
+      "status": "in_progress",
       "description": "**Goal:** One `AppError` that every handler returns, serialising to the single error envelope with inline-renderable `fields`.\n\n**Files:**\n- Create/replace: `backend/src/error.rs`\n- Test: `backend/src/error.rs` (`#[cfg(test)]` unit tests \u2014 pure serialisation, no DB)\n\n**Acceptance Criteria:**\n- [ ] `AppError::Validation` \u2192 422 with a populated `fields` array\n- [ ] `AppError::NotFound` \u2192 404, `AppError::Conflict` \u2192 409, both with `fields: []`\n- [ ] A sqlx UNIQUE-constraint error converts to Conflict, not a 500\n- [ ] A sqlx foreign-key violation converts to 422 with a `module_id` field error\n- [ ] Any other `sqlx::Error` \u2192 500 with a generic message; the real error is logged, not returned\n\n**Verify:** `cargo test error::` \u2192 pass\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 3: Structured AppError\"\n\n```json:metadata\n{\n  \"files\": [\n    \"backend/src/error.rs\"\n  ],\n  \"verifyCommand\": \"cargo test error:: && cargo clippy -- -D warnings\",\n  \"acceptanceCriteria\": [\n    \"Validation maps to 422 with populated fields\",\n    \"NotFound 404 and Conflict 409 with empty fields\",\n    \"sqlx unique violation maps to 409 not 500\",\n    \"sqlx foreign key violation maps to 422 with a module_id field error\",\n    \"other sqlx errors map to 500 with a generic message and are logged\"\n  ],\n  \"modelTier\": \"mechanical\"\n}\n```",
       "blockedBy": [
         1
@@ -52,7 +52,7 @@
       "id": 5,
       "subject": "Task 6: Frontend scaffold with Bibble tokens",
       "activeForm": "Implementing the frontend scaffold",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `npm run dev` in `frontend/` serves a React app at :5173 that proxies /api to axum, with the Bibble palette and Quicksand in place and a nav shell over /study, /decks, /stats.\n\n**Files:**\n- Create: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/tsconfig.json`, `frontend/index.html`, `frontend/components.json`, `frontend/src/main.tsx`, `frontend/src/App.tsx`, `frontend/src/styles/globals.css`, `frontend/src/lib/utils.ts`, `frontend/src/components/AppShell.tsx`, `frontend/src/pages/StubPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] `npm run dev` serves the app; /decks, /study, /stats all render the shell\n- [ ] `fetch('/api/health')` from the browser console returns {\"status\":\"ok\"} through the Vite proxy\n- [ ] `npm run build` and `npx tsc --noEmit` both succeed\n- [ ] Bibble tokens defined for light and dark; toggling the OS theme visibly changes the page. Flat colours only \u2014 no glows or gradients yet\n- [ ] Quicksand renders on headings, a clean sans on body\n\n**Verify:** `cd frontend && npm run build && npx tsc --noEmit` \u2192 both succeed; browser check of /decks in light and dark\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 6: Frontend scaffold with Bibble tokens\"\n\n```json:metadata\n{\n  \"files\": [\n    \"frontend/package.json\",\n    \"frontend/vite.config.ts\",\n    \"frontend/tsconfig.json\",\n    \"frontend/index.html\",\n    \"frontend/src/main.tsx\",\n    \"frontend/src/App.tsx\",\n    \"frontend/src/styles/globals.css\",\n    \"frontend/src/components/AppShell.tsx\",\n    \"frontend/src/pages/StubPage.tsx\"\n  ],\n  \"verifyCommand\": \"cd frontend && npm run build && npx tsc --noEmit\",\n  \"acceptanceCriteria\": [\n    \"npm run dev serves the shell at /decks /study /stats\",\n    \"fetch('/api/health') succeeds through the Vite proxy\",\n    \"npm run build and tsc --noEmit both pass\",\n    \"Bibble tokens defined for light and dark and visibly applied\",\n    \"Quicksand on headings and a clean sans on body\",\n    \"no glow, gradient or animation work included\"\n  ],\n  \"modelTier\": \"standard\"\n}\n```",
       "blockedBy": [
         0
@@ -80,5 +80,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-26T00:00:00Z"
+  "lastUpdated": "2026-08-26T12:00:00Z"
 }

@@ -1448,7 +1448,7 @@ git commit -m "feat: decks list, create and patch endpoints"
 
 ## Task 6: Frontend scaffold with Bibble tokens
 
-**Goal:** `npm run dev` in `frontend/` serves a React app at `:5173` that proxies `/api` to axum,
+**Goal:** `npm run dev` in `frontend/` serves a React app at `:5273` that proxies `/api` to axum,
 with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/decks`,
 `/stats`.
 
@@ -1498,7 +1498,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: {
-    port: 5173,
+    port: 5273,
     proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true } },
   },
 })
@@ -2206,7 +2206,7 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 ## Running (two terminals)
 
     cargo run                 # API on http://127.0.0.1:3000
-    cd frontend && npm run dev     # UI on http://localhost:5173 (proxies /api)
+    cd frontend && npm run dev     # UI on http://localhost:5273 (proxies /api)
 
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
@@ -2297,7 +2297,7 @@ SQLX_OFFLINE=true cargo build                # proves the committed query cache 
 cd frontend && npx tsc --noEmit && npm run build
 ```
 
-**Manual browser pass** (`cargo run` + `npm run dev`, open `http://localhost:5173/decks`)
+**Manual browser pass** (`cargo run` + `npm run dev`, open `http://localhost:5273/decks`)
 
 1. Empty state renders with guidance.
 2. Create module "COS781" → appears as a group heading.
