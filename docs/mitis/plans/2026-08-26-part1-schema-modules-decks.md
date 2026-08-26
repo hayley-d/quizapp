@@ -118,6 +118,16 @@ DTOs and its validation — there is no shared `models.rs` grab-bag.
 `datetime('now')` (UTC, `YYYY-MM-DD HH:MM:SS`). No `chrono` type mapping in Part 1 — it buys
 nothing here and adds friction to the compile-time macros. Revisit if stats need date math.
 
+**Ordering tests must be able to detect the collation.** Any test asserting a
+`COLLATE NOCASE` ordering has to use inputs where BINARY and NOCASE genuinely disagree.
+BINARY compares raw bytes, so every uppercase letter sorts before every lowercase one
+(`'Z'` = 0x5A < `'z'` = 0x7A): `"apple"`/`"Banana"` and `"zebra"`/`"Zulu"` discriminate,
+while `"Alpha"`/`"beta"` and `"Deck A"`/`"Deck B"` do NOT — both collations order those
+identically, so the test passes even with the collation deleted. Where an ORDER BY has
+two collated keys, prove each one independently by removing only that key's `COLLATE
+NOCASE` and watching the test go red. This cost three fix rounds in Part 1; do not
+rediscover it.
+
 **Booleans are `INTEGER NOT NULL CHECK (col IN (0,1))`** in SQLite, `bool` in Rust. sqlx
 maps these automatically for SQLite.
 
