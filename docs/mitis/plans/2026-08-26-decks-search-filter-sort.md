@@ -48,7 +48,8 @@ WHERE (? IS NULL OR d.name LIKE '%' || ? || '%' ESCAPE '\')
        OR d.module_id = ?)
 ORDER BY CASE WHEN ? = 'oldest' THEN d.created_at END ASC,
          CASE WHEN ? = 'newest' THEN d.created_at END DESC,
-         d.id DESC
+         CASE WHEN ? = 'oldest' THEN d.id END ASC,
+         CASE WHEN ? = 'newest' THEN d.id END DESC
 ```
 
 Four facts that make this correct, each of which is a bug if missed:
@@ -58,9 +59,14 @@ Four facts that make this correct, each of which is a bug if missed:
    twice where it appears twice. Order is: `q, q, mode, mode, module_id, sort, sort`.
 2. **`created_at` is now ISO-8601 `...Z` TEXT** (changed in Part 1's fix wave), which still
    sorts lexicographically as chronological. No date parsing anywhere.
-3. **`d.id DESC` is a mandatory tiebreak.** Timestamps have one-second resolution, so two
-   decks created in the same second have no deterministic order — a date-ordering test
-   without this tiebreak flakes intermittently, which is worse than failing.
+3. **The `id` tiebreak is mandatory AND must follow the sort direction.** Timestamps have
+   one-second resolution, so two decks created in the same second have no deterministic
+   order — without a tiebreak a date-ordering test flakes intermittently, which is worse
+   than failing. But an *unconditional* `d.id DESC` is also wrong: on tied timestamps it
+   forces newest-inserted-first regardless of direction, so `sort=oldest` stops being the
+   exact reverse of `sort=newest`. Mirror the direction with a second pair of `CASE WHEN`
+   arms. (This plan originally specified the unconditional form; TDD caught it, since the
+   same-second test asserts exact reversal.)
 4. **`%` and `_` must be escaped in `q`** before binding, with `ESCAPE '\'` in the SQL, or
    a search for `100%` matches every deck.
 
@@ -292,12 +298,15 @@ async fn list(
                   OR d.module_id = ?)
            ORDER BY CASE WHEN ? = 'oldest' THEN d.created_at END ASC,
                     CASE WHEN ? = 'newest' THEN d.created_at END DESC,
-                    d.id DESC"#,
+                    CASE WHEN ? = 'oldest' THEN d.id END ASC,
+                    CASE WHEN ? = 'newest' THEN d.id END DESC"#,
         needle,
         needle,
         mode,
         mode,
         module_id,
+        sort,
+        sort,
         sort,
         sort
     )
@@ -309,7 +318,7 @@ async fn list(
 ```
 
 Note the bind order matches the `?` order exactly: `needle, needle, mode, mode,
-module_id, sort, sort`. If sqlx complains about a nullability annotation, adjust the
+module_id, sort, sort, sort, sort`. If sqlx complains about a nullability annotation, adjust the
 annotation — do not fall back to a runtime query.
 
 - [ ] **Step 5: Delete the now-dead ordering test**
