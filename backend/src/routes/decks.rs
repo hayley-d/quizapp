@@ -188,7 +188,8 @@ async fn create(
         description
     )
     .fetch_one(&st.pool)
-    .await?;
+    .await
+    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
 
     Ok((StatusCode::CREATED, Json(fetch_one(&st.pool, id).await?)))
 }
@@ -228,7 +229,8 @@ async fn patch(
         id
     )
     .execute(&st.pool)
-    .await?;
+    .await
+    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
 
     Ok(Json(fetch_one(&st.pool, id).await?))
 }
