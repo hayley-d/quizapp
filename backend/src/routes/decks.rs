@@ -21,8 +21,20 @@ pub struct DeckDto {
 
 #[derive(Deserialize)]
 pub struct ListQuery {
-    /// Numeric module id, or the literal "none" for unparented decks only.
+    /// Numeric module id, the literal "none" for unparented decks, or "all"/absent.
     pub module_id: Option<String>,
+    /// Case-insensitive substring match on the deck NAME only.
+    pub q: Option<String>,
+    /// "newest" (default) or "oldest", by created_at.
+    pub sort: Option<String>,
+}
+
+/// Escapes LIKE metacharacters so a user searching for "100%" does not match everything.
+/// Pairs with `ESCAPE '\'` in the SQL.
+fn escape_like(raw: &str) -> String {
+    raw.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 #[derive(Deserialize)]
@@ -84,62 +96,69 @@ async fn list(
     State(st): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Vec<DeckDto>>> {
-    // Three literal queries rather than dynamic SQL: query_as! needs a literal
-    // string, so every variant stays compile-time checked.
-    let rows = match q.module_id.as_deref() {
-        None => sqlx::query_as!(
-            DeckDto,
-            r#"SELECT d.id AS "id!: i64",
-                      d.module_id AS "module_id?: i64",
-                      m.name      AS "module_name?: String",
-                      d.name, d.description, d.created_at,
-                      (SELECT COUNT(*) FROM cards c
-                        WHERE c.deck_id = d.id AND c.archived = 0) AS "card_count!: i64"
-               FROM decks d
-               LEFT JOIN modules m ON m.id = d.module_id
-               ORDER BY m.name COLLATE NOCASE, d.name COLLATE NOCASE"#
-        )
-        .fetch_all(&st.pool)
-        .await?,
+    // An empty q means "no filter", same as absent — an empty search box must not
+    // filter everything out.
+    let needle = q
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(escape_like);
 
-        Some("none") => sqlx::query_as!(
-            DeckDto,
-            r#"SELECT d.id AS "id!: i64",
-                      d.module_id AS "module_id?: i64",
-                      m.name      AS "module_name?: String",
-                      d.name, d.description, d.created_at,
-                      (SELECT COUNT(*) FROM cards c
-                        WHERE c.deck_id = d.id AND c.archived = 0) AS "card_count!: i64"
-               FROM decks d
-               LEFT JOIN modules m ON m.id = d.module_id
-               WHERE d.module_id IS NULL
-               ORDER BY d.name COLLATE NOCASE"#
-        )
-        .fetch_all(&st.pool)
-        .await?,
+    let sort = q.sort.as_deref().unwrap_or("newest").to_string();
+    if sort != "newest" && sort != "oldest" {
+        return Err(AppError::validation([(
+            "sort",
+            "sort must be \"newest\" or \"oldest\"",
+        )]));
+    }
 
+    // mode selects the module branch; module_id is only consulted when mode is "id".
+    let (mode, module_id) = match q.module_id.as_deref() {
+        None | Some("") | Some("all") => ("all".to_string(), None),
+        Some("none") => ("none".to_string(), None),
         Some(raw) => {
             let mid: i64 = raw.parse().map_err(|_| {
-                AppError::validation([("module_id", "module_id must be a number or \"none\"")])
+                AppError::validation([(
+                    "module_id",
+                    "module_id must be a number, \"none\" or \"all\"",
+                )])
             })?;
-            sqlx::query_as!(
-                DeckDto,
-                r#"SELECT d.id AS "id!: i64",
-                          d.module_id AS "module_id?: i64",
-                          m.name      AS "module_name?: String",
-                          d.name, d.description, d.created_at,
-                          (SELECT COUNT(*) FROM cards c
-                            WHERE c.deck_id = d.id AND c.archived = 0) AS "card_count!: i64"
-                   FROM decks d
-                   LEFT JOIN modules m ON m.id = d.module_id
-                   WHERE d.module_id = ?
-                   ORDER BY d.name COLLATE NOCASE"#,
-                mid
-            )
-            .fetch_all(&st.pool)
-            .await?
+            ("id".to_string(), Some(mid))
         }
     };
+
+    let rows = sqlx::query_as!(
+        DeckDto,
+        r#"SELECT d.id AS "id!: i64",
+                  d.module_id AS "module_id?: i64",
+                  m.name      AS "module_name?: String",
+                  d.name, d.description, d.created_at,
+                  (SELECT COUNT(*) FROM cards c
+                    WHERE c.deck_id = d.id AND c.archived = 0) AS "card_count!: i64"
+           FROM decks d
+           LEFT JOIN modules m ON m.id = d.module_id
+           WHERE (? IS NULL OR d.name LIKE '%' || ? || '%' ESCAPE '\')
+             AND (? = 'all'
+                  OR (? = 'none' AND d.module_id IS NULL)
+                  OR d.module_id = ?)
+           ORDER BY CASE WHEN ? = 'oldest' THEN d.created_at END ASC,
+                    CASE WHEN ? = 'newest' THEN d.created_at END DESC,
+                    CASE WHEN ? = 'oldest' THEN d.id END ASC,
+                    CASE WHEN ? = 'newest' THEN d.id END DESC"#,
+        needle,
+        needle,
+        mode,
+        mode,
+        module_id,
+        sort,
+        sort,
+        sort,
+        sort
+    )
+    .fetch_all(&st.pool)
+    .await?;
+
     Ok(Json(rows))
 }
 

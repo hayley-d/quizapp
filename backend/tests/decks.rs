@@ -8,6 +8,14 @@ async fn module(app: &common::TestApp, name: &str) -> i64 {
     m["id"].as_i64().unwrap()
 }
 
+fn names_of(list: &serde_json::Value) -> Vec<&str> {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["name"].as_str().unwrap())
+        .collect()
+}
+
 #[tokio::test]
 async fn create_deck_in_module() {
     let app = common::spawn_app().await;
@@ -135,33 +143,96 @@ async fn filter_by_module_and_by_none() {
 }
 
 #[tokio::test]
-async fn unfiltered_list_orders_by_module_then_deck_name_case_insensitively() {
+async fn search_matches_name_case_insensitively() {
     let app = common::spawn_app().await;
-    // Module key: BINARY collation would sort "Banana" before "apple"
-    // (uppercase < all lowercase); NOCASE sorts "apple" before "Banana".
-    //
-    // Deck-name key: within "apple", BINARY sorts "Zulu" before "zebra"
-    // ('Z'=0x5A < 'z'=0x7A); NOCASE sorts "zebra" before "Zulu". "Deck A"
-    // vs "Deck B" would NOT discriminate the second COLLATE NOCASE (both
-    // collations agree on them), so the second module needs its own pair
-    // that disagrees too.
-    let banana = module(&app, "Banana").await;
-    let apple = module(&app, "apple").await;
-    app.post("/api/decks", json!({"module_id": banana, "name": "Deck B"})).await;
-    app.post("/api/decks", json!({"module_id": apple, "name": "Zulu"})).await;
-    app.post("/api/decks", json!({"module_id": apple, "name": "zebra"})).await;
+    app.post("/api/decks", json!({"name": "Chapter 1 - Kinematics"})).await;
+    app.post("/api/decks", json!({"name": "Thermodynamics"})).await;
+
+    let (status, list) = app.get("/api/decks?q=kine").await;
+    assert_eq!(status, StatusCode::OK);
+    let names = names_of(&list);
+    assert_eq!(names, vec!["Chapter 1 - Kinematics"]);
+
+    // Empty q applies no filter.
+    let (_, all) = app.get("/api/decks?q=").await;
+    assert_eq!(all.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn search_does_not_match_description() {
+    let app = common::spawn_app().await;
+    app.post("/api/decks", json!({"name": "Deck One", "description": "clustering"})).await;
+
+    let (_, list) = app.get("/api/decks?q=clustering").await;
+    assert_eq!(list.as_array().unwrap().len(), 0, "q must match name only");
+}
+
+#[tokio::test]
+async fn search_treats_wildcards_literally() {
+    let app = common::spawn_app().await;
+    app.post("/api/decks", json!({"name": "Scored 100% overall"})).await;
+    app.post("/api/decks", json!({"name": "Unrelated"})).await;
+
+    let (_, pct) = app.get("/api/decks?q=100%25").await; // %25 is an encoded '%'
+    assert_eq!(names_of(&pct), vec!["Scored 100% overall"]);
+
+    // A bare '%' must not behave as "match everything".
+    let (_, underscore) = app.get("/api/decks?q=_nrelated").await;
+    assert_eq!(underscore.as_array().unwrap().len(), 0, "_ must be literal");
+}
+
+#[tokio::test]
+async fn sort_newest_is_default_and_oldest_reverses_it() {
+    let app = common::spawn_app().await;
+    // Same-second creation is the normal case here, so this also exercises the id tiebreak.
+    app.post("/api/decks", json!({"name": "First"})).await;
+    app.post("/api/decks", json!({"name": "Second"})).await;
+    app.post("/api/decks", json!({"name": "Third"})).await;
+
+    let (_, default) = app.get("/api/decks").await;
+    assert_eq!(names_of(&default), vec!["Third", "Second", "First"]);
+
+    let (_, newest) = app.get("/api/decks?sort=newest").await;
+    assert_eq!(names_of(&newest), names_of(&default), "absent sort == newest");
+
+    let (_, oldest) = app.get("/api/decks?sort=oldest").await;
+    assert_eq!(names_of(&oldest), vec!["First", "Second", "Third"]);
+}
+
+#[tokio::test]
+async fn unknown_sort_is_422_with_field_error() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.get("/api/decks?sort=sideways").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"], "validation");
+    assert_eq!(body["fields"][0]["field"], "sort");
+}
+
+#[tokio::test]
+async fn module_all_equals_absent() {
+    let app = common::spawn_app().await;
+    let mid = module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": mid, "name": "In module"})).await;
     app.post("/api/decks", json!({"name": "Loose"})).await;
 
-    let (_, all) = app.get("/api/decks").await;
-    let names: Vec<&str> = all
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|d| d["name"].as_str().unwrap())
-        .collect();
-    // NULL module names sort first in SQLite; then modules NOCASE-ordered
-    // (apple, Banana); within "apple", decks NOCASE-ordered (zebra, Zulu).
-    assert_eq!(names, vec!["Loose", "zebra", "Zulu", "Deck B"]);
+    let (_, absent) = app.get("/api/decks").await;
+    let (_, all) = app.get("/api/decks?module_id=all").await;
+    assert_eq!(names_of(&absent), names_of(&all));
+    assert_eq!(all.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn criteria_combine() {
+    let app = common::spawn_app().await;
+    let mid = module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": mid, "name": "Alpha test"})).await;
+    app.post("/api/decks", json!({"module_id": mid, "name": "Beta test"})).await;
+    app.post("/api/decks", json!({"name": "Alpha loose"})).await;
+
+    let (_, list) = app
+        .get(&format!("/api/decks?q=alpha&module_id={mid}&sort=oldest"))
+        .await;
+    assert_eq!(names_of(&list), vec!["Alpha test"]);
 }
 
 #[tokio::test]

@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT d.id AS \"id!: i64\",\n                  d.module_id AS \"module_id?: i64\",\n                  m.name      AS \"module_name?: String\",\n                  d.name, d.description, d.created_at,\n                  (SELECT COUNT(*) FROM cards c\n                    WHERE c.deck_id = d.id AND c.archived = 0) AS \"card_count!: i64\"\n           FROM decks d\n           LEFT JOIN modules m ON m.id = d.module_id\n           WHERE (? IS NULL OR d.name LIKE '%' || ? || '%' ESCAPE '\\')\n             AND (? = 'all'\n                  OR (? = 'none' AND d.module_id IS NULL)\n                  OR d.module_id = ?)\n           ORDER BY CASE WHEN ? = 'oldest' THEN d.created_at END ASC,\n                    CASE WHEN ? = 'newest' THEN d.created_at END DESC,\n                    CASE WHEN ? = 'oldest' THEN d.id END ASC,\n                    CASE WHEN ? = 'newest' THEN d.id END DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "module_id?: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "module_name?: String",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "card_count!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f07869e8cec4deb0bd7ef50dc65b12f3cb0dcf070b59e2d0e295f2978ccb99be"
+}
