@@ -1,9 +1,12 @@
-PRAGMA foreign_keys = ON;
+-- Foreign key enforcement is NOT set here: PRAGMA foreign_keys only affects
+-- the connection that runs it, and the migration runner's connection isn't
+-- reused for app queries. Enforcement is turned on for every real connection
+-- via `.foreign_keys(true)` in backend/src/db.rs.
 
 CREATE TABLE modules (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
 CREATE TABLE decks (
@@ -11,7 +14,7 @@ CREATE TABLE decks (
   module_id   INTEGER REFERENCES modules(id) ON DELETE SET NULL,
   name        TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX idx_decks_module ON decks(module_id);
 -- SQLite treats NULLs as distinct in a UNIQUE index, so coalesce for the
@@ -28,8 +31,8 @@ CREATE TABLE cards (
   answer_md      TEXT,
   explanation_md TEXT,
   archived       INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0,1)),
-  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX idx_cards_deck_archived ON cards(deck_id, archived);
 
@@ -56,7 +59,7 @@ CREATE TABLE sessions (
   mode         TEXT NOT NULL CHECK (mode IN ('practice','mock','sm2')),
   deck_ids     TEXT NOT NULL,               -- JSON array of deck ids
   target_count INTEGER,
-  started_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   ended_at     TEXT
 );
 
@@ -66,7 +69,7 @@ CREATE TABLE reviews (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   card_id     INTEGER NOT NULL REFERENCES cards(id),
   session_id  INTEGER NOT NULL REFERENCES sessions(id),
-  answered_at TEXT NOT NULL DEFAULT (datetime('now')),
+  answered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   given       TEXT,
   correct     INTEGER NOT NULL CHECK (correct IN (0,1)),
   overridden  INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0,1)),
