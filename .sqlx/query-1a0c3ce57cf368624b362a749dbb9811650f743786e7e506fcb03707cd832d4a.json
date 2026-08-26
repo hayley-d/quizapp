@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT m.id AS \"id!: i64\",\n                  m.name,\n                  m.created_at,\n                  (SELECT COUNT(*) FROM decks d WHERE d.module_id = m.id)\n                      AS \"deck_count!: i64\"\n           FROM modules m\n           ORDER BY m.name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "deck_count!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1a0c3ce57cf368624b362a749dbb9811650f743786e7e506fcb03707cd832d4a"
+}
