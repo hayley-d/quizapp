@@ -69,12 +69,22 @@ mod tests {
     }
 
     #[test]
-    fn genuinely_different_answers_do_not_collide() {
-        // Verify that the normalisation does not over-collapse distinct answers.
-        // These pairs represent genuinely different answers a student might give
-        // to the same question (e.g., "name a machine learning algorithm").
-        assert_ne!(normalise("k-means"), normalise("k-nearest neighbours"));
-        assert_ne!(normalise("decision tree"), normalise("decision forest"));
-        assert_ne!(normalise("Naive Bayes"), normalise("Support Vector Machine"));
+    fn non_alphanumeric_becomes_space_not_nothing() {
+        // The positive test asserts "k-means" == "k means".
+        // These assert that pairs differing only in a non-alphanumeric character
+        // stay distinct — the core failure mode to catch is an implementation that
+        // deletes non-alphanumerics instead of replacing them with spaces.
+        assert_ne!(normalise("a-b"), normalise("ab"));
+        assert_ne!(normalise("1,000"), normalise("1000"));
+        assert_ne!(normalise("F1"), normalise("F 1"));
+    }
+
+    #[test]
+    fn trailing_symbols_vanish_a_known_limitation() {
+        // Answers distinguished only by trailing symbols cannot be told apart,
+        // because trailing symbols become trailing spaces and are trimmed.
+        // This is inherent to the design and accepted for a data-mining course
+        // where such answers do not arise.
+        assert_eq!(normalise("C++"), normalise("C"));
     }
 }
