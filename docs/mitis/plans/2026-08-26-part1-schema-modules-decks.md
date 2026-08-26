@@ -1450,7 +1450,7 @@ git commit -m "feat: decks list, create and patch endpoints"
 
 ## Task 6: Frontend scaffold with Bibble tokens
 
-**Goal:** `npm run dev` in `frontend/` serves a React app at `:5273` that proxies `/api` to axum,
+**Goal:** `pnpm dev` in `frontend/` serves a React app at `:5273` that proxies `/api` to axum,
 with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/decks`,
 `/stats`.
 
@@ -1461,16 +1461,16 @@ with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/
   `frontend/src/components/AppShell.tsx`, `frontend/src/pages/StubPage.tsx`
 
 **Acceptance Criteria:**
-- [ ] `npm run dev` serves the app; `/decks`, `/study`, `/stats` all render the shell
+- [ ] `pnpm dev` serves the app; `/decks`, `/study`, `/stats` all render the shell
 - [ ] A `fetch('/api/health')` from the browser console returns `{"status":"ok"}` through the
       Vite proxy
-- [ ] `npm run build` and `npx tsc --noEmit` both succeed
+- [ ] `pnpm build` and `pnpm exec tsc --noEmit` both succeed
 - [ ] Bibble tokens are defined for light and dark; toggling the OS theme visibly changes the
       page. Deep-twilight background, turquoise primary, magenta/lavender accents, gold for
       correct — flat colours only, no glows or gradients yet
 - [ ] Quicksand renders on headings, a clean sans on body
 
-**Verify:** `cd frontend && npm run build && npx tsc --noEmit` → both succeed; browser check of
+**Verify:** `cd frontend && pnpm build && pnpm exec tsc --noEmit` → both succeed; browser check of
 `/decks` in light and dark
 
 **Steps:**
@@ -1479,12 +1479,12 @@ with the Bibble palette and Quicksand in place and a nav shell over `/study`, `/
 
 ```bash
 cd /Users/hayley/Documents/side_projects/quizapp
-npm create vite@latest frontend -- --template react-ts
+pnpm create vite@latest frontend -- --template react-ts
 cd frontend
-npm install
-npm install react-router-dom
-npm install tailwindcss @tailwindcss/vite
-npm install class-variance-authority clsx tailwind-merge lucide-react
+pnpm install
+pnpm install react-router-dom
+pnpm install tailwindcss @tailwindcss/vite
+pnpm install class-variance-authority clsx tailwind-merge lucide-react
 ```
 
 - [ ] **Step 2: `frontend/vite.config.ts`** — Tailwind v4 plugin plus the `/api` proxy (same-origin
@@ -1626,8 +1626,8 @@ Delete the Vite starter's `App.css` and `index.css`, and import `./styles/global
 - [ ] **Step 5: shadcn init and the primitives this part needs**
 
 ```bash
-npx shadcn@latest init          # style: default, base color: neutral, CSS vars: yes
-npx shadcn@latest add button input textarea label dialog select card sonner
+pnpm dlx shadcn@latest init          # style: default, base color: neutral, CSS vars: yes
+pnpm dlx shadcn@latest add button input textarea label dialog select card sonner
 ```
 
 If `init` offers to overwrite `globals.css`, decline and keep the Bibble tokens — shadcn's
@@ -1728,9 +1728,9 @@ Until Task 7 lands, point `/decks` at a `StubPage` too so the app compiles; swap
 
 ```bash
 cd frontend
-npm run build
-npx tsc --noEmit
-npm run dev      # then in the browser console: await (await fetch('/api/health')).json()
+pnpm build
+pnpm exec tsc --noEmit
+pnpm dev      # then in the browser console: await (await fetch('/api/health')).json()
 ```
 
 Backend must be running (`cargo run`) for the proxy check.
@@ -1743,7 +1743,7 @@ git commit -m "feat: vite react scaffold with Bibble palette tokens"
 ```
 
 ```json:metadata
-{"files":["frontend/package.json","frontend/vite.config.ts","frontend/tsconfig.json","frontend/index.html","frontend/src/main.tsx","frontend/src/App.tsx","frontend/src/styles/globals.css","frontend/src/components/AppShell.tsx","frontend/src/pages/StubPage.tsx"],"verifyCommand":"cd frontend && npm run build && npx tsc --noEmit","acceptanceCriteria":["npm run dev serves the shell at /decks /study /stats","fetch('/api/health') succeeds through the Vite proxy","npm run build and tsc --noEmit both pass","Bibble tokens defined for light and dark and visibly applied","Quicksand on headings and a clean sans on body","no glow, gradient or animation work included"],"modelTier":"standard"}
+{"files":["frontend/package.json","frontend/vite.config.ts","frontend/tsconfig.json","frontend/index.html","frontend/src/main.tsx","frontend/src/App.tsx","frontend/src/styles/globals.css","frontend/src/components/AppShell.tsx","frontend/src/pages/StubPage.tsx"],"verifyCommand":"cd frontend && pnpm build && pnpm exec tsc --noEmit","acceptanceCriteria":["pnpm dev serves the shell at /decks /study /stats","fetch('/api/health') succeeds through the Vite proxy","pnpm build and tsc --noEmit both pass","Bibble tokens defined for light and dark and visibly applied","Quicksand on headings and a clean sans on body","no glow, gradient or animation work included"],"modelTier":"standard"}
 ```
 
 ---
@@ -1771,7 +1771,7 @@ rendered inline and typed content never lost on a rejected save.
 - [ ] Empty state reads sensibly when there are no modules and no decks
 - [ ] Layout is usable at 375px width
 
-**Verify:** `cd frontend && npx tsc --noEmit && npm run build`, then a browser pass through every
+**Verify:** `cd frontend && pnpm exec tsc --noEmit && pnpm build`, then a browser pass through every
 acceptance criterion with `cargo run` live
 
 **Steps:**
@@ -2140,7 +2140,7 @@ export function DecksPage() {
 # terminal 1
 cargo run
 # terminal 2
-cd frontend && npm run dev
+cd frontend && pnpm dev
 ```
 
 Walk every acceptance criterion: create module "COS781"; create deck "Test 1" in it; create
@@ -2157,7 +2157,7 @@ git commit -m "feat: decks screen with module and deck management"
 ```
 
 ```json:metadata
-{"files":["frontend/src/lib/api.ts","frontend/src/pages/DecksPage.tsx","frontend/src/components/ModuleDialog.tsx","frontend/src/components/DeckDialog.tsx","frontend/src/App.tsx"],"verifyCommand":"cd frontend && npx tsc --noEmit && npm run build","acceptanceCriteria":["decks listed grouped by module with a No module group","new module creates and refreshes the list","new deck creates with optional module and description","edit changes name, module including to No module, and description, sending only changed fields","422 renders inline beside the offending input with typed values intact","409 duplicate name shows on the name input","sensible empty state","usable at 375px width"],"modelTier":"standard"}
+{"files":["frontend/src/lib/api.ts","frontend/src/pages/DecksPage.tsx","frontend/src/components/ModuleDialog.tsx","frontend/src/components/DeckDialog.tsx","frontend/src/App.tsx"],"verifyCommand":"cd frontend && pnpm exec tsc --noEmit && pnpm build","acceptanceCriteria":["decks listed grouped by module with a No module group","new module creates and refreshes the list","new deck creates with optional module and description","edit changes name, module including to No module, and description, sending only changed fields","422 renders inline beside the offending input with typed values intact","409 duplicate name shows on the name input","sensible empty state","usable at 375px width"],"modelTier":"standard"}
 ```
 
 ---
@@ -2176,11 +2176,11 @@ app, plus one recorded end-to-end pass over Part 1.
 - [ ] README documents: prerequisites, first-time setup, the two dev commands, env vars, and
       the `cargo sqlx prepare` rule after any SQL change
 - [ ] `cargo test` green, `cargo clippy -- -D warnings` clean,
-      `cd frontend && npx tsc --noEmit && npm run build` clean — all four outputs captured
+      `cd frontend && pnpm exec tsc --noEmit && pnpm build` clean — all four outputs captured
 - [ ] A fresh-clone simulation works: delete `data/`, `cargo run`, DB is recreated and
       migrated, `/decks` still loads
 
-**Verify:** `cargo test && cargo clippy -- -D warnings && (cd frontend && npx tsc --noEmit && npm run build)`
+**Verify:** `cargo test && cargo clippy -- -D warnings && (cd frontend && pnpm exec tsc --noEmit && pnpm build)`
 → all succeed; plus the fresh-`data/` check below
 
 **Steps:**
@@ -2203,12 +2203,12 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
     mkdir -p data
     export DATABASE_URL="sqlite://data/quizapp.db?mode=rwc"
     cargo sqlx migrate run --source backend/migrations
-    cd frontend && npm install && cd ..
+    cd frontend && pnpm install && cd ..
 
 ## Running (two terminals)
 
     cargo run                 # API on http://127.0.0.1:3000
-    cd frontend && npm run dev     # UI on http://localhost:5273 (proxies /api)
+    cd frontend && pnpm dev     # UI on http://localhost:5273 (proxies /api)
 
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
@@ -2237,7 +2237,7 @@ cache is stale. Re-run `cargo sqlx prepare --workspace`.
 
     cargo test                        # unit + API integration (temp SQLite per test)
     cargo clippy -- -D warnings
-    cd frontend && npx tsc --noEmit && npm run build
+    cd frontend && pnpm exec tsc --noEmit && pnpm build
 
 Frontend has no test framework by design (see the spec's non-goals).
 
@@ -2259,7 +2259,7 @@ git status --short
 ```bash
 cargo test
 cargo clippy -- -D warnings
-cd frontend && npx tsc --noEmit && npm run build && cd ..
+cd frontend && pnpm exec tsc --noEmit && pnpm build && cd ..
 ```
 
 - [ ] **Step 4: Fresh-database check**
@@ -2283,7 +2283,7 @@ git commit -m "docs: dev runbook for part 1"
 ```
 
 ```json:metadata
-{"files":["README.md",".gitignore"],"verifyCommand":"cargo test && cargo clippy -- -D warnings && (cd frontend && npx tsc --noEmit && npm run build)","acceptanceCriteria":["README covers prerequisites, setup, dev commands, env vars and the sqlx prepare rule",".sqlx is tracked by git","cargo test green and clippy clean with captured output","web tsc and build clean with captured output","deleting data/ and running cargo run recreates and migrates the database"],"modelTier":"mechanical"}
+{"files":["README.md",".gitignore"],"verifyCommand":"cargo test && cargo clippy -- -D warnings && (cd frontend && pnpm exec tsc --noEmit && pnpm build)","acceptanceCriteria":["README covers prerequisites, setup, dev commands, env vars and the sqlx prepare rule",".sqlx is tracked by git","cargo test green and clippy clean with captured output","web tsc and build clean with captured output","deleting data/ and running cargo run recreates and migrates the database"],"modelTier":"mechanical"}
 ```
 
 ---
@@ -2296,10 +2296,10 @@ git commit -m "docs: dev runbook for part 1"
 cargo test                                   # health, schema, modules, decks, error unit tests
 cargo clippy -- -D warnings
 SQLX_OFFLINE=true cargo build                # proves the committed query cache is current
-cd frontend && npx tsc --noEmit && npm run build
+cd frontend && pnpm exec tsc --noEmit && pnpm build
 ```
 
-**Manual browser pass** (`cargo run` + `npm run dev`, open `http://localhost:5273/decks`)
+**Manual browser pass** (`cargo run` + `pnpm dev`, open `http://localhost:5273/decks`)
 
 1. Empty state renders with guidance.
 2. Create module "COS781" → appears as a group heading.

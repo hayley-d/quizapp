@@ -5,7 +5,8 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 ## Prerequisites
 
 - Rust toolchain (this machine runs a standalone nightly; there is no `rust-toolchain.toml` pin)
-- Node 20+
+- Node 20+ and pnpm 11+ (`pnpm` is this project's package manager; `packageManager` in
+  frontend/package.json pins it so corepack cannot silently fall back to npm)
 - `cargo install sqlx-cli --no-default-features --features rustls,sqlite`
 
 ## First-time setup
@@ -13,12 +14,12 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
     mkdir -p data
     export DATABASE_URL="sqlite://data/quizapp.db?mode=rwc"
     cargo sqlx migrate run --source backend/migrations
-    cd frontend && npm install && cd ..
+    cd frontend && pnpm install && cd ..
 
 ## Running (two terminals)
 
     cargo run                 # API on http://127.0.0.1:3000
-    cd frontend && npm run dev     # UI on http://localhost:5273 (proxies /api)
+    cd frontend && pnpm dev     # UI on http://localhost:5273 (proxies /api)
 
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
@@ -47,7 +48,7 @@ cache is stale. Re-run `cargo sqlx prepare --workspace`.
 
     cargo test                        # unit + API integration (temp SQLite per test)
     cargo clippy -- -D warnings
-    cd frontend && npx tsc --noEmit && npm run build
+    cd frontend && pnpm exec tsc --noEmit && pnpm build
 
 Frontend has no test framework by design (see the spec's non-goals).
 
