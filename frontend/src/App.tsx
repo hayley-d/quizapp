@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
 import { StubPage } from '@/pages/StubPage'
+import { DecksPage } from '@/pages/DecksPage'
 
 export default function App() {
   return (
@@ -8,10 +9,7 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/decks" replace />} />
-          <Route
-            path="/decks"
-            element={<StubPage title="Decks" note="Deck management arrives in Task 7." />}
-          />
+          <Route path="/decks" element={<DecksPage />} />
           <Route
             path="/study"
             element={<StubPage title="Study" note="Session modes arrive in part 3." />}
