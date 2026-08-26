@@ -78,6 +78,10 @@ in practice (e.g. "COS781 Test 1"). Decks optionally belong to a **module** (e.g
 so decks for one subject can be studied together. `decks.module_id` is nullable: a deck
 need not belong to a module.
 
+Deck names are unique within a module, and unique among the decks that belong to no
+module. Creating a duplicate is rejected with a conflict rather than silently allowed —
+two decks called "Test 1" in the same module would be indistinguishable while revising.
+
 Study sessions select one or more decks, or a whole module (which expands to its decks).
 
 ### Card kinds
@@ -278,4 +282,8 @@ over hand-written cards.
 5. Mock test mode and results screen
 6. Stats
 7. SM-2 scheduling
-8. Embed the bundle into the binary; LAN binding; phone layout pass
+8. Embed the bundle into the binary; LAN binding; phone layout pass — including
+   vendoring the Quicksand and Inter woff2 files locally. Part 1 loads them from Google
+   Fonts, which silently falls back to the system stack whenever the machine is offline or
+   a phone on the LAN cannot reach Google. Embedding the bundle for phone use is exactly
+   when that stops being acceptable.
