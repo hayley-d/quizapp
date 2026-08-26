@@ -397,3 +397,36 @@ async fn bad_query_values_are_rejected_on_their_own_field() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["fields"][0]["field"], "deck_id");
 }
+
+#[tokio::test]
+async fn archived_filter_defaults_to_excluding_and_all_returns_both() {
+    // No archive endpoint exists yet (Task 5), so the archived flag is set
+    // directly against the pool — the same pattern `count`/`schedule_for`
+    // already use to reach tables/columns the HTTP surface doesn't expose.
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+
+    let (_, live) = app.post("/api/cards", mc(d)).await;
+    let live_id = live["id"].as_i64().unwrap();
+    let (_, archived) = app.post("/api/cards", mc(d)).await;
+    let archived_id = archived["id"].as_i64().unwrap();
+
+    sqlx::query("UPDATE cards SET archived = 1 WHERE id = ?")
+        .bind(archived_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (_, default_list) = app.get(&format!("/api/cards?deck_id={d}")).await;
+    let rows = default_list.as_array().unwrap();
+    assert_eq!(rows.len(), 1, "default excludes the archived card");
+    assert_eq!(rows[0]["id"], live_id);
+
+    let (_, only_archived) = app.get(&format!("/api/cards?deck_id={d}&archived=true")).await;
+    let rows = only_archived.as_array().unwrap();
+    assert_eq!(rows.len(), 1, "archived=true returns only the archived card");
+    assert_eq!(rows[0]["id"], archived_id);
+
+    let (_, both) = app.get(&format!("/api/cards?deck_id={d}&archived=all")).await;
+    assert_eq!(both.as_array().unwrap().len(), 2, "archived=all returns both");
+}

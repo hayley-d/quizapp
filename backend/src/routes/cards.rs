@@ -296,10 +296,16 @@ async fn list(
         )]));
     }
 
-    // Oldest first: a deck reads in the order it was written. The id tiebreak
-    // is load-bearing, not decoration — timestamps have one-second resolution,
-    // so a burst of save-and-next cards all share a created_at and would
-    // otherwise come back in SQLite's incidental scan order.
+    // Oldest first: a deck reads in the order it was written. Timestamps have
+    // one-second resolution, so a burst of save-and-next cards all share a
+    // created_at and the `id ASC` tiebreak is needed to put them back in
+    // authoring order. On this schema/engine no black-box test can actually
+    // discriminate it: cards.id is the rowid, every INSERT assigns it in true
+    // insertion order, and SQLite scans a rowid B-tree (or the trailing-rowid
+    // idx_cards_deck_archived index) in ascending rowid order regardless, so
+    // ties already coincide with `id ASC` without it being named. It is kept
+    // anyway as a determinism guarantee against a future index or query-plan
+    // change that would break that coincidence.
     let rows = sqlx::query_as!(
         CardSummaryDto,
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
