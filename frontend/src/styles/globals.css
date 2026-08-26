@@ -1,0 +1,92 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@theme {
+  --font-display: 'Quicksand', ui-rounded, system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --radius: 0.9rem;
+}
+
+/* Bibble — light base: pale aqua and lilac */
+:root {
+  --background: oklch(0.98 0.015 200);
+  --foreground: oklch(0.28 0.045 265);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.62 0.13 195);           /* turquoise */
+  --primary-foreground: oklch(0.99 0.01 200);
+  --secondary: oklch(0.94 0.035 290);        /* lilac */
+  --secondary-foreground: oklch(0.30 0.06 285);
+  --accent: oklch(0.68 0.19 335);            /* magenta */
+  --accent-foreground: oklch(0.99 0.01 330);
+  --muted: oklch(0.95 0.02 220);
+  --muted-foreground: oklch(0.50 0.03 255);
+  --success: oklch(0.80 0.14 88);            /* gold — correct answers */
+  --success-foreground: oklch(0.25 0.05 80);
+  --destructive: oklch(0.58 0.20 20);
+  --destructive-foreground: oklch(0.99 0.01 20);
+  --border: oklch(0.90 0.02 230);
+  --input: var(--border);
+  --ring: var(--primary);
+}
+
+/* Bibble — dark base (primary): deep twilight */
+.dark {
+  --background: oklch(0.20 0.045 275);
+  --foreground: oklch(0.94 0.02 220);
+  --card: oklch(0.25 0.05 275);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.25 0.05 275);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.78 0.14 190);
+  --primary-foreground: oklch(0.18 0.04 270);
+  --secondary: oklch(0.34 0.06 290);
+  --secondary-foreground: oklch(0.94 0.02 290);
+  --accent: oklch(0.72 0.20 335);
+  --accent-foreground: oklch(0.16 0.04 330);
+  --muted: oklch(0.29 0.04 275);
+  --muted-foreground: oklch(0.72 0.03 250);
+  --success: oklch(0.84 0.15 88);
+  --success-foreground: oklch(0.20 0.05 80);
+  --destructive: oklch(0.65 0.19 22);
+  --destructive-foreground: oklch(0.16 0.04 20);
+  --border: oklch(0.34 0.04 275);
+  --input: var(--border);
+  --ring: var(--primary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+  h1, h2, h3, .font-display { font-family: var(--font-display); }
+}
