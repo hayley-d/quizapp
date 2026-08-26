@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE decks SET module_id = ?, name = ?, description = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "1873c0dda1a4f3b9b476719d11c6ca379c6a6b639b9f3984e3fc07daa5a16d6b"
+}
