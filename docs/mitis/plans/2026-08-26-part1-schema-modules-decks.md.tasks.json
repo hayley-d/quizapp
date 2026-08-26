@@ -73,12 +73,12 @@
       "id": 7,
       "subject": "Task 8: Dev runbook and Part 1 verification",
       "activeForm": "Writing the dev runbook and verifying Part 1",
-      "status": "in_progress",
+      "status": "completed",
       "description": "**Goal:** A README anyone can follow to run the app, plus one recorded end-to-end pass over Part 1.\n\n**Files:**\n- Create: `README.md`\n- Modify: `.gitignore` (ensure `.sqlx` is NOT ignored)\n\n**Acceptance Criteria:**\n- [ ] README documents prerequisites, first-time setup, the two dev commands, env vars, and the `cargo sqlx prepare` rule after any SQL change\n- [ ] `cargo test` green, `cargo clippy -- -D warnings` clean, `cd frontend && pnpm exec tsc --noEmit && pnpm build` clean \u2014 all four outputs captured\n- [ ] Fresh-clone simulation works: delete `data/`, `cargo run`, DB recreated and migrated, /decks still loads\n\n**Verify:** `cargo test && cargo clippy -- -D warnings && (cd frontend && pnpm exec tsc --noEmit && pnpm build)` \u2192 all succeed; plus the fresh-`data/` check\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 8: Dev runbook and Part 1 verification\"\n\n```json:metadata\n{\n  \"files\": [\n    \"README.md\",\n    \".gitignore\"\n  ],\n  \"verifyCommand\": \"cargo test && cargo clippy -- -D warnings && (cd frontend && pnpm exec tsc --noEmit && pnpm build)\",\n  \"acceptanceCriteria\": [\n    \"README covers prerequisites, setup, dev commands, env vars and the sqlx prepare rule\",\n    \".sqlx is tracked by git\",\n    \"cargo test green and clippy clean with captured output\",\n    \"web tsc and build clean with captured output\",\n    \"deleting data/ and running cargo run recreates and migrates the database\"\n  ],\n  \"modelTier\": \"mechanical\"\n}\n```",
       "blockedBy": [
         6
       ]
     }
   ],
-  "lastUpdated": "2026-08-26T14:00:00Z"
+  "lastUpdated": "2026-08-26T14:40:00Z"
 }
