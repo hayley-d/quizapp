@@ -1,3 +1,8 @@
+// Shared test harness compiled fresh into every integration-test binary; a
+// given binary only ever exercises a subset of TestApp's helpers, so clippy
+// would otherwise flag the rest as dead_code in that binary.
+#![allow(dead_code)]
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
