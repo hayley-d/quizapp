@@ -156,23 +156,28 @@ mod tests {
         assert!(body.fields.is_empty());
     }
 
-    /// A real SQLite foreign-key violation. `sqlx`'s `DatabaseError` cannot be
-    /// constructed by hand, so provoke one.
-    fn fk_error() -> AppError {
+    /// Helper to create an in-memory SQLite connection for provocation tests.
+    async fn in_memory_db() -> sqlx::sqlite::SqliteConnection {
         use sqlx::sqlite::SqliteConnectOptions;
         use sqlx::ConnectOptions;
 
+        SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .connect()
+            .await
+            .unwrap()
+    }
+
+    /// A real SQLite foreign-key violation. `sqlx`'s `DatabaseError` cannot be
+    /// constructed by hand, so provoke one.
+    fn fk_error() -> AppError {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async {
-                let mut conn = SqliteConnectOptions::new()
-                    .in_memory(true)
-                    .foreign_keys(true)
-                    .connect()
-                    .await
-                    .unwrap();
+                let mut conn = in_memory_db().await;
                 sqlx::query("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
                     .execute(&mut conn).await.unwrap();
                 sqlx::query(
@@ -185,13 +190,42 @@ mod tests {
             })
     }
 
+    /// A real SQLite unique-constraint violation. Used to verify that `fk_as` leaves
+    /// non-FK database errors untouched.
+    fn unique_violation() -> AppError {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let mut conn = in_memory_db().await;
+                sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT UNIQUE)")
+                    .execute(&mut conn).await.unwrap();
+                sqlx::query("INSERT INTO items (name) VALUES ('test')")
+                    .execute(&mut conn).await.unwrap();
+                let err = sqlx::query("INSERT INTO items (name) VALUES ('test')")
+                    .execute(&mut conn).await.unwrap_err();
+                assert!(err.as_database_error().unwrap().is_unique_violation());
+                AppError::Db(err)
+            })
+    }
+
     #[test]
     fn fk_as_leaves_non_fk_errors_alone() {
+        // Test with Validation error
         let err = AppError::validation([("name", "Name must not be empty")])
             .fk_as("deck_id", "That deck does not exist");
         let (status, body) = err.parts();
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(body.fields[0].field, "name", "fk_as must not rewrite other errors");
+        assert_eq!(body.fields[0].field, "name", "fk_as must not rewrite Validation errors");
+
+        // Test with UNIQUE constraint violation to prove the guard checks specifically
+        // for FK violations, not all Db errors
+        let (status, body) = unique_violation()
+            .fk_as("deck_id", "That deck does not exist")
+            .parts();
+        assert_eq!(status, StatusCode::CONFLICT, "fk_as must not rewrite UNIQUE violations");
+        assert_eq!(body.error, "conflict");
     }
 
     #[test]
