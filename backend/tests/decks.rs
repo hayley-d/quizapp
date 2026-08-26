@@ -54,6 +54,29 @@ async fn empty_name_is_rejected() {
 }
 
 #[tokio::test]
+async fn name_is_trimmed_on_create_and_patch() {
+    let app = common::spawn_app().await;
+    let (status, created) = app.post("/api/decks", json!({"name": "  Padded  "})).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["name"], "Padded");
+
+    let id = created["id"].as_i64().unwrap();
+    let (status, patched) = app
+        .patch(&format!("/api/decks/{id}"), json!({"name": "  Patched  "}))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(patched["name"], "Patched");
+}
+
+#[tokio::test]
+async fn unparseable_module_id_filter_is_422() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.get("/api/decks?module_id=abc").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "module_id");
+}
+
+#[tokio::test]
 async fn filter_by_module_and_by_none() {
     let app = common::spawn_app().await;
     let mid = module(&app, "COS781").await;
@@ -70,6 +93,31 @@ async fn filter_by_module_and_by_none() {
     let (_, unparented) = app.get("/api/decks?module_id=none").await;
     assert_eq!(unparented.as_array().unwrap().len(), 1);
     assert_eq!(unparented[0]["name"], "Loose");
+}
+
+#[tokio::test]
+async fn unfiltered_list_orders_by_module_then_deck_name_case_insensitively() {
+    let app = common::spawn_app().await;
+    // BINARY collation would sort "Banana" before "apple" (uppercase < all
+    // lowercase); NOCASE sorts "apple" before "Banana". These names only
+    // agree with each other under NOCASE, so this test can actually detect
+    // the collation being dropped.
+    let banana = module(&app, "Banana").await;
+    let apple = module(&app, "apple").await;
+    app.post("/api/decks", json!({"module_id": banana, "name": "Deck B"})).await;
+    app.post("/api/decks", json!({"module_id": apple, "name": "Deck A"})).await;
+    app.post("/api/decks", json!({"name": "Loose"})).await;
+
+    let (_, all) = app.get("/api/decks").await;
+    let names: Vec<&str> = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["name"].as_str().unwrap())
+        .collect();
+    // NULL module names sort first in SQLite, then modules NOCASE-ordered:
+    // apple, Banana.
+    assert_eq!(names, vec!["Loose", "Deck A", "Deck B"]);
 }
 
 #[tokio::test]
@@ -116,10 +164,12 @@ async fn duplicate_name_in_module_conflicts() {
     let app = common::spawn_app().await;
     let mid = module(&app, "COS781").await;
     app.post("/api/decks", json!({"module_id": mid, "name": "Test 1"})).await;
-    let (status, _) = app
+    let (status, body) = app
         .post("/api/decks", json!({"module_id": mid, "name": "Test 1"}))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "conflict");
+    assert_eq!(body["fields"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]
