@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, type Deck, type DeckSort, type Module, type ModuleFilter } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { ModuleDialog } from '@/components/ModuleDialog'
 import { DeckDialog } from '@/components/DeckDialog'
+import { DeckCard } from '@/components/DeckCard'
 
 const ALL = 'all'
 const NONE = 'none'
@@ -88,13 +88,16 @@ export function DecksPage() {
         <h1 className="font-display text-2xl font-bold">Decks</h1>
         <div className="flex gap-2">
           <ModuleDialog onSaved={() => { void loadModules(); void loadDecks() }} />
-          <Button onClick={() => setEditing('new')}>New deck</Button>
+          <Button className="h-10 px-4" onClick={() => setEditing('new')}>
+            <Plus className="size-4" />
+            Create deck
+          </Button>
         </div>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Input
-          className="sm:max-w-xs"
+          className="h-10 min-w-0 flex-1"
           placeholder="Search deck names…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -105,7 +108,7 @@ export function DecksPage() {
             setModuleFilter(v === ALL || v === NONE ? (v as ModuleFilter) : Number(v))
           }
         >
-          <SelectTrigger className="sm:w-52"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="data-[size=default]:h-10 sm:w-52"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All modules</SelectItem>
             <SelectItem value={NONE}>No module</SelectItem>
@@ -115,7 +118,7 @@ export function DecksPage() {
           </SelectContent>
         </Select>
         <Select value={sort} onValueChange={(v) => setSort(v as DeckSort)}>
-          <SelectTrigger className="sm:w-44"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="data-[size=default]:h-10 sm:w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="newest">Newest first</SelectItem>
             <SelectItem value="oldest">Oldest first</SelectItem>
@@ -140,41 +143,14 @@ export function DecksPage() {
         )
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         {decks.map((d) => (
-          <Card key={d.id}>
-            <CardHeader className="flex flex-row items-start justify-between gap-2">
-              <div className="space-y-1">
-                <CardTitle className="font-display text-base">{d.name}</CardTitle>
-                <div className="flex items-center gap-2">
-                  {d.module_id === null ? (
-                    <Badge variant="outline" className="text-muted-foreground">
-                      No module
-                    </Badge>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setModuleFilter(d.module_id as number)}
-                      title={`Filter by ${d.module_name}`}
-                    >
-                      <Badge variant="secondary">{d.module_name}</Badge>
-                    </button>
-                  )}
-                  <span className="text-sm text-muted-foreground">
-                    {d.card_count} card{d.card_count === 1 ? '' : 's'}
-                  </span>
-                </div>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setEditing(d)}>
-                Edit
-              </Button>
-            </CardHeader>
-            {d.description && (
-              <CardContent className="text-sm text-muted-foreground">
-                {d.description}
-              </CardContent>
-            )}
-          </Card>
+          <DeckCard
+            key={d.id}
+            deck={d}
+            onEdit={() => setEditing(d)}
+            onFilterModule={setModuleFilter}
+          />
         ))}
       </div>
 

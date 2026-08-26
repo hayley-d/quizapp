@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,10 @@ export function ModuleDialog({ onSaved }: { onSaved: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="secondary">New module</Button>
+        <Button className="h-10 bg-[var(--deck-card-header)] px-4 text-white hover:bg-[var(--deck-card-header)] hover:brightness-110">
+          <Plus className="size-4" />
+          Create module
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle className="font-display">New module</DialogTitle></DialogHeader>

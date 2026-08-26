@@ -32,6 +32,14 @@
   --ring: var(--primary);
 }
 
+/* Deck card. The body tracks --primary so cards and primary buttons are the same
+   turquoise in both themes; the band and chip are fixed brand colours from Figma. */
+:root, .dark {
+  --deck-card: var(--primary);
+  --deck-card-header: rgb(211 112 224 / 0.7);
+  --deck-card-chip: rgb(27 31 57 / 0.7);
+}
+
 /* Bibble — dark base (primary): deep twilight */
 .dark {
   --background: oklch(0.20 0.045 275);
