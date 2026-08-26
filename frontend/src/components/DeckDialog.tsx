@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { api, ApiError, type Deck, type Module } from '@/lib/api'
+import { api, ApiError, type Deck, type Module, type UpdateDeckInput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -38,7 +38,7 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
     setErrors({})
     try {
       if (deck) {
-        const patch: Record<string, unknown> = {}
+        const patch: UpdateDeckInput = {}
         if (name !== deck.name) patch.name = name
         if (selectedModuleId !== deck.module_id) patch.module_id = selectedModuleId
         if (description !== deck.description) patch.description = description

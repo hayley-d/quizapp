@@ -42,6 +42,12 @@ export type Deck = {
   card_count: number
 }
 
+export type UpdateDeckInput = Partial<{
+  name: string
+  module_id: number | null
+  description: string
+}>
+
 export const api = {
   listModules: () => request<Module[]>('GET', '/modules'),
   createModule: (name: string) => request<Module>('POST', '/modules', { name }),
@@ -50,8 +56,6 @@ export const api = {
     request<Deck>('POST', '/decks', input),
   // Only send keys the user actually changed — an absent module_id means
   // "leave it alone" on the server, while null means "unparent".
-  updateDeck: (
-    id: number,
-    patch: Partial<{ name: string; module_id: number | null; description: string }>,
-  ) => request<Deck>('PATCH', `/decks/${id}`, patch),
+  updateDeck: (id: number, patch: UpdateDeckInput) =>
+    request<Deck>('PATCH', `/decks/${id}`, patch),
 }

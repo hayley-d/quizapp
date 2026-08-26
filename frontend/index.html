@@ -6,9 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>quizapp</title>
     <script>
-      if (!window.matchMedia('(prefers-color-scheme: light)').matches) {
-        document.documentElement.classList.add('dark')
-      }
+      (function () {
+        var media = window.matchMedia('(prefers-color-scheme: light)')
+        function applyTheme(isLight) {
+          document.documentElement.classList.toggle('dark', !isLight)
+        }
+        applyTheme(media.matches)
+        // No `addListener`/`removeListener` fallback: this app only targets
+        // browsers new enough to already need `import.meta.dirname` (vite.config.ts).
+        media.addEventListener('change', function (e) {
+          applyTheme(e.matches)
+        })
+      })()
     </script>
   </head>
   <body>
