@@ -22,7 +22,7 @@
       "id": 2,
       "subject": "Task 3: Structured AppError",
       "activeForm": "Implementing the structured error type",
-      "status": "in_progress",
+      "status": "completed",
       "description": "**Goal:** One `AppError` that every handler returns, serialising to the single error envelope with inline-renderable `fields`.\n\n**Files:**\n- Create/replace: `backend/src/error.rs`\n- Test: `backend/src/error.rs` (`#[cfg(test)]` unit tests \u2014 pure serialisation, no DB)\n\n**Acceptance Criteria:**\n- [ ] `AppError::Validation` \u2192 422 with a populated `fields` array\n- [ ] `AppError::NotFound` \u2192 404, `AppError::Conflict` \u2192 409, both with `fields: []`\n- [ ] A sqlx UNIQUE-constraint error converts to Conflict, not a 500\n- [ ] A sqlx foreign-key violation converts to 422 with a `module_id` field error\n- [ ] Any other `sqlx::Error` \u2192 500 with a generic message; the real error is logged, not returned\n\n**Verify:** `cargo test error::` \u2192 pass\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 3: Structured AppError\"\n\n```json:metadata\n{\n  \"files\": [\n    \"backend/src/error.rs\"\n  ],\n  \"verifyCommand\": \"cargo test error:: && cargo clippy -- -D warnings\",\n  \"acceptanceCriteria\": [\n    \"Validation maps to 422 with populated fields\",\n    \"NotFound 404 and Conflict 409 with empty fields\",\n    \"sqlx unique violation maps to 409 not 500\",\n    \"sqlx foreign key violation maps to 422 with a module_id field error\",\n    \"other sqlx errors map to 500 with a generic message and are logged\"\n  ],\n  \"modelTier\": \"mechanical\"\n}\n```",
       "blockedBy": [
         1
@@ -32,7 +32,7 @@
       "id": 3,
       "subject": "Task 4: Modules API",
       "activeForm": "Implementing the modules API",
-      "status": "pending",
+      "status": "in_progress",
       "description": "**Goal:** GET /api/modules and POST /api/modules work, validate, and are covered by integration tests.\n\n**Files:**\n- Create: `backend/src/routes/modules.rs`, `backend/tests/modules.rs`\n- Modify: `backend/src/routes/mod.rs` (merge the router)\n\n**Acceptance Criteria:**\n- [ ] GET /api/modules \u2192 200 with modules ordered by name, each {id, name, created_at, deck_count}\n- [ ] POST /api/modules with {\"name\":\"COS781\"} \u2192 201 and the created module\n- [ ] Empty or whitespace-only name \u2192 422 with a `name` field error\n- [ ] Duplicate name \u2192 409\n- [ ] Names are trimmed before insert\n\n**Verify:** `cargo test --test modules` \u2192 all pass\n\nFull steps with code: `docs/mitis/plans/2026-08-26-part1-schema-modules-decks.md` \u2192 \"Task 4: Modules API\"\n\n```json:metadata\n{\n  \"files\": [\n    \"backend/src/routes/modules.rs\",\n    \"backend/src/routes/mod.rs\",\n    \"backend/tests/modules.rs\"\n  ],\n  \"verifyCommand\": \"cargo test --test modules && cargo clippy -- -D warnings\",\n  \"acceptanceCriteria\": [\n    \"GET /api/modules returns modules ordered by name with deck_count\",\n    \"POST /api/modules returns 201 with the created module\",\n    \"empty or whitespace name returns 422 with a name field error\",\n    \"duplicate name returns 409\",\n    \"names are trimmed before insert\"\n  ],\n  \"modelTier\": \"standard\"\n}\n```",
       "blockedBy": [
         2
@@ -80,5 +80,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-26T12:00:00Z"
+  "lastUpdated": "2026-08-26T12:20:00Z"
 }
