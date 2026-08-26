@@ -147,6 +147,10 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
         .map(|a| AcceptedInput { text: a.text.trim().to_string(), ..a })
         .collect();
 
+    // Inside each arm below: cardinality errors (`choices`/`accepted` as a
+    // whole) are pushed BEFORE the per-row errors (`choices[i].text_md` etc)
+    // ON PURPOSE — several tests assert on `fields[0]`. Reordering the
+    // `push` calls within an arm will silently break those tests.
     match input.kind.as_str() {
         "mc_single" => {
             if choices.len() < 2 {
@@ -267,7 +271,14 @@ async fn create(
 
     // Card, children and schedule row go in together or not at all: a card
     // without its choices is unanswerable, and one without a schedule row
-    // would need a migration when SM-2 lands.
+    // would need a migration when SM-2 lands. Note: `validate` above already
+    // rejects every malformed body before this transaction opens, so there is
+    // currently no reachable path where a child or schedule insert fails
+    // after the card row has been written — the only failure inside the
+    // transaction today is the deck_id foreign key on the very first insert.
+    // The transaction still guards future code paths (and keeps the three
+    // writes atomic if that changes), but no test today exercises a rollback
+    // of a partial write; see the comment on `a_rejected_create_writes_nothing`.
     let id = sqlx::query_scalar!(
         r#"INSERT INTO cards (deck_id, kind, prompt_md, answer_md, explanation_md)
            VALUES (?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,

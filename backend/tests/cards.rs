@@ -143,6 +143,38 @@ async fn short_answer_needs_one_primary() {
 }
 
 #[tokio::test]
+async fn short_answer_needs_at_least_one_accepted_answer() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+
+    let (status, body) = app
+        .post("/api/cards", json!({
+            "deck_id": d, "kind": "short_answer", "prompt_md": "p",
+            "accepted": []
+        }))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "accepted");
+}
+
+#[tokio::test]
+async fn empty_accepted_text_names_its_row() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+
+    let (status, body) = app
+        .post("/api/cards", json!({
+            "deck_id": d, "kind": "short_answer", "prompt_md": "p",
+            "accepted": [ { "text": "a", "is_primary": true },
+                          { "text": "   ", "is_primary": false } ]
+        }))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "accepted[1].text",
+               "the editor highlights the offending row, not the whole list");
+}
+
+#[tokio::test]
 async fn flashcard_needs_an_answer() {
     let app = common::spawn_app().await;
     let d = deck(&app, "Test 1").await;
@@ -212,7 +244,16 @@ async fn every_created_card_gets_a_schedule_row() {
 }
 
 #[tokio::test]
-async fn a_rejected_create_leaves_nothing_behind() {
+async fn a_rejected_create_writes_nothing() {
+    // NB despite the name this only proves that no write is *attempted* for
+    // a body that fails `validate` — `validate` runs before `st.pool.begin()`,
+    // so a validation failure never opens a transaction at all. It cannot
+    // distinguish "nothing was ever written" from "a partial write was rolled
+    // back", because there is currently no reachable path where a child or
+    // schedule insert fails after the card row has already been written
+    // (all child data is validated up front). The transaction's rollback
+    // path is real and still worth having for future code paths, but it is
+    // not exercised by this test.
     let app = common::spawn_app().await;
     let d = deck(&app, "Test 1").await;
 
@@ -243,8 +284,39 @@ async fn get_returns_the_full_card_and_404s_on_unknown() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(card["id"], id);
     assert_eq!(card["choices"].as_array().unwrap().len(), 2);
-    assert_eq!(card["choices"][0]["text_md"], "Single", "children in position order");
 
     let (status, _) = app.get("/api/cards/9999").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// Discriminates `ORDER BY position` from `ORDER BY id` / natural rowid
+/// order. For a freshly-created card the two orderings coincide (position is
+/// assigned from array index at insert, so id and position are
+/// co-monotonic), so this inserts an extra choice directly against the pool
+/// with a LOWER position than the existing rows but, being inserted last, a
+/// HIGHER autoincrement id. Under `ORDER BY position` it sorts first; under
+/// id/rowid order it would sort last. That inversion is the whole point —
+/// don't "simplify" this fixture back to sequential ids and positions.
+#[tokio::test]
+async fn choices_come_back_in_position_order_not_id_order() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    // The two choices from `mc()` already have id/position 0/0 and 1/1.
+    // Insert a third with the highest id but position -1, so it must sort
+    // first under `ORDER BY position` and last under `ORDER BY id`.
+    sqlx::query("INSERT INTO choices (card_id, text_md, is_correct, position) VALUES (?, ?, ?, ?)")
+        .bind(id).bind("Inserted last, sorts first").bind(false).bind(-1)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (status, card) = app.get(&format!("/api/cards/{id}")).await;
+    assert_eq!(status, StatusCode::OK);
+    let choices = card["choices"].as_array().unwrap();
+    assert_eq!(choices.len(), 3);
+    assert_eq!(choices[0]["text_md"], "Inserted last, sorts first",
+               "highest id, lowest position: proves ordering is by position, not id");
 }
