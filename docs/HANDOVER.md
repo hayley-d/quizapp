@@ -143,7 +143,9 @@ placeholders break the binding.
 **PATCH distinguishes absent from null.** A key missing from the body means "leave
 unchanged"; an explicit `null` means "unparent". This is a hand-rolled `Option<Option<T>>`
 deserializer in `backend/src/routes/decks.rs`. The client must therefore send an explicit
-`null`, not omit the key — `JSON.stringify` drops `undefined` but keeps `null`.
+`null`, not omit the key — `JSON.stringify` drops `undefined` but keeps `null`. This is a
+decks convention, not a codebase-wide one: `PATCH /api/cards/:id` is a deliberate full
+replace where an absent optional MEANS null — see the doc comment on `cards::patch`.
 
 **Every failure returns the envelope** `{"error", "message", "fields"}` as
 `application/json`, `fields` being `[]` for non-validation errors. Malformed bodies go
@@ -171,8 +173,9 @@ connected on this machine, so no agent could drive a browser for either Part 1 o
 - Focus landing correctly after appending a row and after save-and-next
 - The `Cmd/Ctrl+Enter` fix in practice: pressing it from the last choice row must save
   without appending a phantom row
-- `DeckPage`'s blank body during initial load (`if (!deck) return null`) — whether the
-  flash-of-nothing is noticeable
+- Both `DeckPage` (`if (!deck) return null`) and `CardEditorPage` (`if (!loaded) return
+  null`) render a blank body during their initial load rather than a skeleton — whether the
+  flash-of-nothing is noticeable on either. One browser pass covers both.
 - Whether the deck detail page reads well at 100+ cards, which is what COS781 will actually
   be. If not, the kind filter and prompt search deferred out of Task 4 are the fix.
 - Still outstanding from Part 1: the OS theme toggle actually swapping the Bibble light/dark
@@ -194,6 +197,16 @@ connected on this machine, so no agent could drive a browser for either Part 1 o
   sqlx unique-violation path.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
+- `AppError::fk_as` takes `&str` while `AppError::validation` is generic over `Into<String>`.
+  Both call sites pass literals; generalising it now would be churn.
+- `patch_unknown_card_is_404`'s `count(cards) == 0` assertion cannot fail — each test gets a
+  fresh empty database. Not a false claim, just an assertion carrying no weight; the 404
+  assertion above it is the real test.
+- `CardEditorPage` renders an inline error slot for `explanation_md`, which the validator
+  never emits. Dead but harmless; Part 2b may give it a use.
+- Duplicate accepted answers that normalise to the same key are accepted — `validate` does
+  not dedupe and `idx_accepted_card_normalised` is a plain, non-unique index. Harmless in
+  2a, but Part 3's grading lookup will meet it, so it belongs on the record now.
 
 ## Where the record lives
 

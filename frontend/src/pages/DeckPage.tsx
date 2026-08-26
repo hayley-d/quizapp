@@ -2,17 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArchiveRestore, Archive as ArchiveIcon, Pencil, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type CardKind, type CardSummary, type Deck } from '@/lib/api'
+import { api, KIND_LABEL, type CardSummary, type Deck } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-
-const KIND_LABEL: Record<CardKind, string> = {
-  mc_single: 'Multiple choice',
-  short_answer: 'Short answer',
-  flashcard: 'Flashcard',
-}
 
 function firstLine(promptMd: string): string {
   return promptMd.split('\n')[0]
@@ -28,7 +22,7 @@ export function DeckPage() {
   const [deck, setDeck] = useState<Deck | null>(null)
   const [cards, setCards] = useState<CardSummary[]>([])
   const [showArchived, setShowArchived] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
   const loadDeck = useCallback(
@@ -47,7 +41,11 @@ export function DeckPage() {
   )
 
   // One in-flight cards request at a time, mirroring DecksPage's stale-response guard.
+  // Deck refetches (triggered by archive/unarchive, below) get their own
+  // controller ref: sharing this one would let a deck refetch abort an
+  // in-flight cards request (or vice versa) when both fire together.
   const inFlight = useRef<AbortController | null>(null)
+  const deckInFlight = useRef<AbortController | null>(null)
 
   const loadCards = useCallback(async () => {
     if (deckId === null) return
@@ -86,13 +84,27 @@ export function DeckPage() {
 
   useEffect(() => { void loadCards() }, [loadCards])
 
-  // Cancel any in-flight cards request if the page unmounts.
-  useEffect(() => () => inFlight.current?.abort(), [])
+  // Cancel any in-flight cards/deck requests if the page unmounts.
+  useEffect(() => () => {
+    inFlight.current?.abort()
+    deckInFlight.current?.abort()
+  }, [])
+
+  // Archive/unarchive can change the deck's card_count (it deliberately
+  // excludes archived cards), so the header must refetch alongside the list —
+  // otherwise it shows a stale count until a full navigation.
+  function reloadDeck() {
+    deckInFlight.current?.abort()
+    const controller = new AbortController()
+    deckInFlight.current = controller
+    void loadDeck(controller.signal)
+  }
 
   async function archive(card: CardSummary) {
     try {
       await api.archiveCard(card.id)
       void loadCards()
+      reloadDeck()
     } catch {
       toast.error('Could not archive card')
     }
@@ -102,6 +114,7 @@ export function DeckPage() {
     try {
       await api.unarchiveCard(card.id)
       void loadCards()
+      reloadDeck()
     } catch {
       toast.error('Could not unarchive card')
     }

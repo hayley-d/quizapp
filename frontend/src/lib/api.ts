@@ -75,6 +75,14 @@ function deckQueryString({ q, moduleId, sort }: DeckQuery): string {
 
 export type CardKind = 'mc_single' | 'short_answer' | 'flashcard'
 
+/** User-facing labels for each kind. Single source of truth — DeckPage's list
+ * badges and CardEditorPage's kind selector must not drift apart. */
+export const KIND_LABEL: Record<CardKind, string> = {
+  mc_single: 'Multiple choice',
+  short_answer: 'Short answer',
+  flashcard: 'Flashcard',
+}
+
 export type Choice = { id: number; text_md: string; is_correct: boolean; position: number }
 export type Accepted = { id: number; text: string; normalised: string; is_primary: boolean }
 

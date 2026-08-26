@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   api,
   ApiError,
+  KIND_LABEL,
   type AcceptedInput,
   type CardInput,
   type CardKind,
@@ -18,12 +19,6 @@ import {
 import { ChoicesEditor } from '@/components/card-editor/ChoicesEditor'
 import { AcceptedEditor } from '@/components/card-editor/AcceptedEditor'
 
-const KIND_LABEL: Record<CardKind, string> = {
-  mc_single: 'Multiple choice',
-  short_answer: 'Short answer',
-  flashcard: 'Flashcard',
-}
-
 function emptyChoices(): ChoiceInput[] {
   return [
     { text_md: '', is_correct: false },
@@ -31,8 +26,12 @@ function emptyChoices(): ChoiceInput[] {
   ]
 }
 
+// The single-accepted-answer case is the common one, so the first (and only)
+// row defaults to primary — otherwise the validator bounces the first save
+// with "Mark one answer as the primary wording" until the user clicks the
+// radio it would have had to pick anyway.
 function emptyAccepted(): AcceptedInput[] {
-  return [{ text: '', is_primary: false }]
+  return [{ text: '', is_primary: true }]
 }
 
 // `/cards/new` and `/cards/:id/edit` are stable routes: navigating from one
@@ -196,6 +195,23 @@ function CardEditorPageInner() {
     setErrors({})
   }
 
+  // The server can return a field error for the WRONG kind's field (e.g.
+  // `answer_md` on an mc_single card) — unreachable from this client today
+  // since buildInput() only ever sends kind-appropriate children, but if it
+  // ever happened the message would land in a block that isn't mounted and
+  // vanish silently. Render anything no other block claims, same spirit as
+  // the orphaned-indexed-error fallback in ChoicesEditor/AcceptedEditor.
+  const claimedErrorKeys = new Set(['kind', 'prompt_md', 'explanation_md', 'deck_id'])
+  if (kind === 'mc_single') claimedErrorKeys.add('choices')
+  if (kind === 'short_answer') claimedErrorKeys.add('accepted')
+  if (kind === 'flashcard') claimedErrorKeys.add('answer_md')
+  const unclaimedErrors = Object.entries(errors).filter(([key]) => {
+    if (claimedErrorKeys.has(key)) return false
+    if (kind === 'mc_single' && key.startsWith('choices[')) return false
+    if (kind === 'short_answer' && key.startsWith('accepted[')) return false
+    return true
+  })
+
   if (loadError) {
     return (
       <div className="space-y-2">
@@ -280,6 +296,10 @@ function CardEditorPageInner() {
           {errors.answer_md && <p className="text-sm text-destructive">{errors.answer_md}</p>}
         </div>
       )}
+
+      {unclaimedErrors.map(([key, msg]) => (
+        <p key={key} className="text-sm text-destructive">{msg}</p>
+      ))}
 
       <div className="space-y-2">
         <Label htmlFor="card-explanation">Explanation (optional)</Label>

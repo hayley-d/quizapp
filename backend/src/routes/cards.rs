@@ -78,7 +78,7 @@ pub struct AcceptedInput {
 }
 
 /// The editable content of a card. `POST` wraps this with a `deck_id`;
-/// `PATCH` (Task 5) uses it as-is and replaces the card wholesale.
+/// `patch` uses it as-is and replaces the card wholesale.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CardInput {
@@ -441,8 +441,9 @@ async fn create(
     Ok((StatusCode::CREATED, Json(fetch_full(&st.pool, id).await?)))
 }
 
-/// Inserts the kind-appropriate children. Task 5 reuses this after deleting
-/// the old ones, which is why it takes a transaction rather than a pool.
+/// Inserts the kind-appropriate children. Reused by `patch`, which deletes
+/// the old ones first and calls this again — which is why this takes a
+/// Transaction rather than a Pool.
 async fn write_children(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     card_id: i64,
