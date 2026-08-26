@@ -39,6 +39,24 @@ async fn name_is_trimmed_and_required() {
 async fn duplicate_name_conflicts() {
     let app = common::spawn_app().await;
     app.post("/api/modules", json!({"name": "COS781"})).await;
-    let (status, _) = app.post("/api/modules", json!({"name": "COS781"})).await;
+    let (status, body) = app.post("/api/modules", json!({"name": "COS781"})).await;
     assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "conflict");
+    assert_eq!(body["fields"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn list_is_ordered_by_name_case_insensitively() {
+    let app = common::spawn_app().await;
+    app.post("/api/modules", json!({"name": "beta"})).await;
+    app.post("/api/modules", json!({"name": "Alpha"})).await;
+
+    let (_, list) = app.get("/api/modules").await;
+    let names: Vec<&str> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["Alpha", "beta"]);
 }
