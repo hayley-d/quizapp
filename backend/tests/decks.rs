@@ -98,14 +98,19 @@ async fn filter_by_module_and_by_none() {
 #[tokio::test]
 async fn unfiltered_list_orders_by_module_then_deck_name_case_insensitively() {
     let app = common::spawn_app().await;
-    // BINARY collation would sort "Banana" before "apple" (uppercase < all
-    // lowercase); NOCASE sorts "apple" before "Banana". These names only
-    // agree with each other under NOCASE, so this test can actually detect
-    // the collation being dropped.
+    // Module key: BINARY collation would sort "Banana" before "apple"
+    // (uppercase < all lowercase); NOCASE sorts "apple" before "Banana".
+    //
+    // Deck-name key: within "apple", BINARY sorts "Zulu" before "zebra"
+    // ('Z'=0x5A < 'z'=0x7A); NOCASE sorts "zebra" before "Zulu". "Deck A"
+    // vs "Deck B" would NOT discriminate the second COLLATE NOCASE (both
+    // collations agree on them), so the second module needs its own pair
+    // that disagrees too.
     let banana = module(&app, "Banana").await;
     let apple = module(&app, "apple").await;
     app.post("/api/decks", json!({"module_id": banana, "name": "Deck B"})).await;
-    app.post("/api/decks", json!({"module_id": apple, "name": "Deck A"})).await;
+    app.post("/api/decks", json!({"module_id": apple, "name": "Zulu"})).await;
+    app.post("/api/decks", json!({"module_id": apple, "name": "zebra"})).await;
     app.post("/api/decks", json!({"name": "Loose"})).await;
 
     let (_, all) = app.get("/api/decks").await;
@@ -115,9 +120,9 @@ async fn unfiltered_list_orders_by_module_then_deck_name_case_insensitively() {
         .iter()
         .map(|d| d["name"].as_str().unwrap())
         .collect();
-    // NULL module names sort first in SQLite, then modules NOCASE-ordered:
-    // apple, Banana.
-    assert_eq!(names, vec!["Loose", "Deck A", "Deck B"]);
+    // NULL module names sort first in SQLite; then modules NOCASE-ordered
+    // (apple, Banana); within "apple", decks NOCASE-ordered (zebra, Zulu).
+    assert_eq!(names, vec!["Loose", "zebra", "Zulu", "Deck B"]);
 }
 
 #[tokio::test]
