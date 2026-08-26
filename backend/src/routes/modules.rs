@@ -5,6 +5,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::extract::AppJson;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -16,6 +17,7 @@ pub struct ModuleDto {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateModule {
     pub name: String,
 }
@@ -42,7 +44,7 @@ async fn list(State(st): State<AppState>) -> AppResult<Json<Vec<ModuleDto>>> {
 
 async fn create(
     State(st): State<AppState>,
-    Json(body): Json<CreateModule>,
+    AppJson(body): AppJson<CreateModule>,
 ) -> AppResult<(StatusCode, Json<ModuleDto>)> {
     let name = body.name.trim().to_string();
     if name.is_empty() {

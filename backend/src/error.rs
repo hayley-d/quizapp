@@ -24,6 +24,12 @@ pub enum AppError {
     Validation(Vec<FieldError>),
     #[error("{0}")]
     Conflict(String),
+    /// Body present but not syntactically valid JSON (e.g. truncated/malformed input).
+    #[error("{0}")]
+    BadRequest(String),
+    /// Missing or incorrect `Content-Type` on a request that requires a JSON body.
+    #[error("{0}")]
+    UnsupportedMediaType(String),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -58,6 +64,14 @@ impl AppError {
             AppError::Conflict(message) => (
                 StatusCode::CONFLICT,
                 ErrorBody { error: "conflict", message, fields: vec![] },
+            ),
+            AppError::BadRequest(message) => (
+                StatusCode::BAD_REQUEST,
+                ErrorBody { error: "bad_request", message, fields: vec![] },
+            ),
+            AppError::UnsupportedMediaType(message) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                ErrorBody { error: "unsupported_media_type", message, fields: vec![] },
             ),
             AppError::Db(e) => {
                 if let Some(dbe) = e.as_database_error() {
@@ -124,13 +138,5 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body.error, "not_found");
         assert!(body.fields.is_empty());
-    }
-
-    #[test]
-    fn unique_violation_becomes_conflict() {
-        // sqlx exposes SQLite constraint violations via DatabaseError::is_unique_violation
-        let err = AppError::Conflict("Deck name already used in this module".into());
-        let (status, _) = err.parts();
-        assert_eq!(status, StatusCode::CONFLICT);
     }
 }

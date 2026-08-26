@@ -5,6 +5,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::{AppError, AppResult};
+use crate::extract::AppJson;
 use crate::state::AppState;
 
 #[derive(Serialize)]
@@ -25,6 +26,7 @@ pub struct ListQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateDeck {
     pub name: String,
     #[serde(default)]
@@ -43,6 +45,7 @@ where
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PatchDeck {
     #[serde(default)]
     pub name: Option<String>,
@@ -142,13 +145,13 @@ async fn list(
 
 async fn create(
     State(st): State<AppState>,
-    Json(body): Json<CreateDeck>,
+    AppJson(body): AppJson<CreateDeck>,
 ) -> AppResult<(StatusCode, Json<DeckDto>)> {
     let name = body.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::validation([("name", "Name must not be empty")]));
     }
-    let description = body.description.unwrap_or_default();
+    let description = body.description.unwrap_or_default().trim().to_string();
 
     let id = sqlx::query_scalar!(
         "INSERT INTO decks (module_id, name, description) VALUES (?, ?, ?) RETURNING id",
@@ -165,7 +168,7 @@ async fn create(
 async fn patch(
     State(st): State<AppState>,
     Path(id): Path<i64>,
-    Json(body): Json<PatchDeck>,
+    AppJson(body): AppJson<PatchDeck>,
 ) -> AppResult<Json<DeckDto>> {
     // 404 before any write, so a bad id never touches the row.
     let current = fetch_one(&st.pool, id).await?;
@@ -184,7 +187,10 @@ async fn patch(
         Some(v) => v,              // present: Some(id) or None (unparent)
         None => current.module_id, // absent: leave alone
     };
-    let description = body.description.unwrap_or(current.description);
+    let description = match body.description {
+        Some(d) => d.trim().to_string(),
+        None => current.description,
+    };
 
     sqlx::query!(
         "UPDATE decks SET module_id = ?, name = ?, description = ? WHERE id = ?",

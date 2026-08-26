@@ -69,6 +69,45 @@ async fn name_is_trimmed_on_create_and_patch() {
 }
 
 #[tokio::test]
+async fn description_is_trimmed_on_create_and_patch() {
+    let app = common::spawn_app().await;
+    let (status, created) = app
+        .post("/api/decks", json!({"name": "Test 1", "description": "  padded  "}))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["description"], "padded");
+
+    let id = created["id"].as_i64().unwrap();
+    let (status, patched) = app
+        .patch(&format!("/api/decks/{id}"), json!({"description": "  patched  "}))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(patched["description"], "patched");
+}
+
+#[tokio::test]
+async fn unknown_field_on_create_is_rejected() {
+    let app = common::spawn_app().await;
+    let (status, body) = app
+        .post("/api/decks", json!({"name": "T2", "module_id": null, "bogus": true}))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"], "validation");
+}
+
+#[tokio::test]
+async fn unknown_field_on_patch_is_rejected() {
+    let app = common::spawn_app().await;
+    let (_, created) = app.post("/api/decks", json!({"name": "T1"})).await;
+    let id = created["id"].as_i64().unwrap();
+    let (status, body) = app
+        .patch(&format!("/api/decks/{id}"), json!({"moduleId": 999}))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"], "validation");
+}
+
+#[tokio::test]
 async fn unparseable_module_id_filter_is_422() {
     let app = common::spawn_app().await;
     let (status, body) = app.get("/api/decks?module_id=abc").await;

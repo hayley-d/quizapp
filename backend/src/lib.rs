@@ -1,6 +1,7 @@
 pub mod config;
 pub mod db;
 pub mod error;   // added in Task 3
+pub mod extract;
 pub mod routes;
 pub mod state;
 
