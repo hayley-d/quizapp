@@ -56,7 +56,7 @@ Four facts that make this correct, each of which is a bug if missed:
 
 1. **Use plain `?` placeholders, repeated — not `?1`/`?2`.** The sqlx macro counts
    parameters by occurrence, so numbered placeholders confuse it. Bind the same value
-   twice where it appears twice. Order is: `q, q, mode, mode, module_id, sort, sort`.
+   twice where it appears twice. Order is: `q, q, mode, mode, module_id, sort, sort, sort, sort` — nine binds.
 2. **`created_at` is now ISO-8601 `...Z` TEXT** (changed in Part 1's fix wave), which still
    sorts lexicographically as chronological. No date parsing anywhere.
 3. **The `id` tiebreak is mandatory AND must follow the sort direction.** Timestamps have
