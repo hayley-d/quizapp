@@ -430,3 +430,216 @@ async fn archived_filter_defaults_to_excluding_and_all_returns_both() {
     let (_, both) = app.get(&format!("/api/cards?deck_id={d}&archived=all")).await;
     assert_eq!(both.as_array().unwrap().len(), 2, "archived=all returns both");
 }
+
+#[tokio::test]
+async fn patch_replaces_content_and_bumps_updated_at() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    // Timestamps have one-second resolution (see cards.rs's own note on
+    // authoring order), so a create-then-patch inside the same wall-clock
+    // second would produce an equal updated_at even from a correct
+    // implementation. Sleep past a second boundary so the bump assertion
+    // below is a real assertion rather than a coin flip.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
+    let (status, updated) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "mc_single", "prompt_md": "Reworded prompt",
+            "explanation_md": "Now explained.",
+            "choices": [ { "text_md": "Average", "is_correct": true },
+                         { "text_md": "Ward",    "is_correct": false },
+                         { "text_md": "Single",  "is_correct": false } ]
+        }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["prompt_md"], "Reworded prompt");
+    assert_eq!(updated["explanation_md"], "Now explained.");
+    assert_eq!(updated["choices"].as_array().unwrap().len(), 3);
+    assert_eq!(updated["choices"][0]["text_md"], "Average");
+    assert_eq!(updated["choices"][0]["position"], 0, "positions are reassigned");
+    assert_eq!(app.count("SELECT COUNT(*) FROM choices").await, 3,
+               "the old two rows are gone, not orphaned");
+    assert_ne!(updated["updated_at"], created["updated_at"], "updated_at is bumped");
+}
+
+#[tokio::test]
+async fn changing_kind_clears_the_other_kind_s_children() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, flash) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "flashcard", "prompt_md": "p", "answer_md": "Single linkage"
+        }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(flash["kind"], "flashcard");
+    assert_eq!(flash["choices"].as_array().unwrap().len(), 0);
+    assert_eq!(app.count("SELECT COUNT(*) FROM choices").await, 0,
+               "orphaned choices would resurface if the kind changed back");
+
+    let (_, short) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "short_answer", "prompt_md": "p",
+            "accepted": [ { "text": "Single-Linkage", "is_primary": true } ]
+        }))
+        .await;
+    assert_eq!(short["accepted"][0]["normalised"], "single linkage");
+    assert!(short["answer_md"].is_null(), "the flashcard answer is cleared");
+    assert_eq!(app.count("SELECT COUNT(*) FROM accepted").await, 1,
+               "exactly the new accepted row, none orphaned");
+
+    // Move away from short_answer with an existing `accepted` row present, so
+    // a missing `DELETE FROM accepted` has something to orphan.
+    let (status, back_to_flash) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "flashcard", "prompt_md": "p", "answer_md": "Single linkage"
+        }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(back_to_flash["accepted"].as_array().unwrap().len(), 0);
+    assert_eq!(app.count("SELECT COUNT(*) FROM accepted").await, 0,
+               "orphaned accepted rows would resurface if the kind changed back");
+}
+
+#[tokio::test]
+async fn a_rejected_patch_changes_nothing() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, _) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "mc_single", "prompt_md": "Reworded",
+            "choices": [ { "text_md": "A", "is_correct": true },
+                         { "text_md": "B", "is_correct": true } ]
+        }))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let (_, after) = app.get(&format!("/api/cards/{id}")).await;
+    assert_eq!(after["prompt_md"], created["prompt_md"], "prompt untouched");
+    assert_eq!(after["updated_at"], created["updated_at"], "updated_at untouched");
+    assert_eq!(after["choices"].as_array().unwrap().len(), 2);
+    assert_eq!(after["choices"][0]["text_md"], "Single", "children untouched");
+    assert_eq!(after["choices"][1]["text_md"], "Complete", "children untouched");
+    assert_eq!(app.count("SELECT COUNT(*) FROM choices").await, 2,
+               "no new rows were ever written");
+}
+
+#[tokio::test]
+async fn patch_unknown_card_is_404() {
+    let app = common::spawn_app().await;
+    let (status, _) = app
+        .patch("/api/cards/9999", json!({
+            "kind": "flashcard", "prompt_md": "p", "answer_md": "a"
+        }))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(app.count("SELECT COUNT(*) FROM cards").await, 0,
+               "nothing was written for an unknown id");
+}
+
+#[tokio::test]
+async fn archive_hides_the_card_and_unarchive_restores_it() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, archived) = app.post(&format!("/api/cards/{id}/archive"), json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(archived["archived"], true);
+    assert_eq!(app.count(&format!("SELECT COUNT(*) FROM cards WHERE id = {id}")).await, 1,
+               "archived, not deleted");
+
+    let (_, default_list) = app.get(&format!("/api/cards?deck_id={d}")).await;
+    assert_eq!(default_list.as_array().unwrap().len(), 0);
+
+    let (_, archived_list) = app
+        .get(&format!("/api/cards?deck_id={d}&archived=true")).await;
+    assert_eq!(archived_list.as_array().unwrap().len(), 1);
+
+    let (_, all) = app.get(&format!("/api/cards?deck_id={d}&archived=all")).await;
+    assert_eq!(all.as_array().unwrap().len(), 1);
+
+    // Archiving twice is a no-op, not an error — the UI can fire it twice.
+    let (status, _) = app.post(&format!("/api/cards/{id}/archive"), json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, restored) = app.post(&format!("/api/cards/{id}/unarchive"), json!({})).await;
+    assert_eq!(restored["archived"], false);
+    let (_, back) = app.get(&format!("/api/cards?deck_id={d}")).await;
+    assert_eq!(back.as_array().unwrap().len(), 1);
+    assert_eq!(app.count(&format!("SELECT COUNT(*) FROM cards WHERE id = {id}")).await, 1,
+               "still exists after restore");
+}
+
+#[tokio::test]
+async fn archiving_an_unknown_card_is_404() {
+    let app = common::spawn_app().await;
+    let (status, _) = app.post("/api/cards/9999/archive", json!({})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = app.post("/api/cards/9999/unarchive", json!({})).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn archived_cards_do_not_count_toward_a_deck_s_card_count() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (_, before) = app.get("/api/decks?module_id=all").await;
+    assert_eq!(before[0]["card_count"], 1);
+
+    app.post(&format!("/api/cards/{id}/archive"), json!({})).await;
+    let (_, after) = app.get("/api/decks?module_id=all").await;
+    assert_eq!(after[0]["card_count"], 0, "the decks query already filters archived = 0");
+}
+
+#[tokio::test]
+async fn a_deck_s_card_count_reflects_created_cards() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    app.post("/api/cards", mc(d)).await;
+    let (_, decks) = app.get("/api/decks").await;
+    assert_eq!(decks[0]["card_count"], 1);
+}
+
+/// Proves the reviews history is untouched by archive/unarchive: without a
+/// review endpoint yet, a schedule/reviews row is inserted directly against
+/// the pool and its row count is asserted stable across both operations.
+#[tokio::test]
+async fn archiving_never_touches_reviews_history() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let (_, created) = app.post("/api/cards", mc(d)).await;
+    let id = created["id"].as_i64().unwrap();
+
+    let session_id: i64 = sqlx::query_scalar(
+        "INSERT INTO sessions (mode, deck_ids) VALUES ('practice', '[]') RETURNING id"
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO reviews (card_id, session_id, correct) VALUES (?, ?, 1)")
+        .bind(id)
+        .bind(session_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 1);
+    app.post(&format!("/api/cards/{id}/archive"), json!({})).await;
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 1, "archive leaves reviews alone");
+    app.post(&format!("/api/cards/{id}/unarchive"), json!({})).await;
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 1, "unarchive leaves reviews alone");
+}

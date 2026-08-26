@@ -260,6 +260,78 @@ async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<J
     Ok(Json(fetch_full(&st.pool, id).await?))
 }
 
+/// Full replace of a card's editable content.
+///
+/// Not a field-by-field patch, and deliberately not the absent-vs-null dance
+/// `PATCH /api/decks/:id` needs: the editor always holds the whole card and
+/// always submits the whole card, so an omitted optional means null. It is a
+/// PATCH by route because the spec's API table says so. Cards do not move
+/// between decks in 2a.
+async fn patch(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    AppJson(body): AppJson<CardInput>,
+) -> AppResult<Json<CardDto>> {
+    // 404 before validation and before any write, matching decks::patch.
+    fetch_summary(&st.pool, id).await?;
+    let valid = validate(body)?;
+
+    let mut tx = st.pool.begin().await?;
+
+    sqlx::query!(
+        r#"UPDATE cards
+              SET kind = ?, prompt_md = ?, answer_md = ?, explanation_md = ?,
+                  updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+            WHERE id = ?"#,
+        valid.kind, valid.prompt_md, valid.answer_md, valid.explanation_md, id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // Both child tables are cleared regardless of kind: a kind change must not
+    // leave rows that would resurface if the kind changed back.
+    sqlx::query!("DELETE FROM choices WHERE card_id = ?", id).execute(&mut *tx).await?;
+    sqlx::query!("DELETE FROM accepted WHERE card_id = ?", id).execute(&mut *tx).await?;
+    write_children(&mut tx, id, &valid).await?;
+
+    tx.commit().await?;
+
+    Ok(Json(fetch_full(&st.pool, id).await?))
+}
+
+async fn archive(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<CardDto>> {
+    set_archived(&st, id, true).await
+}
+
+async fn unarchive(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<CardDto>> {
+    set_archived(&st, id, false).await
+}
+
+/// Cards are archived, never deleted: a hard delete would orphan the card's
+/// `reviews` rows and silently rewrite history. `reviews.card_id` has no
+/// ON DELETE CASCADE for the same reason.
+// NB the pre-check below is not observable from the HTTP surface: an UPDATE
+// against a nonexistent id matches zero rows and has no side effect, and
+// fetch_full() unconditionally re-runs fetch_summary() at the end anyway, so
+// a black-box test cannot tell this function apart from one that skips the
+// pre-check and lets the final fetch_summary() supply the 404. It is kept
+// because it avoids a wasted UPDATE and matches the 404-before-write shape
+// of patch() above, not because a test proves it.
+async fn set_archived(st: &AppState, id: i64, archived: bool) -> AppResult<Json<CardDto>> {
+    fetch_summary(&st.pool, id).await?; // 404 before the write
+
+    sqlx::query!(
+        r#"UPDATE cards
+              SET archived = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+            WHERE id = ?"#,
+        archived, id
+    )
+    .execute(&st.pool)
+    .await?;
+
+    Ok(Json(fetch_full(&st.pool, id).await?))
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub deck_id: Option<String>,
@@ -404,5 +476,7 @@ async fn write_children(
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/cards", get(list).post(create))
-        .route("/cards/{id}", get(get_one))
+        .route("/cards/{id}", get(get_one).patch(patch))
+        .route("/cards/{id}/archive", axum::routing::post(archive))
+        .route("/cards/{id}/unarchive", axum::routing::post(unarchive))
 }
