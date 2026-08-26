@@ -266,9 +266,8 @@ async fn a_rejected_create_writes_nothing() {
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 
-    // GET /api/cards?deck_id= does not exist until Task 4; assert directly
-    // via the pool for now. Task 4 switches this to the HTTP call.
-    assert_eq!(app.count("SELECT COUNT(*) FROM cards").await, 0, "no partial card row");
+    let (_, list) = app.get(&format!("/api/cards?deck_id={d}")).await;
+    assert_eq!(list.as_array().unwrap().len(), 0, "no partial card row");
     assert_eq!(app.count("SELECT COUNT(*) FROM choices").await, 0);
     assert_eq!(app.count("SELECT COUNT(*) FROM schedule").await, 0);
 }
@@ -319,4 +318,82 @@ async fn choices_come_back_in_position_order_not_id_order() {
     assert_eq!(choices.len(), 3);
     assert_eq!(choices[0]["text_md"], "Inserted last, sorts first",
                "highest id, lowest position: proves ordering is by position, not id");
+}
+
+#[tokio::test]
+async fn lists_only_the_requested_deck_in_authoring_order() {
+    let app = common::spawn_app().await;
+    let a = deck(&app, "Deck A").await;
+    let b = deck(&app, "Deck B").await;
+
+    for prompt in ["first", "second", "third"] {
+        let mut card = mc(a);
+        card["prompt_md"] = json!(prompt);
+        app.post("/api/cards", card).await;
+    }
+    app.post("/api/cards", mc(b)).await;
+
+    let (status, list) = app.get(&format!("/api/cards?deck_id={a}")).await;
+    assert_eq!(status, StatusCode::OK);
+    let rows = list.as_array().unwrap();
+    assert_eq!(rows.len(), 3, "deck B's card must not leak in");
+
+    // All three land in the same second, so this asserts the id tiebreak, not
+    // created_at. Without `id ASC` the order is SQLite's incidental scan order.
+    assert_eq!(rows[0]["prompt_md"], "first");
+    assert_eq!(rows[1]["prompt_md"], "second");
+    assert_eq!(rows[2]["prompt_md"], "third");
+
+    assert!(rows[0].get("choices").is_none(), "the list carries no children");
+    assert!(rows[0].get("accepted").is_none());
+}
+
+#[tokio::test]
+async fn absent_deck_id_lists_every_deck() {
+    let app = common::spawn_app().await;
+    let a = deck(&app, "Deck A").await;
+    let b = deck(&app, "Deck B").await;
+    app.post("/api/cards", mc(a)).await;
+    app.post("/api/cards", mc(b)).await;
+
+    let (_, list) = app.get("/api/cards").await;
+    assert_eq!(list.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn kind_filter_selects_one_kind() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    app.post("/api/cards", mc(d)).await;
+    app.post("/api/cards", json!({
+        "deck_id": d, "kind": "flashcard", "prompt_md": "p", "answer_md": "a"
+    })).await;
+
+    let (_, all) = app.get(&format!("/api/cards?deck_id={d}")).await;
+    assert_eq!(all.as_array().unwrap().len(), 2);
+
+    let (_, only) = app.get(&format!("/api/cards?deck_id={d}&kind=flashcard")).await;
+    let rows = only.as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["kind"], "flashcard");
+
+    let (_, explicit_all) = app.get(&format!("/api/cards?deck_id={d}&kind=all")).await;
+    assert_eq!(explicit_all.as_array().unwrap().len(), 2, "kind=all equals absent");
+}
+
+#[tokio::test]
+async fn bad_query_values_are_rejected_on_their_own_field() {
+    let app = common::spawn_app().await;
+
+    let (status, body) = app.get("/api/cards?kind=essay").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "kind");
+
+    let (status, body) = app.get("/api/cards?archived=maybe").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "archived");
+
+    let (status, body) = app.get("/api/cards?deck_id=abc").await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "deck_id");
 }

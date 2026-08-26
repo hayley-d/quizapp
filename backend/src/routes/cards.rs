@@ -5,7 +5,7 @@
 //! see `validate`. Field names in the errors match the client's form
 //! controls (`choices[1].text_md`) so the editor can render them inline.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -260,6 +260,66 @@ async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<J
     Ok(Json(fetch_full(&st.pool, id).await?))
 }
 
+#[derive(Deserialize)]
+pub struct ListQuery {
+    pub deck_id: Option<String>,
+    /// "all" (default) or one of the three kinds.
+    pub kind: Option<String>,
+    /// "false" (default), "true", or "all".
+    pub archived: Option<String>,
+}
+
+async fn list(
+    State(st): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> AppResult<Json<Vec<CardSummaryDto>>> {
+    let deck_id = match q.deck_id.as_deref() {
+        None | Some("") => None,
+        Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
+            AppError::validation([("deck_id", "deck_id must be a number")])
+        })?),
+    };
+
+    let kind = q.kind.as_deref().unwrap_or("all").to_string();
+    if kind != "all" && !KINDS.contains(&kind.as_str()) {
+        return Err(AppError::validation([(
+            "kind",
+            "kind must be mc_single, short_answer, flashcard or \"all\"",
+        )]));
+    }
+
+    let archived = q.archived.as_deref().unwrap_or("false").to_string();
+    if !["false", "true", "all"].contains(&archived.as_str()) {
+        return Err(AppError::validation([(
+            "archived",
+            "archived must be \"true\", \"false\" or \"all\"",
+        )]));
+    }
+
+    // Oldest first: a deck reads in the order it was written. The id tiebreak
+    // is load-bearing, not decoration — timestamps have one-second resolution,
+    // so a burst of save-and-next cards all share a created_at and would
+    // otherwise come back in SQLite's incidental scan order.
+    let rows = sqlx::query_as!(
+        CardSummaryDto,
+        r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
+                  prompt_md, image_path, answer_md, explanation_md,
+                  archived AS "archived!: bool", created_at, updated_at
+           FROM cards
+           WHERE (? IS NULL OR deck_id = ?)
+             AND (? = 'all' OR kind = ?)
+             AND (? = 'all'
+                  OR (? = 'true'  AND archived = 1)
+                  OR (? = 'false' AND archived = 0))
+           ORDER BY created_at ASC, id ASC"#,
+        deck_id, deck_id, kind, kind, archived, archived, archived
+    )
+    .fetch_all(&st.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
 async fn create(
     State(st): State<AppState>,
     AppJson(body): AppJson<CreateCard>,
@@ -337,6 +397,6 @@ async fn write_children(
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/cards", axum::routing::post(create))
+        .route("/cards", get(list).post(create))
         .route("/cards/{id}", get(get_one))
 }
