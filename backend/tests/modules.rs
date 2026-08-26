@@ -48,8 +48,8 @@ async fn duplicate_name_conflicts() {
 #[tokio::test]
 async fn list_is_ordered_by_name_case_insensitively() {
     let app = common::spawn_app().await;
-    app.post("/api/modules", json!({"name": "beta"})).await;
-    app.post("/api/modules", json!({"name": "Alpha"})).await;
+    app.post("/api/modules", json!({"name": "Banana"})).await;
+    app.post("/api/modules", json!({"name": "apple"})).await;
 
     let (_, list) = app.get("/api/modules").await;
     let names: Vec<&str> = list
@@ -58,5 +58,5 @@ async fn list_is_ordered_by_name_case_insensitively() {
         .iter()
         .map(|m| m["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, vec!["Alpha", "beta"]);
+    assert_eq!(names, vec!["apple", "Banana"]);
 }
