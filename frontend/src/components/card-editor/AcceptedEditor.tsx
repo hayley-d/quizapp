@@ -53,6 +53,10 @@ export function AcceptedEditor({ value, onChange, errors }: Props) {
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>, i: number) {
     if (e.key !== 'Enter') return
+    // Cmd/Ctrl+Enter is the page's save-and-next shortcut, not "append a row" —
+    // let it bubble untouched to the container's handler instead of also
+    // appending here, or the keystroke would do both at once.
+    if (e.metaKey || e.ctrlKey) return
     e.preventDefault()
     if (i === value.length - 1) {
       addRow()
@@ -61,9 +65,22 @@ export function AcceptedEditor({ value, onChange, errors }: Props) {
     }
   }
 
+  // A 422 can name an indexed row (e.g. `accepted[2].text`) for a row the
+  // user has since deleted while the save was in flight. Surface it as a
+  // list-level notice rather than letting it silently vanish.
+  const orphanedErrors = Object.entries(errors)
+    .filter(([k]) => {
+      const m = /^accepted\[(\d+)\]\./.exec(k)
+      return m !== null && Number(m[1]) >= value.length
+    })
+    .map(([, msg]) => msg)
+
   return (
     <div className="space-y-2">
       {errors.accepted && <p className="text-sm text-destructive">{errors.accepted}</p>}
+      {orphanedErrors.map((msg, i) => (
+        <p key={i} className="text-sm text-destructive">{msg}</p>
+      ))}
       <Label className="text-sm text-muted-foreground">Shown as the answer</Label>
       <RadioGroup
         value={String(value.findIndex((a) => a.is_primary))}

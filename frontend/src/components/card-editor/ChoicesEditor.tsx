@@ -52,6 +52,10 @@ export function ChoicesEditor({ value, onChange, errors }: Props) {
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>, i: number) {
     if (e.key !== 'Enter') return
+    // Cmd/Ctrl+Enter is the page's save-and-next shortcut, not "append a row" —
+    // let it bubble untouched to the container's handler instead of also
+    // appending here, or the keystroke would do both at once.
+    if (e.metaKey || e.ctrlKey) return
     e.preventDefault()
     if (i === value.length - 1) {
       addRow()
@@ -60,9 +64,22 @@ export function ChoicesEditor({ value, onChange, errors }: Props) {
     }
   }
 
+  // A 422 can name an indexed row (e.g. `choices[3].text_md`) for a row the
+  // user has since deleted while the save was in flight. Surface it as a
+  // list-level notice rather than letting it silently vanish.
+  const orphanedErrors = Object.entries(errors)
+    .filter(([k]) => {
+      const m = /^choices\[(\d+)\]\./.exec(k)
+      return m !== null && Number(m[1]) >= value.length
+    })
+    .map(([, msg]) => msg)
+
   return (
     <div className="space-y-2">
       {errors.choices && <p className="text-sm text-destructive">{errors.choices}</p>}
+      {orphanedErrors.map((msg, i) => (
+        <p key={i} className="text-sm text-destructive">{msg}</p>
+      ))}
       <RadioGroup
         value={String(value.findIndex((c) => c.is_correct))}
         onValueChange={(v) => setCorrect(Number(v))}
