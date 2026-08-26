@@ -128,6 +128,15 @@ async fn list(
         }
     };
 
+    // The id arms mirror the sort direction (ASC for oldest, DESC for newest) so that
+    // oldest is the exact reverse of newest even when created_at ties (one-second
+    // resolution makes ties the normal case, not an edge case). The `newest` arm is
+    // proven by sort_newest_is_default_and_oldest_reverses_it. The `oldest` arm cannot
+    // be proven the same way: on tied timestamps it coincides with SQLite's incidental
+    // rowid scan order, so no black-box test can distinguish "the arm is doing the work"
+    // from "the coincidence happens to agree with it". It is kept anyway as a
+    // determinism guarantee against a future index or query-plan change that would
+    // break that coincidence.
     let rows = sqlx::query_as!(
         DeckDto,
         r#"SELECT d.id AS "id!: i64",

@@ -197,6 +197,17 @@ async fn sort_newest_is_default_and_oldest_reverses_it() {
 
     let (_, oldest) = app.get("/api/decks?sort=oldest").await;
     assert_eq!(names_of(&oldest), vec!["First", "Second", "Third"]);
+
+    // Pin the actual contract ("oldest is the exact reverse of newest") rather than
+    // relying on two independently-maintained literal lists that could drift apart.
+    let newest_names = names_of(&newest);
+    let mut reversed_newest = newest_names.clone();
+    reversed_newest.reverse();
+    assert_eq!(
+        names_of(&oldest),
+        reversed_newest,
+        "oldest must be the exact reverse of newest"
+    );
 }
 
 #[tokio::test]
