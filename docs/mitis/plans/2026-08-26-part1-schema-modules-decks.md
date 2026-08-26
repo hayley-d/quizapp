@@ -53,7 +53,6 @@ quizapp/
   Cargo.toml                  # workspace manifest: members = ["backend"]
   Cargo.lock                  # shared, workspace-level
   .sqlx/                      # committed sqlx offline query cache (workspace-wide)
-  rust-toolchain.toml          # pins stable for the whole repo
   data/                       # git-ignored: quizapp.db, later images/
   backend/
     Cargo.toml                # package "quizapp"
@@ -154,7 +153,7 @@ discipline the macro choice costs.
 `GET /api/health`, and `cargo test` runs green.
 
 **Files:**
-- Create: `Cargo.toml`, `rust-toolchain.toml`, `backend/src/main.rs`, `backend/src/config.rs`,
+- Create: `Cargo.toml` (workspace), `backend/Cargo.toml`, `backend/src/main.rs`, `backend/src/config.rs`,
   `backend/src/state.rs`, `backend/src/routes/mod.rs`, `backend/src/routes/health.rs`
 - Modify: `.gitignore` (add `.env`)
 
@@ -194,14 +193,7 @@ tempfile = "3"
 http-body-util = "0.1"
 ```
 
-- [ ] **Step 2: `rust-toolchain.toml`** — pin stable so a nightly default does not surprise later.
-
-```toml
-[toolchain]
-channel = "stable"
-```
-
-- [ ] **Step 3: `backend/src/config.rs`**
+- [ ] **Step 2: `backend/src/config.rs`**
 
 ```rust
 #[derive(Debug, Clone)]
@@ -225,7 +217,7 @@ impl Config {
 }
 ```
 
-- [ ] **Step 4: `backend/src/state.rs`**
+- [ ] **Step 3: `backend/src/state.rs`**
 
 ```rust
 use sqlx::SqlitePool;
@@ -236,7 +228,7 @@ pub struct AppState {
 }
 ```
 
-- [ ] **Step 5: `backend/src/routes/health.rs`**
+- [ ] **Step 4: `backend/src/routes/health.rs`**
 
 ```rust
 use axum::{routing::get, Json, Router};
@@ -253,7 +245,7 @@ async fn health() -> Json<Value> {
 }
 ```
 
-- [ ] **Step 6: `backend/src/routes/mod.rs`**
+- [ ] **Step 5: `backend/src/routes/mod.rs`**
 
 ```rust
 pub mod health;
@@ -266,7 +258,7 @@ pub fn api_router() -> Router<AppState> {
 }
 ```
 
-- [ ] **Step 7: `backend/src/main.rs`** — DB wiring lands in Task 2; for now build the pool lazily so
+- [ ] **Step 6: `backend/src/main.rs`** — DB wiring lands in Task 2; for now build the pool lazily so
       the binary compiles and runs without a schema.
 
 ```rust
@@ -306,7 +298,7 @@ async fn main() -> anyhow::Result<()> {
 
 Add `anyhow = "1"` to `[dependencies]` for the `main` return type.
 
-- [ ] **Step 8: Create the data dir and run**
+- [ ] **Step 7: Create the data dir and run**
 
 ```bash
 mkdir -p data
@@ -315,15 +307,15 @@ curl -s localhost:3000/api/health   # {"status":"ok"}
 curl -s -o /dev/null -w '%{http_code}\n' localhost:3000/api/nope   # 404
 ```
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add Cargo.toml backend/Cargo.toml Cargo.lock rust-toolchain.toml backend/src .gitignore
+git add Cargo.toml backend/Cargo.toml Cargo.lock backend/src .gitignore
 git commit -m "feat: axum skeleton with config and health endpoint"
 ```
 
 ```json:metadata
-{"files":["Cargo.toml","backend/Cargo.toml","rust-toolchain.toml","backend/src/main.rs","backend/src/config.rs","backend/src/state.rs","backend/src/routes/mod.rs","backend/src/routes/health.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["cargo run serves GET /api/health as 200 {\"status\":\"ok\"}","bind addr and database url read from env with defaults","clippy clean with -D warnings","unknown route returns 404"],"modelTier":"mechanical"}
+{"files":["Cargo.toml","backend/Cargo.toml","backend/src/main.rs","backend/src/config.rs","backend/src/state.rs","backend/src/routes/mod.rs","backend/src/routes/health.rs"],"verifyCommand":"cargo test && cargo clippy -- -D warnings","acceptanceCriteria":["cargo run serves GET /api/health as 200 {\"status\":\"ok\"}","bind addr and database url read from env with defaults","clippy clean with -D warnings","unknown route returns 404"],"modelTier":"mechanical"}
 ```
 
 ---
@@ -2192,7 +2184,7 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 
 ## Prerequisites
 
-- Rust (stable, via rustup)
+- Rust toolchain (this machine runs a standalone nightly; there is no `rust-toolchain.toml` pin)
 - Node 20+
 - `cargo install sqlx-cli --no-default-features --features rustls,sqlite`
 
