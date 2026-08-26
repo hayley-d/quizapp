@@ -157,6 +157,7 @@ GET  /api/modules                  list modules
 POST /api/modules                  create
 GET  /api/decks                    list decks (filter by module)
 POST /api/decks                    create
+GET  /api/decks/:id                one deck, with module_name and card_count
 PATCH /api/decks/:id               rename, re-parent, edit description
 
 GET  /api/cards                    list (filter by deck, kind, archived)
@@ -164,6 +165,8 @@ GET  /api/cards/:id                full card incl. choices/accepted (authoring v
 POST /api/cards                    create; choices/accepted nested, one transaction
 PATCH /api/cards/:id               update; nested children replaced in one transaction
 POST /api/cards/:id/archive        archive
+POST /api/cards/:id/unarchive      restore; not in the original design, added so the
+                                    deck screen's show-archived toggle has something to undo
 POST /api/cards/:id/image          multipart upload -> data/images/, returns path
 
 POST /api/sessions                 {mode, deck_ids | module_id, target_count?}

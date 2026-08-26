@@ -27,6 +27,27 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
 
+## Routes
+
+Frontend (React Router, client-side):
+
+    /decks                     deck list: search, module filter, sort
+    /decks/:id                 deck detail: card list, kind badges, archive toggle
+    /cards/new?deck_id=        new card, all three kinds
+    /cards/:id/edit            edit an existing card
+
+Cards API, added in Part 2a:
+
+    GET   /api/decks/:id               one deck, with module_name and card_count
+    GET   /api/cards                   list; filter by deck, kind, archived
+    GET   /api/cards/:id               full card incl. choices/accepted (authoring view)
+    POST  /api/cards                   create; choices/accepted nested, one transaction
+    PATCH /api/cards/:id               update; nested children replaced in one transaction
+    POST  /api/cards/:id/archive       archive
+    POST  /api/cards/:id/unarchive     restore
+
+Full API and the data model are in `docs/mitis/specs/2026-08-26-quiz-study-app-design.md`.
+
 ## Environment
 
 | Var                 | Default                              |

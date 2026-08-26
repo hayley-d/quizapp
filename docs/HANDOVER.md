@@ -2,7 +2,8 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-26, at `main` = `c5024b6`.
+**Last updated:** 2026-08-26, at `part2a-cards-editor` (Part 2a complete, not yet merged
+to `main`).
 
 ## What this is
 
@@ -12,35 +13,48 @@ document is the record of what the app is meant to be, and it is kept current.
 
 ## Where things stand
 
-Part 1 of the spec's build sequencing is **done and merged to `main`**, plus one follow-on
-feature. Concretely, working today:
+Parts 1 and 2a of the spec's build sequencing are **done**. Part 1 is merged to `main`;
+Part 2a lives on `part2a-cards-editor`, reviewed and gate-clean, awaiting merge. Concretely,
+working today:
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
 - `AppError` envelope on every failure, including malformed request bodies
-- `GET|POST /api/modules`; `GET|POST /api/decks`, `PATCH /api/decks/:id`
+- `GET|POST /api/modules`; `GET|POST /api/decks`, `GET /api/decks/:id`, `PATCH /api/decks/:id`
 - `GET /api/decks` supports server-side name search (`q`), module filter (`module_id`) and
   date sort (`sort`)
+- `GET|POST /api/cards`, `GET|PATCH /api/cards/:id`, `POST /api/cards/:id/archive`,
+  `POST /api/cards/:id/unarchive` — all three card kinds, per-kind validation in Rust, the
+  card plus its children plus a `schedule` row written in one transaction, PATCH a full
+  replace that clears both child tables first
+- `accepted.normalised` computed on write (`backend/src/normalise.rs`): NFKC, lowercase,
+  non-alphanumerics to spaces, whitespace collapsed and trimmed — the comparison key for
+  short-answer grading
 - `/decks` screen: flat card list with module badges, a search/filter/sort toolbar,
   debounced input and a stale-response guard
-- 37 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- `/decks/:id` screen: a deck's card list with kind badges, archive/unarchive, and a
+  show-archived toggle
+- `/cards/new?deck_id=` and `/cards/:id/edit`: a keyboard-first editor for all three kinds,
+  with a `ChoicesEditor` and an `AcceptedEditor`
+- 81 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
-`/study` and `/stats` are placeholder pages.
+`/study` and `/stats` are placeholder pages. No image upload yet, and card text renders as
+raw markdown — no KaTeX, no Markdown component (see "Next up").
 
 ## Next up
 
-**Part 2: the card editor** — spec build sequencing step 2. All three card kinds
-(`mc_single`, `short_answer`, `flashcard`), image upload to `data/images/`, KaTeX rendering.
-The spec calls this the app's most-used screen, since cards are written by hand, so it is
-keyboard-first: type prompt, tab through options, mark the correct one, save-and-next.
+**Part 2b: images and one shared `<Markdown>` component.** Two things, both infrastructure
+for what's already built rather than a new screen:
 
-The `cards`, `choices` and `accepted` tables already exist and are unused. So does
-`schedule` — one row per card at creation, by design, so SM-2 never needs a migration over
-hand-written cards.
+- Image upload to `data/images/` (`POST /api/cards/:id/image`, per the spec).
+- A single `<Markdown>` component — `react-markdown` plus `remark-math` and `rehype-katex`
+  — used by the card list, the editor's preview, and later the session runner. Part 2a
+  deliberately rendered raw text everywhere instead of building this three times; that is
+  the entire reason this task exists rather than being folded into Part 2a.
 
-Remaining sequence after that: practice mode → Bibble theme pass → mock test → stats →
-SM-2 → embed the bundle and LAN binding.
+After that, the spec's build sequencing continues: practice mode → Bibble theme pass →
+mock test → stats → SM-2 → embed the bundle and LAN binding.
 
 ## Running it
 
@@ -68,6 +82,12 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
   self-recovering incremental-compilation ICE (`unstable fingerprints for
   evaluate_obligation`) and drops `rustc-ice-*.txt` files. They are gitignored, harmless,
   and clear with `cargo clean`. Every build still completes.
+- **`cargo run` against a scratch database needs `SQLX_OFFLINE=true` too.** Pointing
+  `DATABASE_URL` at a throwaway file for a manual walkthrough sends the sqlx macros ONLINE
+  (they check queries against whatever database `DATABASE_URL` names), and it fails with
+  roughly twenty errors. This looks like a compile catastrophe — it resembles the nightly
+  ICE above — and is not one; it is only the query macros wanting the offline cache.
+  `export SQLX_OFFLINE=true` before `cargo run` fixes it.
 
 ## The verification gate
 
@@ -141,20 +161,28 @@ being fine once real cards exist.
 
 ## Outstanding
 
-**Needs a human at a browser** — no agent could verify these, and they are still unchecked:
+**Needs a human at a browser** — no agent could verify these; the Chrome extension is not
+connected on this machine, so no agent could drive a browser for either Part 1 or Part 2a:
 
-- OS theme toggle actually swapping the Bibble light/dark palettes
-- Layout at 375px: the nav, the deck cards, the toolbar stacking
-- Dialogs opening; inline field errors rendering beside the right input; typed values
-  surviving a rejected save
-- Search feeling immediate, with no flicker back to stale results
-- Whether the flat badged list actually reads better than the module grouping it replaced.
-  If not, the grouping is recoverable from git at `a64ba37`.
+- The card editor at 375px: the choices rows, the radio column, the action bar
+- Both themes, and the kind badges legible in each
+- Whether the keyboard loop genuinely *feels* like a loop — prompt, choices, save, next —
+  without a pause to find where focus went
+- Focus landing correctly after appending a row and after save-and-next
+- The `Cmd/Ctrl+Enter` fix in practice: pressing it from the last choice row must save
+  without appending a phantom row
+- `DeckPage`'s blank body during initial load (`if (!deck) return null`) — whether the
+  flash-of-nothing is noticeable
+- Whether the deck detail page reads well at 100+ cards, which is what COS781 will actually
+  be. If not, the kind filter and prompt search deferred out of Task 4 are the fix.
+- Still outstanding from Part 1: the OS theme toggle actually swapping the Bibble light/dark
+  palettes, and `/decks` at 375px
 
 **Housekeeping**
 
-- `data/quizapp.db` holds test debris from verification runs (modules like `REVIEW_MOD_1`,
-  decks like `kinetics 100%`). Clear before writing real cards.
+- `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
+  `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
+  regenerates on startup.
 - Google Fonts: `frontend/src/styles/globals.css` imports Quicksand and Inter over the
   network, so typography silently falls back offline or on a LAN-only phone. Deferred to
   build step 8, which is already the "embed the bundle, LAN binding" task, and noted there
@@ -162,8 +190,6 @@ being fine once real cards exist.
 
 **Known-and-accepted minors**
 
-- `AppError::Db`'s foreign-key branch hardcodes the field name `"module_id"`. Correct for
-  the only endpoint-reachable FK today; Part 2's cards→decks FK will force generalising it.
 - `AppError::Conflict` is constructed nowhere in production code — real 409s arrive via the
   sqlx unique-violation path.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
@@ -183,7 +209,7 @@ being fine once real cards exist.
 
 ## If you are an agent picking this up
 
-Work through `mitis:brainstorming` before designing Part 2, then `mitis:writing-plans`, then
+Work through `mitis:brainstorming` before designing Part 2b, then `mitis:writing-plans`, then
 `mitis:subagent-driven-development`. The two existing plans are worth reading as a format
 reference — particularly how each task carries complete code, an explicit verify command,
 and a `json:metadata` fence.
