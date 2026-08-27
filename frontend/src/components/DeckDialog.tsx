@@ -14,15 +14,17 @@ import {
 
 const NO_MODULE = 'none'
 
-type Props = {
+type DeckDialogProps = {
   modules: Module[]
-  deck?: Deck            // absent => create mode
+  deck?: Deck
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }
 
-export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props) {
+export function DeckDialog({
+  modules, deck, open, onOpenChange, onSaved,
+}: DeckDialogProps) {
   const [name, setName] = useState(deck?.name ?? '')
   const [moduleId, setModuleId] = useState(
     deck?.module_id != null ? String(deck.module_id) : NO_MODULE,
@@ -48,12 +50,13 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
       }
       onOpenChange(false)
       onSaved()
-    } catch (e) {
-      // Never reset the form here — a rejected save must keep what was typed.
-      if (e instanceof ApiError) {
-        const byField = e.byField()
-        setErrors(e.status === 409 ? { name: e.message } : byField)
-        if (e.status !== 409 && Object.keys(byField).length === 0) toast.error(e.message)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const errorsByField = error.byField()
+        setErrors(error.status === 409 ? { name: error.message } : errorsByField)
+        if (error.status !== 409 && Object.keys(errorsByField).length === 0) {
+          toast.error(error.message)
+        }
       } else {
         toast.error('Could not reach the server')
       }
@@ -73,7 +76,7 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
             <Label htmlFor="deck-name">Name</Label>
             <Input
               id="deck-name" autoFocus value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) => setName(event.target.value)}
               aria-invalid={!!errors.name}
             />
             {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
@@ -84,8 +87,10 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
               <SelectTrigger id="deck-module"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_MODULE}>No module</SelectItem>
-                {modules.map((m) => (
-                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                {modules.map((module) => (
+                  <SelectItem key={module.id} value={String(module.id)}>
+                    {module.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -95,7 +100,7 @@ export function DeckDialog({ modules, deck, open, onOpenChange, onSaved }: Props
             <Label htmlFor="deck-description">Description</Label>
             <Textarea
               id="deck-description" value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(event) => setDescription(event.target.value)}
             />
           </div>
         </div>

@@ -3,32 +3,32 @@ mod common;
 use axum::http::StatusCode;
 use serde_json::json;
 
-async fn module(app: &common::TestApp, name: &str) -> i64 {
-    let (_, m) = app.post("/api/modules", json!({"name": name})).await;
-    m["id"].as_i64().unwrap()
+async fn create_module(app: &common::TestApp, name: &str) -> i64 {
+    let (_, created) = app.post("/api/modules", json!({"name": name})).await;
+    created["id"].as_i64().unwrap()
 }
 
 fn names_of(list: &serde_json::Value) -> Vec<&str> {
     list.as_array()
         .unwrap()
         .iter()
-        .map(|d| d["name"].as_str().unwrap())
+        .map(|deck| deck["name"].as_str().unwrap())
         .collect()
 }
 
 #[tokio::test]
 async fn create_deck_in_module() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
+    let module_id = create_module(&app, "COS781").await;
 
     let (status, body) = app
         .post("/api/decks", json!({
-            "module_id": mid, "name": "Test 1", "description": "Ch 1-3"
+            "module_id": module_id, "name": "Test 1", "description": "Ch 1-3"
         }))
         .await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["name"], "Test 1");
-    assert_eq!(body["module_id"], mid);
+    assert_eq!(body["module_id"], module_id);
     assert_eq!(body["module_name"], "COS781");
     assert_eq!(body["card_count"], 0);
 }
@@ -126,14 +126,14 @@ async fn unparseable_module_id_filter_is_422() {
 #[tokio::test]
 async fn filter_by_module_and_by_none() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Test 1"})).await;
+    let module_id = create_module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Test 1"})).await;
     app.post("/api/decks", json!({"name": "Loose"})).await;
 
     let (_, all) = app.get("/api/decks").await;
     assert_eq!(all.as_array().unwrap().len(), 2);
 
-    let (_, in_module) = app.get(&format!("/api/decks?module_id={mid}")).await;
+    let (_, in_module) = app.get(&format!("/api/decks?module_id={module_id}")).await;
     assert_eq!(in_module.as_array().unwrap().len(), 1);
     assert_eq!(in_module[0]["name"], "Test 1");
 
@@ -148,13 +148,12 @@ async fn search_matches_name_case_insensitively() {
     app.post("/api/decks", json!({"name": "Chapter 1 - Kinematics"})).await;
     app.post("/api/decks", json!({"name": "Thermodynamics"})).await;
 
-    let (status, list) = app.get("/api/decks?q=kine").await;
+    let (status, list) = app.get("/api/decks?search=kine").await;
     assert_eq!(status, StatusCode::OK);
     let names = names_of(&list);
     assert_eq!(names, vec!["Chapter 1 - Kinematics"]);
 
-    // Empty q applies no filter.
-    let (_, all) = app.get("/api/decks?q=").await;
+    let (_, all) = app.get("/api/decks?search=").await;
     assert_eq!(all.as_array().unwrap().len(), 2);
 }
 
@@ -163,7 +162,7 @@ async fn search_does_not_match_description() {
     let app = common::spawn_app().await;
     app.post("/api/decks", json!({"name": "Deck One", "description": "clustering"})).await;
 
-    let (_, list) = app.get("/api/decks?q=clustering").await;
+    let (_, list) = app.get("/api/decks?search=clustering").await;
     assert_eq!(list.as_array().unwrap().len(), 0, "q must match name only");
 }
 
@@ -173,18 +172,16 @@ async fn search_treats_wildcards_literally() {
     app.post("/api/decks", json!({"name": "Scored 100% overall"})).await;
     app.post("/api/decks", json!({"name": "Unrelated"})).await;
 
-    let (_, pct) = app.get("/api/decks?q=100%25").await; // %25 is an encoded '%'
+    let (_, pct) = app.get("/api/decks?search=100%25").await;
     assert_eq!(names_of(&pct), vec!["Scored 100% overall"]);
 
-    // A bare '%' must not behave as "match everything".
-    let (_, underscore) = app.get("/api/decks?q=_nrelated").await;
+    let (_, underscore) = app.get("/api/decks?search=_nrelated").await;
     assert_eq!(underscore.as_array().unwrap().len(), 0, "_ must be literal");
 }
 
 #[tokio::test]
 async fn sort_newest_is_default_and_oldest_reverses_it() {
     let app = common::spawn_app().await;
-    // Same-second creation is the normal case here, so this also exercises the id tiebreak.
     app.post("/api/decks", json!({"name": "First"})).await;
     app.post("/api/decks", json!({"name": "Second"})).await;
     app.post("/api/decks", json!({"name": "Third"})).await;
@@ -198,8 +195,6 @@ async fn sort_newest_is_default_and_oldest_reverses_it() {
     let (_, oldest) = app.get("/api/decks?sort=oldest").await;
     assert_eq!(names_of(&oldest), vec!["First", "Second", "Third"]);
 
-    // Pin the actual contract ("oldest is the exact reverse of newest") rather than
-    // relying on two independently-maintained literal lists that could drift apart.
     let newest_names = names_of(&newest);
     let mut reversed_newest = newest_names.clone();
     reversed_newest.reverse();
@@ -222,8 +217,8 @@ async fn unknown_sort_is_422_with_field_error() {
 #[tokio::test]
 async fn module_all_equals_absent() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "In module"})).await;
+    let module_id = create_module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "In module"})).await;
     app.post("/api/decks", json!({"name": "Loose"})).await;
 
     let (_, absent) = app.get("/api/decks").await;
@@ -235,13 +230,13 @@ async fn module_all_equals_absent() {
 #[tokio::test]
 async fn criteria_combine() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Alpha test"})).await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Beta test"})).await;
+    let module_id = create_module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Alpha test"})).await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Beta test"})).await;
     app.post("/api/decks", json!({"name": "Alpha loose"})).await;
 
     let (_, list) = app
-        .get(&format!("/api/decks?q=alpha&module_id={mid}&sort=oldest"))
+        .get(&format!("/api/decks?search=alpha&module_id={module_id}&sort=oldest"))
         .await;
     assert_eq!(names_of(&list), vec!["Alpha test"]);
 }
@@ -249,9 +244,11 @@ async fn criteria_combine() {
 #[tokio::test]
 async fn patch_renames_reparents_and_unparents() {
     let app = common::spawn_app().await;
-    let a = module(&app, "COS781").await;
-    let b = module(&app, "COS731").await;
-    let (_, deck) = app.post("/api/decks", json!({"module_id": a, "name": "Test 1"})).await;
+    let first_module_id = create_module(&app, "COS781").await;
+    let second_module_id = create_module(&app, "COS731").await;
+    let (_, deck) = app
+        .post("/api/decks", json!({"module_id": first_module_id, "name": "Test 1"}))
+        .await;
     let id = deck["id"].as_i64().unwrap();
 
     let (status, renamed) = app
@@ -259,12 +256,12 @@ async fn patch_renames_reparents_and_unparents() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(renamed["name"], "Test One");
-    assert_eq!(renamed["module_id"], a, "module must be untouched");
+    assert_eq!(renamed["module_id"], first_module_id, "module must be untouched");
 
     let (_, moved) = app
-        .patch(&format!("/api/decks/{id}"), json!({"module_id": b}))
+        .patch(&format!("/api/decks/{id}"), json!({"module_id": second_module_id}))
         .await;
-    assert_eq!(moved["module_id"], b);
+    assert_eq!(moved["module_id"], second_module_id);
     assert_eq!(moved["name"], "Test One", "name must be untouched");
 
     let (_, loose) = app
@@ -288,10 +285,10 @@ async fn patch_unknown_deck_is_404() {
 #[tokio::test]
 async fn get_by_id_returns_the_same_shape_as_the_list() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
+    let module_id = create_module(&app, "COS781").await;
     let (_, created) = app
         .post("/api/decks", json!({
-            "module_id": mid, "name": "Test 1", "description": "Ch 1-3"
+            "module_id": module_id, "name": "Test 1", "description": "Ch 1-3"
         }))
         .await;
     let id = created["id"].as_i64().unwrap();
@@ -300,13 +297,13 @@ async fn get_by_id_returns_the_same_shape_as_the_list() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(fetched["id"], id);
     assert_eq!(fetched["name"], "Test 1");
-    assert_eq!(fetched["module_id"], mid);
+    assert_eq!(fetched["module_id"], module_id);
     assert_eq!(fetched["module_name"], "COS781");
     assert_eq!(fetched["description"], "Ch 1-3");
     assert_eq!(fetched["card_count"], 0);
 
     let (_, list) = app.get("/api/decks").await;
-    let from_list = list.as_array().unwrap().iter().find(|d| d["id"] == id).unwrap();
+    let from_list = list.as_array().unwrap().iter().find(|deck| deck["id"] == id).unwrap();
     assert_eq!(fetched, *from_list, "GET by id must match the list's shape exactly");
 }
 
@@ -321,10 +318,10 @@ async fn get_unknown_deck_is_404() {
 #[tokio::test]
 async fn duplicate_name_in_module_conflicts() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Test 1"})).await;
+    let module_id = create_module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Test 1"})).await;
     let (status, body) = app
-        .post("/api/decks", json!({"module_id": mid, "name": "Test 1"}))
+        .post("/api/decks", json!({"module_id": module_id, "name": "Test 1"}))
         .await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "conflict");
@@ -334,17 +331,17 @@ async fn duplicate_name_in_module_conflicts() {
 #[tokio::test]
 async fn module_deck_count_reflects_only_its_own_decks() {
     let app = common::spawn_app().await;
-    let mid = module(&app, "COS781").await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Test 1"})).await;
-    app.post("/api/decks", json!({"module_id": mid, "name": "Test 2"})).await;
+    let module_id = create_module(&app, "COS781").await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Test 1"})).await;
+    app.post("/api/decks", json!({"module_id": module_id, "name": "Test 2"})).await;
     app.post("/api/decks", json!({"name": "Loose"})).await;
 
     let (_, modules) = app.get("/api/modules").await;
-    let m = modules
+    let module = modules
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["id"].as_i64() == Some(mid))
+        .find(|module| module["id"].as_i64() == Some(module_id))
         .expect("module present");
-    assert_eq!(m["deck_count"], 2);
+    assert_eq!(module["deck_count"], 2);
 }

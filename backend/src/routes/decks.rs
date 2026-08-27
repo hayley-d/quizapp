@@ -9,7 +9,7 @@ use crate::extract::AppJson;
 use crate::state::AppState;
 
 #[derive(Serialize)]
-pub struct DeckDto {
+pub struct DeckResponse {
     pub id: i64,
     pub module_id: Option<i64>,
     pub module_name: Option<String>,
@@ -21,17 +21,12 @@ pub struct DeckDto {
 
 #[derive(Deserialize)]
 pub struct ListQuery {
-    /// Numeric module id, the literal "none" for unparented decks, or "all"/absent.
     pub module_id: Option<String>,
-    /// Case-insensitive substring match on the deck NAME only.
-    pub q: Option<String>,
-    /// "newest" (default) or "oldest", by created_at.
+    pub search: Option<String>,
     pub sort: Option<String>,
 }
 
-/// Escapes LIKE metacharacters so a user searching for "100%" does not match everything.
-/// Pairs with `ESCAPE '\'` in the SQL.
-fn escape_like(raw: &str) -> String {
+fn escape_like_metacharacters(raw: &str) -> String {
     raw.replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
@@ -47,13 +42,14 @@ pub struct CreateDeck {
     pub description: Option<String>,
 }
 
-/// Distinguishes "key absent" (None) from "key present and null" (Some(None)).
-fn some_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+fn distinguish_absent_from_null<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    Option::deserialize(d).map(Some)
+    Option::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -61,7 +57,7 @@ where
 pub struct PatchDeck {
     #[serde(default)]
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "some_option")]
+    #[serde(default, deserialize_with = "distinguish_absent_from_null")]
     pub module_id: Option<Option<i64>>,
     #[serde(default)]
     pub description: Option<String>,
@@ -73,13 +69,16 @@ pub fn router() -> Router<AppState> {
         .route("/decks/{id}", get(get_one).patch(patch))
 }
 
-async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<DeckDto>> {
-    Ok(Json(fetch_one(&st.pool, id).await?))
+async fn get_one(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<DeckResponse>> {
+    Ok(Json(fetch_one(&state.pool, id).await?))
 }
 
-async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckDto> {
+async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckResponse> {
     sqlx::query_as!(
-        DeckDto,
+        DeckResponse,
         r#"SELECT d.id AS "id!: i64",
                   d.module_id AS "module_id?: i64",
                   m.name      AS "module_name?: String",
@@ -97,19 +96,17 @@ async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckDto> {
 }
 
 async fn list(
-    State(st): State<AppState>,
-    Query(q): Query<ListQuery>,
-) -> AppResult<Json<Vec<DeckDto>>> {
-    // An empty q means "no filter", same as absent — an empty search box must not
-    // filter everything out.
-    let needle = q
-        .q
+    State(state): State<AppState>,
+    Query(list_query): Query<ListQuery>,
+) -> AppResult<Json<Vec<DeckResponse>>> {
+    let search_pattern = list_query
+        .search
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(escape_like);
+        .filter(|search_text| !search_text.is_empty())
+        .map(escape_like_metacharacters);
 
-    let sort = q.sort.as_deref().unwrap_or("newest").to_string();
+    let sort = list_query.sort.as_deref().unwrap_or("newest").to_string();
     if sort != "newest" && sort != "oldest" {
         return Err(AppError::validation([(
             "sort",
@@ -117,32 +114,22 @@ async fn list(
         )]));
     }
 
-    // mode selects the module branch; module_id is only consulted when mode is "id".
-    let (mode, module_id) = match q.module_id.as_deref() {
+    let (module_filter_mode, module_id) = match list_query.module_id.as_deref() {
         None | Some("") | Some("all") => ("all".to_string(), None),
         Some("none") => ("none".to_string(), None),
         Some(raw) => {
-            let mid: i64 = raw.parse().map_err(|_| {
+            let parsed_module_id: i64 = raw.parse().map_err(|_| {
                 AppError::validation([(
                     "module_id",
                     "module_id must be a number, \"none\" or \"all\"",
                 )])
             })?;
-            ("id".to_string(), Some(mid))
+            ("id".to_string(), Some(parsed_module_id))
         }
     };
 
-    // The id arms mirror the sort direction (ASC for oldest, DESC for newest) so that
-    // oldest is the exact reverse of newest even when created_at ties (one-second
-    // resolution makes ties the normal case, not an edge case). The `newest` arm is
-    // proven by sort_newest_is_default_and_oldest_reverses_it. The `oldest` arm cannot
-    // be proven the same way: on tied timestamps it coincides with SQLite's incidental
-    // rowid scan order, so no black-box test can distinguish "the arm is doing the work"
-    // from "the coincidence happens to agree with it". It is kept anyway as a
-    // determinism guarantee against a future index or query-plan change that would
-    // break that coincidence.
     let rows = sqlx::query_as!(
-        DeckDto,
+        DeckResponse,
         r#"SELECT d.id AS "id!: i64",
                   d.module_id AS "module_id?: i64",
                   m.name      AS "module_name?: String",
@@ -159,26 +146,26 @@ async fn list(
                     CASE WHEN ? = 'newest' THEN d.created_at END DESC,
                     CASE WHEN ? = 'oldest' THEN d.id END ASC,
                     CASE WHEN ? = 'newest' THEN d.id END DESC"#,
-        needle,
-        needle,
-        mode,
-        mode,
+        search_pattern,
+        search_pattern,
+        module_filter_mode,
+        module_filter_mode,
         module_id,
         sort,
         sort,
         sort,
         sort
     )
-    .fetch_all(&st.pool)
+    .fetch_all(&state.pool)
     .await?;
 
     Ok(Json(rows))
 }
 
 async fn create(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     AppJson(body): AppJson<CreateDeck>,
-) -> AppResult<(StatusCode, Json<DeckDto>)> {
+) -> AppResult<(StatusCode, Json<DeckResponse>)> {
     let name = body.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::validation([("name", "Name must not be empty")]));
@@ -191,37 +178,39 @@ async fn create(
         name,
         description
     )
-    .fetch_one(&st.pool)
+    .fetch_one(&state.pool)
     .await
-    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
+    .map_err(|error| {
+        AppError::from(error)
+            .tag_foreign_key_violation("module_id", "That module does not exist")
+    })?;
 
-    Ok((StatusCode::CREATED, Json(fetch_one(&st.pool, id).await?)))
+    Ok((StatusCode::CREATED, Json(fetch_one(&state.pool, id).await?)))
 }
 
 async fn patch(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<i64>,
     AppJson(body): AppJson<PatchDeck>,
-) -> AppResult<Json<DeckDto>> {
-    // 404 before any write, so a bad id never touches the row.
-    let current = fetch_one(&st.pool, id).await?;
+) -> AppResult<Json<DeckResponse>> {
+    let current = fetch_one(&state.pool, id).await?;
 
     let name = match body.name {
-        Some(n) => {
-            let n = n.trim().to_string();
-            if n.is_empty() {
+        Some(submitted_name) => {
+            let trimmed_name = submitted_name.trim().to_string();
+            if trimmed_name.is_empty() {
                 return Err(AppError::validation([("name", "Name must not be empty")]));
             }
-            n
+            trimmed_name
         }
         None => current.name,
     };
     let module_id = match body.module_id {
-        Some(v) => v,              // present: Some(id) or None (unparent)
-        None => current.module_id, // absent: leave alone
+        Some(submitted_module_id) => submitted_module_id,
+        None => current.module_id,
     };
     let description = match body.description {
-        Some(d) => d.trim().to_string(),
+        Some(submitted_description) => submitted_description.trim().to_string(),
         None => current.description,
     };
 
@@ -232,9 +221,12 @@ async fn patch(
         description,
         id
     )
-    .execute(&st.pool)
+    .execute(&state.pool)
     .await
-    .map_err(|e| AppError::from(e).fk_as("module_id", "That module does not exist"))?;
+    .map_err(|error| {
+        AppError::from(error)
+            .tag_foreign_key_violation("module_id", "That module does not exist")
+    })?;
 
-    Ok(Json(fetch_one(&st.pool, id).await?))
+    Ok(Json(fetch_one(&state.pool, id).await?))
 }

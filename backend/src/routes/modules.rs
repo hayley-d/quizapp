@@ -9,7 +9,7 @@ use crate::extract::AppJson;
 use crate::state::AppState;
 
 #[derive(Serialize)]
-pub struct ModuleDto {
+pub struct ModuleResponse {
     pub id: i64,
     pub name: String,
     pub created_at: String,
@@ -26,9 +26,9 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/modules", get(list).post(create))
 }
 
-async fn list(State(st): State<AppState>) -> AppResult<Json<Vec<ModuleDto>>> {
+async fn list(State(state): State<AppState>) -> AppResult<Json<Vec<ModuleResponse>>> {
     let rows = sqlx::query_as!(
-        ModuleDto,
+        ModuleResponse,
         r#"SELECT m.id AS "id!: i64",
                   m.name,
                   m.created_at,
@@ -37,31 +37,31 @@ async fn list(State(st): State<AppState>) -> AppResult<Json<Vec<ModuleDto>>> {
            FROM modules m
            ORDER BY m.name COLLATE NOCASE"#
     )
-    .fetch_all(&st.pool)
+    .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
 }
 
 async fn create(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     AppJson(body): AppJson<CreateModule>,
-) -> AppResult<(StatusCode, Json<ModuleDto>)> {
+) -> AppResult<(StatusCode, Json<ModuleResponse>)> {
     let name = body.name.trim().to_string();
     if name.is_empty() {
         return Err(AppError::validation([("name", "Name must not be empty")]));
     }
 
     let id = sqlx::query_scalar!("INSERT INTO modules (name) VALUES (?) RETURNING id", name)
-        .fetch_one(&st.pool)
+        .fetch_one(&state.pool)
         .await?;
 
     let created = sqlx::query_as!(
-        ModuleDto,
+        ModuleResponse,
         r#"SELECT m.id AS "id!: i64", m.name, m.created_at, 0 AS "deck_count!: i64"
            FROM modules m WHERE m.id = ?"#,
         id
     )
-    .fetch_one(&st.pool)
+    .fetch_one(&state.pool)
     .await?;
 
     Ok((StatusCode::CREATED, Json(created)))

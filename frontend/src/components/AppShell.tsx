@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 
-const links = [
+const navigationLinks = [
   { to: '/study', label: 'Study' },
   { to: '/decks', label: 'Decks' },
   { to: '/stats', label: 'Stats' },
@@ -13,10 +13,10 @@ export function AppShell() {
       <header className="border-b">
         <nav className="mx-auto flex max-w-5xl items-center gap-1 px-4 py-3">
           <span className="font-display mr-4 text-lg font-bold text-primary">quizapp</span>
-          {links.map((l) => (
+          {navigationLinks.map((navigationLink) => (
             <NavLink
-              key={l.to}
-              to={l.to}
+              key={navigationLink.to}
+              to={navigationLink.to}
               className={({ isActive }) =>
                 `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   isActive
@@ -25,7 +25,7 @@ export function AppShell() {
                 }`
               }
             >
-              {l.label}
+              {navigationLink.label}
             </NavLink>
           ))}
         </nav>

@@ -56,7 +56,6 @@ async fn created_at_is_iso8601_utc() {
         created_at.ends_with('Z'),
         "expected a trailing Z marker, got {created_at}"
     );
-    // `%Y-%m-%dT%H:%M:%SZ`: 19 digit/separator chars plus the trailing Z.
     let bytes = created_at.as_bytes();
     assert_eq!(bytes.len(), 20, "{created_at} is not 20 chars long");
     let digit_positions = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18];
@@ -83,22 +82,22 @@ async fn missing_field_returns_json_envelope() {
 #[tokio::test]
 async fn malformed_json_syntax_returns_json_envelope() {
     let app = common::spawn_app().await;
-    let req = Request::builder()
+    let request = Request::builder()
         .method("POST")
         .uri("/api/modules")
         .header("content-type", "application/json")
         .body(Body::from("{"))
         .unwrap();
-    let res = app.router.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let content_type = res
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let content_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap()
         .to_string();
     assert!(content_type.starts_with("application/json"));
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["error"], "bad_request");
 }
@@ -106,21 +105,21 @@ async fn malformed_json_syntax_returns_json_envelope() {
 #[tokio::test]
 async fn missing_content_type_returns_json_envelope() {
     let app = common::spawn_app().await;
-    let req = Request::builder()
+    let request = Request::builder()
         .method("POST")
         .uri("/api/modules")
         .body(Body::from(r#"{"name":"COS781"}"#))
         .unwrap();
-    let res = app.router.clone().oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
-    let content_type = res
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    let content_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap()
         .to_string();
     assert!(content_type.starts_with("application/json"));
-    let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["error"], "unsupported_media_type");
 }
