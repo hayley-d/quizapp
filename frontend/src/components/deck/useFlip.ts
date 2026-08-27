@@ -31,6 +31,16 @@ export function useFlip() {
 
   const busy = useRef(false)
   const cleanups = useRef<Array<() => void>>([])
+  // A return-to-front requested while a flip was still in flight. The flip
+  // that is running must finish — interrupting it mid-rotation would leave the
+  // element at an arbitrary angle — so the request waits here and runs the
+  // moment the machine settles.
+  const pending = useRef<Face | null>(null)
+  // `goTo` schedules a callback that may need to call `goTo` again, which it
+  // cannot reference during its own definition. The ref is refreshed after
+  // every render, so by the time a scheduled callback fires it holds the
+  // current closure.
+  const goToRef = useRef<(next: Face) => void>(() => {})
 
   const later = useCallback((fn: () => void, ms: number) => {
     const t = window.setTimeout(fn, ms)
@@ -79,6 +89,9 @@ export function useFlip() {
           setAngle(0)
           later(() => {
             busy.current = false
+            const queued = pending.current
+            pending.current = null
+            if (queued !== null) goToRef.current(queued)
           }, HALF_MS)
         })
       }, HALF_MS)
@@ -86,12 +99,27 @@ export function useFlip() {
     [face, later, nextFrame],
   )
 
+  useEffect(() => {
+    goToRef.current = goTo
+  }, [goTo])
+
   const flip = useCallback(() => {
     goTo(face === 'front' ? 'back' : 'front')
   }, [face, goTo])
 
-  /** Return to the question — used when the answer fetch fails. */
+  /**
+   * Return to the question — used when the answer fetch fails.
+   *
+   * Unlike `flip`, this is never dropped. The fetch it backs out is started
+   * the instant `face` becomes 'back', which is the midpoint of the flip, so
+   * a fast failure lands while the machine is still busy; ignoring it would
+   * leave the card resting on a face whose content never loaded.
+   */
   const toFront = useCallback(() => {
+    if (busy.current) {
+      pending.current = 'front'
+      return
+    }
     goTo('front')
   }, [goTo])
 
