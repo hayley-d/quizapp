@@ -261,7 +261,11 @@ nine points were driven** — this is not a partial pass, it is a complete gap):
 3. A multiple-choice back shows uniform options; the eye button colours the correct one and the
    label flips to "Hide answer".
 4. Flip back and forward again — the reveal has reset.
-5. Clicking a card's image opens the lightbox and does **not** flip the card.
+5. Clicking a card's image opens the lightbox and does **not** flip the card. Then **Tab to the
+   thumbnail and press Enter** — the lightbox must open, and the card must NOT flip. Repeat with
+   Space. This keyboard half is the point: the mouse half passed while the keyboard path was
+   broken (Enter bubbled to the flip target, which cancelled the button's click), and that bug
+   was caught by review rather than by this list.
 6. Drag a card by its grip to a new position; reload the page — the new order persists.
 7. Tab to a grip, press Space, press ArrowDown twice, press Space — the card moves, and reload
    confirms it persisted.

@@ -1055,7 +1055,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] The row is a `useSortable` item; only the grip starts a drag
 - [ ] Clicking the card body flips it; Enter and Space do the same from the keyboard
 - [ ] The body's `aria-label` alternates between "Show answer" and "Show question"
-- [ ] The image thumbnail opens its lightbox and does **not** flip the card
+- [ ] The image thumbnail opens its lightbox and does **not** flip the card, by mouse **and** by
+      keyboard — `onKeyDown` must ignore keys originating on descendants, or Enter's default
+      action (the button's click) is cancelled and the lightbox becomes unreachable
 - [ ] Kind badge, edit pill and archive pill sit in the header strip, outside the flip target
 - [ ] The eye button appears for `mc_single` only, carries `aria-pressed`, and its label alternates "Reveal answer" / "Hide answer"
 - [ ] Reveal resets when the card flips back to the question
@@ -1263,6 +1265,12 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: Props) {
             aria-label={showingAnswer ? 'Show question' : 'Show answer'}
             onClick={flip}
             onKeyDown={(e) => {
+              // Only keys pressed on the card body itself. A keydown from a
+              // focusable descendant — the image thumbnail's button, or a link
+              // in the markdown — must reach its own default action: Enter's
+              // default action IS the button's click, so preventing it here
+              // would make the lightbox unreachable by keyboard.
+              if (e.target !== e.currentTarget) return
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 flip()
@@ -1510,7 +1518,10 @@ Replace the existing header block (the `<div className="flex flex-wrap items-sta
             </p>
           </div>
         </div>
-        <Button className="h-10 px-4" onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}>
+        <Button
+          className="h-10 bg-accent px-4 text-accent-foreground hover:bg-accent/80"
+          onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
+        >
           <Plus className="size-4" />
           Add card
         </Button>
@@ -1563,7 +1574,11 @@ Then, with `cargo run` in one terminal and `pnpm dev` in another, open
 3. A multiple-choice back shows uniform options; the eye button colours the correct one and the
    label flips to "Hide answer".
 4. Flip back and forward again — the reveal has reset.
-5. Clicking a card's image opens the lightbox and does **not** flip the card.
+5. Clicking a card's image opens the lightbox and does **not** flip the card. Then **Tab to the
+   thumbnail and press Enter** — the lightbox must open, and the card must NOT flip. Repeat with
+   Space. This keyboard half is the point: the mouse half passed while the keyboard path was
+   broken (Enter bubbled to the flip target, which cancelled the button's click), and that bug
+   was caught by review rather than by this list.
 6. Drag a card by its grip to a new position; reload the page — the new order persists.
 7. Tab to a grip, press Space, press ArrowDown twice, press Space — the card moves, and reload
    confirms it persisted.
