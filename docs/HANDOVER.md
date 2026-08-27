@@ -32,8 +32,20 @@ working today:
   short-answer grading
 - `/decks` screen: flat card list with module badges, a search/filter/sort toolbar,
   debounced input and a stale-response guard
-- `/decks/:id` screen: a deck's card list with kind badges, archive/unarchive, and a
-  show-archived toggle
+- `/decks/:id` screen: the deck as a list of flippable cards. Click or Enter on a card body flips
+  it (a half-flip: rotate to edge-on, swap the single mounted face, rotate back — a two-faced 3D
+  flip would need a fixed row height, which the unclamped markdown prompts rule out) and the
+  answer is fetched per row on first flip via `GET /api/cards/:id`. Multiple-choice backs show a
+  two-column grid whose options stay uniform until the eye button reveals the correct one. Rows
+  drag to reorder by their grip (`@dnd-kit/sortable`, keyboard reorder included), and the order
+  persists. Archive/unarchive and the show-archived toggle are unchanged. Design:
+  [`mitis/specs/2026-08-27-deck-card-list-redesign-design.md`](mitis/specs/2026-08-27-deck-card-list-redesign-design.md)
+
+  **Manual verification outstanding.** The nine-point browser walkthrough for this screen
+  (flip, drag reorder, keyboard reorder, reduced-motion, the image lightbox) has **not been
+  performed** — the dev-tools browser could not reach the dev server in this environment. The
+  code is complete and the automated gate is clean, but nothing on this screen has actually
+  been clicked. Do not assume it works until someone has driven it in a browser.
 - `/cards/new?deck_id=` and `/cards/:id/edit`: a keyboard-first editor for all three kinds,
   with a `ChoicesEditor` and an `AcceptedEditor`
 - `POST /api/images`: multipart upload, magic-byte type check (PNG/JPEG/WebP), 5 MiB cap,
@@ -48,6 +60,13 @@ working today:
   opens a lightbox
 - The card editor uploads an image while you write, and toggles the whole form between Edit
   and Preview with `⌘/Ctrl+P`
+- `cards.position`: a dense 0-based order per deck (migration `0002`), backfilled from the
+  `created_at` ordering the list used before, with archived cards keeping their slots.
+  `GET /api/cards` orders by it. `POST /api/cards/:id/move` takes `{"before": id|null}` — land
+  immediately before that card, or at the end of the deck — and rewrites the deck's positions in
+  one transaction without touching `updated_at`. It is relative rather than a whole-deck
+  permutation because the deck screen can be filtered, so the client cannot honestly send a
+  complete order.
 - 106 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
@@ -62,6 +81,9 @@ than writing them, and the first consumer of `POST /api/sessions`.
 Two things already in place that Part 3 must use rather than reinvent: the `<Markdown>`
 component (the session runner is its third consumer — do not add a fourth rendering path),
 and `normalise()`, which computes the same key grading will look up.
+
+A third: `cards.position` is the deck's authored order, and practice mode should read it rather
+than inventing an order of its own.
 
 After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
 
@@ -230,6 +252,23 @@ Added by Part 2b (the extension was still not connected, so none of these were d
 - KaTeX legibility against both Bibble palettes
 - That a rejected upload leaves every other typed field untouched, and that the same file can
   be picked again straight after a failure (the input-value reset)
+
+Added by Part 2c (the browser tooling still could not reach the dev server, so **none of these
+nine points were driven** — this is not a partial pass, it is a complete gap):
+
+1. Clicking a card body flips it with a rotation; the answer appears.
+2. Tab to a card body, press Enter — same flip. Press Space — same flip, page does not scroll.
+3. A multiple-choice back shows uniform options; the eye button colours the correct one and the
+   label flips to "Hide answer".
+4. Flip back and forward again — the reveal has reset.
+5. Clicking a card's image opens the lightbox and does **not** flip the card.
+6. Drag a card by its grip to a new position; reload the page — the new order persists.
+7. Tab to a grip, press Space, press ArrowDown twice, press Space — the card moves, and reload
+   confirms it persisted.
+8. Toggle "Show archived" on, drag a visible card past an archived one, reload — the archived
+   card is still where it was.
+9. In macOS System Settings → Accessibility → Display, turn on "Reduce motion", then flip a
+   card — the face swaps with no rotation.
 
 **Housekeeping**
 
