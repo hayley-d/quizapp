@@ -79,7 +79,10 @@ export function DeckPage() {
       if ((e as Error)?.name === 'AbortError') return
       toast.error('Could not load cards')
     } finally {
-      if (inFlight.current === controller) setLoading(false)
+      if (inFlight.current === controller) {
+        inFlight.current = null
+        setLoading(false)
+      }
     }
   }, [deckId, showArchived])
 
@@ -152,8 +155,12 @@ export function DeckPage() {
     if (from === -1 || to === -1) return
 
     // Any list response still in flight predates this reorder and would land
-    // on top of it. Abort it and clear the ref, which is also what makes the
-    // superseded-response check in loadCards fire.
+    // on top of it, so it must not be applied. But it may have been fetching a
+    // *different* filter set — a show-archived toggle the user hit moments
+    // earlier — so dropping it outright would leave the switch and the list
+    // disagreeing. Note that we dropped one and re-issue it once the move
+    // settles.
+    const droppedFetch = inFlight.current !== null
     inFlight.current?.abort()
     inFlight.current = null
     setLoading(false)
@@ -172,11 +179,18 @@ export function DeckPage() {
     const landed = next.findIndex((c) => c.id === active.id)
     const before = landed + 1 < next.length ? next[landed + 1].id : null
 
-    void api.moveCard(Number(active.id), before).catch(() => {
-      toast.error('Could not reorder cards')
-      setCards(previous)
-      void loadCards()
-    })
+    void api.moveCard(Number(active.id), before)
+      .then(() => {
+        // Only when we actually dropped one: a refetch on every drag would be
+        // a wasted round trip, since the optimistic order already matches what
+        // the server just committed.
+        if (droppedFetch) void loadCards()
+      })
+      .catch(() => {
+        toast.error('Could not reorder cards')
+        setCards(previous)
+        void loadCards()
+      })
   }
 
   if (notFound) {
