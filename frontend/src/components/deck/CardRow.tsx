@@ -130,11 +130,11 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: Props) {
           {/* Header strip. Outside the flip target below, which keeps these
               controls out of the flip and avoids nesting buttons in a button. */}
           <div className="flex items-center gap-2">
-            <Badge variant="outline">{KIND_LABEL[card.kind]}</Badge>
+            <Badge>{KIND_LABEL[card.kind]}</Badge>
             {card.archived && <Badge variant="secondary">Archived</Badge>}
 
             <Button
-              variant="secondary"
+              variant="brand"
               size="icon-sm"
               className="rounded-full"
               aria-label={`Edit card ${card.id}`}
@@ -144,7 +144,7 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: Props) {
               <Pencil />
             </Button>
             <Button
-              variant="secondary"
+              variant="brand"
               size="icon-sm"
               className="rounded-full"
               aria-label={`${card.archived ? 'Unarchive' : 'Archive'} card ${card.id}`}
@@ -156,7 +156,7 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: Props) {
 
             {card.kind === 'mc_single' && showingAnswer && full && (
               <Button
-                variant="secondary"
+                variant="brand"
                 size="icon-sm"
                 className="ml-auto rounded-full"
                 aria-pressed={revealed}

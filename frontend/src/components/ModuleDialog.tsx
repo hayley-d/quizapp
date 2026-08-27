@@ -40,7 +40,7 @@ export function ModuleDialog({ onSaved }: { onSaved: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="h-10 bg-[var(--deck-card-header)] px-4 text-white hover:bg-[var(--deck-card-header)] hover:brightness-110">
+        <Button variant="brand" className="h-10 px-4">
           <Plus className="size-4" />
           Create module
         </Button>

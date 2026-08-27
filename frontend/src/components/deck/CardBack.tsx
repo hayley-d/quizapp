@@ -13,12 +13,18 @@ const LETTERS = 'ABCDEFGHIJ'
 /**
  * Unrevealed options are deliberately uniform: the back of a multiple-choice
  * card is a self-test, so nothing may hint at the answer until the eye button
- * is pressed. `--success` is the theme's designated correct-answer colour.
+ * is pressed. The revealed option takes `--primary`, the same turquoise the
+ * navbar uses for the current route, so "correct" reads as the app's one
+ * affirmative colour rather than a second one.
  */
 function choiceClass(isCorrect: boolean, revealed: boolean): string {
-  if (!revealed) return 'bg-accent/85 text-accent-foreground'
+  // `[&_strong]:font-normal` is load-bearing, not cosmetic: an option authored
+  // as `**K-Means**` renders bold through <Markdown>, and a single bold option
+  // among four plain ones gives the answer away before the eye is pressed.
+  // Emphasis comes back on reveal.
+  if (!revealed) return 'bg-accent/85 text-accent-foreground [&_strong]:font-normal'
   return isCorrect
-    ? 'bg-success text-success-foreground font-medium'
+    ? 'bg-primary text-primary-foreground font-medium'
     : 'bg-muted text-muted-foreground'
 }
 
