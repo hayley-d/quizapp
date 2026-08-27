@@ -70,6 +70,10 @@ export function DeckPage() {
         { deckId, archived: showArchived ? 'all' : 'false' },
         controller.signal,
       )
+      // A newer request — or a drag's optimistic reorder, which clears this
+      // ref — has superseded this response. Applying it would overwrite newer
+      // state with older server data.
+      if (inFlight.current !== controller) return
       setCards(rows)
     } catch (e) {
       if ((e as Error)?.name === 'AbortError') return
@@ -146,6 +150,13 @@ export function DeckPage() {
     const from = cards.findIndex((c) => c.id === active.id)
     const to = cards.findIndex((c) => c.id === over.id)
     if (from === -1 || to === -1) return
+
+    // Any list response still in flight predates this reorder and would land
+    // on top of it. Abort it and clear the ref, which is also what makes the
+    // superseded-response check in loadCards fire.
+    inFlight.current?.abort()
+    inFlight.current = null
+    setLoading(false)
 
     const previous = cards
     const next = arrayMove(cards, from, to)
@@ -227,7 +238,7 @@ export function DeckPage() {
           <p className="text-muted-foreground">No cards yet.</p>
           <Button variant="secondary" size="sm" onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}>
             <Plus className="size-4" />
-            New card
+            Add card
           </Button>
         </div>
       )}
