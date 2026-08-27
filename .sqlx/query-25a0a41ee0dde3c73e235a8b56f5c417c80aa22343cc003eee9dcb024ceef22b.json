@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", deck_id AS \"deck_id!: i64\", kind,\n                  prompt_md, image_path, answer_md, explanation_md,\n                  archived AS \"archived!: bool\", created_at, updated_at\n           FROM cards\n           WHERE (? IS NULL OR deck_id = ?)\n             AND (? = 'all' OR kind = ?)\n             AND (? = 'all'\n                  OR (? = 'true'  AND archived = 1)\n                  OR (? = 'false' AND archived = 0))\n           ORDER BY created_at ASC, id ASC",
+  "query": "SELECT id AS \"id!: i64\", deck_id AS \"deck_id!: i64\", kind,\n                  prompt_md, image_path, answer_md, explanation_md,\n                  archived AS \"archived!: bool\", position AS \"position!: i64\",\n                  created_at, updated_at\n           FROM cards WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -44,18 +44,23 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "position!: i64",
         "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 9,
         "type_info": "Text"
       },
       {
         "name": "updated_at",
-        "ordinal": 9,
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 7
+      "Right": 1
     },
     "nullable": [
       false,
@@ -67,8 +72,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "d4fa07729be148a119f4f68bea7b0947dd82660a744bbbd2c922792099ed6bfd"
+  "hash": "25a0a41ee0dde3c73e235a8b56f5c417c80aa22343cc003eee9dcb024ceef22b"
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(position), -1) + 1 AS \"next!: i64\"\n           FROM cards WHERE deck_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "next!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7eb5da9ed7de9e0969d2d30a08cc5170c9861983e106fcfaeb0d3f516cfaebe5"
+}
