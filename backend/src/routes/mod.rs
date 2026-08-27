@@ -1,6 +1,7 @@
 pub mod cards;
 pub mod decks;
 pub mod health;
+pub mod images;
 pub mod modules;
 
 use axum::Router;
@@ -12,4 +13,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(modules::router())
         .merge(decks::router())
         .merge(cards::router())
+        .merge(images::router())
 }
