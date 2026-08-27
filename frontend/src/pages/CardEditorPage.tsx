@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
@@ -18,6 +18,9 @@ import {
 } from '@/components/ui/select'
 import { ChoicesEditor } from '@/components/card-editor/ChoicesEditor'
 import { AcceptedEditor } from '@/components/card-editor/AcceptedEditor'
+import { CardImage } from '@/components/CardImage'
+import { CardPreview } from '@/components/card-editor/CardPreview'
+import { Input } from '@/components/ui/input'
 
 function emptyChoices(): ChoiceInput[] {
   return [
@@ -73,6 +76,9 @@ function CardEditorPageInner() {
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState(mode === 'create' && queryDeckId === null)
   const [loaded, setLoaded] = useState(mode === 'create')
+  const [imagePath, setImagePath] = useState<string | null>(null)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [view, setView] = useState<'edit' | 'preview'>('edit')
 
   const promptRef = useRef<HTMLTextAreaElement>(null)
 
@@ -89,6 +95,7 @@ function CardEditorPageInner() {
         setDeckId(card.deck_id)
         setKind(card.kind)
         setPromptMd(card.prompt_md)
+        setImagePath(card.image_path)
         setAnswerMd(card.answer_md ?? '')
         setExplanationMd(card.explanation_md ?? '')
         setChoices(
@@ -113,13 +120,58 @@ function CardEditorPageInner() {
     return () => controller.abort()
   }, [mode, cardId])
 
+  // Coming back from Preview must land the cursor where typing continues,
+  // not wherever the toggle button happened to leave it.
+  useEffect(() => {
+    if (view === 'edit' && loaded) promptRef.current?.focus()
+  }, [view, loaded])
+
   function buildInput(): CardInput {
     const input: CardInput = { kind, prompt_md: promptMd }
+    // Sent unconditionally, including null: cards PATCH is a full replace and
+    // an absent key means "no image".
+    input.image_path = imagePath
     if (explanationMd.trim() !== '') input.explanation_md = explanationMd
     if (kind === 'flashcard') input.answer_md = answerMd
     if (kind === 'mc_single') input.choices = choices
     if (kind === 'short_answer') input.accepted = accepted
     return input
+  }
+
+  /** Drops one key from the error map without disturbing the others. */
+  function clearError(key: string) {
+    setErrors((prev) => Object.fromEntries(
+      Object.entries(prev).filter(([k]) => k !== key),
+    ))
+  }
+
+  async function pickImage(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    // Reset the input before anything else: without this, choosing the same
+    // file again after a failure fires no change event and the picker looks
+    // dead.
+    e.target.value = ''
+    if (!file) return
+
+    setImageBusy(true)
+    clearError('file')
+    try {
+      const { path } = await api.uploadImage(file)
+      setImagePath(path)
+    } catch (err) {
+      // A rejected upload must leave typed content alone, exactly like a
+      // rejected save — so this merges one field error in rather than
+      // replacing the error map.
+      if (err instanceof ApiError) {
+        const byField = err.byField()
+        if (Object.keys(byField).length === 0) toast.error(err.message)
+        else setErrors((prev) => ({ ...prev, ...byField }))
+      } else {
+        toast.error('Could not upload the image')
+      }
+    } finally {
+      setImageBusy(false)
+    }
   }
 
   async function save() {
@@ -156,6 +208,7 @@ function CardEditorPageInner() {
     setExplanationMd('')
     setChoices(emptyChoices())
     setAccepted(emptyAccepted())
+    setImagePath(null)
     setErrors({})
     promptRef.current?.focus()
   }
@@ -182,6 +235,10 @@ function CardEditorPageInner() {
       e.preventDefault()
       if (busy) return
       void saveAndReturn()
+    } else if (mod && e.key.toLowerCase() === 'p') {
+      // preventDefault matters: this is the browser's print shortcut.
+      e.preventDefault()
+      setView((v) => (v === 'edit' ? 'preview' : 'edit'))
     } else if (e.key === 'Escape') {
       e.preventDefault()
       if (busy) return
@@ -201,7 +258,8 @@ function CardEditorPageInner() {
   // ever happened the message would land in a block that isn't mounted and
   // vanish silently. Render anything no other block claims, same spirit as
   // the orphaned-indexed-error fallback in ChoicesEditor/AcceptedEditor.
-  const claimedErrorKeys = new Set(['kind', 'prompt_md', 'explanation_md', 'deck_id'])
+  const claimedErrorKeys = new Set(['kind', 'prompt_md', 'explanation_md', 'deck_id',
+                                    'image_path', 'file'])
   if (kind === 'mc_single') claimedErrorKeys.add('choices')
   if (kind === 'short_answer') claimedErrorKeys.add('accepted')
   if (kind === 'flashcard') claimedErrorKeys.add('answer_md')
@@ -236,10 +294,28 @@ function CardEditorPageInner() {
 
   return (
     <div className="max-w-2xl space-y-6" onKeyDown={handleContainerKeyDown}>
-      <h1 className="font-display text-2xl font-bold">
-        {mode === 'create' ? 'New card' : 'Edit card'}
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-bold">
+          {mode === 'create' ? 'New card' : 'Edit card'}
+        </h1>
+        <div className="flex items-center gap-1 rounded-lg border p-1">
+          <Button
+            size="sm" variant={view === 'edit' ? 'secondary' : 'ghost'}
+            aria-pressed={view === 'edit'} onClick={() => setView('edit')}
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm" variant={view === 'preview' ? 'secondary' : 'ghost'}
+            aria-pressed={view === 'preview'} onClick={() => setView('preview')}
+          >
+            Preview
+          </Button>
+        </div>
+      </div>
 
+      {view === 'edit' ? (
+      <>
       {errors.deck_id && <p className="text-sm text-destructive">{errors.deck_id}</p>}
 
       <div className="space-y-2">
@@ -267,6 +343,34 @@ function CardEditorPageInner() {
           aria-invalid={!!errors.prompt_md}
         />
         {errors.prompt_md && <p className="text-sm text-destructive">{errors.prompt_md}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="card-image">Image (optional)</Label>
+        {imagePath === null ? (
+          <Input
+            id="card-image"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={imageBusy || busy}
+            onChange={(e) => void pickImage(e)}
+            aria-invalid={!!errors.file}
+          />
+        ) : (
+          <div className="flex items-center gap-3">
+            <CardImage path={imagePath} alt="Card image" />
+            <Button
+              type="button" variant="secondary" size="sm" disabled={busy}
+              onClick={() => { setImagePath(null); clearError('image_path') }}
+            >
+              Remove
+            </Button>
+          </div>
+        )}
+        {imageBusy && <p className="text-sm text-muted-foreground">Uploading…</p>}
+        {(errors.file ?? errors.image_path) && (
+          <p className="text-sm text-destructive">{errors.file ?? errors.image_path}</p>
+        )}
       </div>
 
       {kind === 'mc_single' && (
@@ -314,6 +418,18 @@ function CardEditorPageInner() {
           <p className="text-sm text-destructive">{errors.explanation_md}</p>
         )}
       </div>
+      </>
+      ) : (
+        <CardPreview
+          kind={kind}
+          promptMd={promptMd}
+          imagePath={imagePath}
+          choices={choices}
+          accepted={accepted}
+          answerMd={answerMd}
+          explanationMd={explanationMd}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-3 border-t pt-4">
         {mode === 'create' ? (
@@ -335,8 +451,8 @@ function CardEditorPageInner() {
         </Button>
         <p className="text-sm text-muted-foreground">
           {mode === 'create'
-            ? '⌘/Ctrl+Enter save & next · ⌘/Ctrl+S save & close · Esc cancel'
-            : '⌘/Ctrl+Enter or ⌘/Ctrl+S save & close · Esc cancel'}
+            ? '⌘/Ctrl+Enter save & next · ⌘/Ctrl+S save & close · Esc cancel · ⌘/Ctrl+P preview'
+            : '⌘/Ctrl+Enter or ⌘/Ctrl+S save & close · Esc cancel · ⌘/Ctrl+P preview'}
         </p>
       </div>
     </div>
