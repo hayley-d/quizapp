@@ -75,16 +75,20 @@ must not see a reorder as a revision.
 
 ## 3. Fetching the card back
 
-`DeckPage` holds a `Map<number, Card>` cache. The first flip of a card calls the existing
-`GET /api/cards/:id`, which already returns `choices` and `accepted`; later flips are instant. The
-back renders a small skeleton while that first request is in flight.
+Each `CardRow` fetches and caches its own detail. The first flip calls the existing
+`GET /api/cards/:id`, which already returns `choices` and `accepted`; later flips of that row are
+instant. The back renders a small skeleton while the first request is in flight.
 
-- One `AbortController` per card id, cancelled if the card is flipped back before the response
-  lands — otherwise a slow request repopulates a card the user has already closed.
-- Archive/unarchive evicts that card's cache entry.
-- A save in the card editor navigates back and remounts the page, so the cache cannot outlive its
-  own data.
-- On fetch failure: a toast, and the card returns to its front face rather than resting on a
+**Why per-row and not a page-level `Map`.** The only thing that invalidates a cached back is an
+edit to the card's content, and editing happens on `/cards/:id/edit`, which remounts `DeckPage` on
+return — so the cache cannot outlive its own data. Archive and unarchive change no answer content,
+so they need no eviction. A page-level map plus an eviction rule would buy nothing over row state
+and would put the fetch on the far side of a prop boundary from the flip that triggers it.
+
+- One `AbortController` per row, aborted if the card is flipped back before the response lands, and
+  on unmount — otherwise a slow request repopulates a card the user has already closed. An
+  `AbortError` is swallowed, not toasted.
+- On fetch failure: a toast, and the row returns to its front face rather than resting on a
   broken back.
 
 `GET /api/cards` is deliberately **not** extended to carry children. Every deck load would pay for
@@ -146,11 +150,15 @@ Both are deliberate and recorded here so they are not read as omissions:
 
 ## 6. Back faces by kind
 
-- **Flashcard** — `answer_md` through `<Markdown>`, then `explanation_md` in muted text if present.
+- **Flashcard** — `answer_md` through `<Markdown>`.
 - **Short answer** — accepted answers, primary first: the primary emphasised, alternates beneath as
   muted chips.
 - **Multiple choice** — a grid, `sm:grid-cols-2`, single column on narrow screens, choices lettered
   A–D by `position`.
+
+`explanation_md`, in muted text below the answer, renders for **every** kind when present. It is
+one field on `cards` with no per-kind rule behind it, and showing it only on flashcards would be an
+arbitrary hole.
 
 **Reveal states.** Per card, reset when the card flips back.
 
@@ -211,7 +219,6 @@ row has a header strip, two faces and a flip state machine. No other refactoring
 Backend, in `backend/tests/cards.rs` (the project has no frontend test framework, by an existing
 spec decision):
 
-- migration backfill preserves creation order
 - list returns `position ASC`
 - create appends at the end of the deck
 - move to the middle, to the front, and `before: null` to the end, each verified by a follow-up list
@@ -221,6 +228,11 @@ spec decision):
 - positions stay dense and 0-based after a sequence of moves
 - archive then unarchive leaves position unchanged
 - moving a card while archived cards are interleaved keeps the archived cards' relative order
+
+The migration backfill is **not** covered by an integration test: `spawn_app` builds a fresh
+database with every migration already applied, so there are never pre-existing rows for 0002 to
+back-fill. It is checked by hand against the dev database instead — positions dense and 0-based per
+deck, `created_at` non-decreasing down each deck's block.
 
 Frontend verification is the existing gate: `pnpm exec tsc --noEmit && pnpm build`, plus a manual
 walkthrough of flip, reveal, drag, keyboard reorder, and reduced-motion.
