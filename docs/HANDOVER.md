@@ -2,8 +2,8 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, at `part2c-deck-card-list` (the deck card list redesign complete
-and gate-clean, not yet merged to `main`).
+**Last updated:** 2026-08-27, on `main` (Part 2c, the deck card list redesign, merged — its
+nine-point browser walkthrough is still outstanding, see Outstanding).
 
 ## What this is
 
@@ -13,9 +13,9 @@ document is the record of what the app is meant to be, and it is kept current.
 
 ## Where things stand
 
-Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1, 2a and 2b are merged
-to `main`; the deck card list redesign lives on `part2c-deck-card-list`, gate-clean, awaiting
-merge. Concretely, working today:
+Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
+redesign that followed them ("Part 2c" below). All of it is merged to `main`; there is no
+feature branch outstanding. Concretely, working today:
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
