@@ -28,7 +28,6 @@ export function DeckPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  // A non-numeric id is a not-found state, not a fetch attempt.
   const deckId = id !== undefined && /^\d+$/.test(id) ? Number(id) : null
 
   const [deck, setDeck] = useState<Deck | null>(null)
@@ -41,21 +40,17 @@ export function DeckPage() {
     async (signal: AbortSignal) => {
       if (deckId === null) return
       try {
-        const d = await api.getDeck(deckId, signal)
-        setDeck(d)
+        const fetchedDeck = await api.getDeck(deckId, signal)
+        setDeck(fetchedDeck)
         setNotFound(false)
-      } catch (e) {
-        if ((e as Error)?.name === 'AbortError') return
+      } catch (error) {
+        if ((error as Error)?.name === 'AbortError') return
         setNotFound(true)
       }
     },
     [deckId],
   )
 
-  // One in-flight cards request at a time, mirroring DecksPage's stale-response guard.
-  // Deck refetches (triggered by archive/unarchive, below) get their own
-  // controller ref: sharing this one would let a deck refetch abort an
-  // in-flight cards request (or vice versa) when both fire together.
   const inFlight = useRef<AbortController | null>(null)
   const deckInFlight = useRef<AbortController | null>(null)
 
@@ -70,13 +65,10 @@ export function DeckPage() {
         { deckId, archived: showArchived ? 'all' : 'false' },
         controller.signal,
       )
-      // A newer request — or a drag's optimistic reorder, which clears this
-      // ref — has superseded this response. Applying it would overwrite newer
-      // state with older server data.
       if (inFlight.current !== controller) return
       setCards(rows)
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError') return
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') return
       toast.error('Could not load cards')
     } finally {
       if (inFlight.current === controller) {
@@ -92,8 +84,6 @@ export function DeckPage() {
       setDeck(null)
       return
     }
-    // Reset stale state from a previous id (e.g. a prior not-found, or the
-    // previous deck's header) before the new fetch resolves.
     setNotFound(false)
     setDeck(null)
     const controller = new AbortController()
@@ -103,15 +93,11 @@ export function DeckPage() {
 
   useEffect(() => { void loadCards() }, [loadCards])
 
-  // Cancel any in-flight cards/deck requests if the page unmounts.
   useEffect(() => () => {
     inFlight.current?.abort()
     deckInFlight.current?.abort()
   }, [])
 
-  // Archive/unarchive can change the deck's card_count (it deliberately
-  // excludes archived cards), so the header must refetch alongside the list —
-  // otherwise it shows a stale count until a full navigation.
   function reloadDeck() {
     deckInFlight.current?.abort()
     const controller = new AbortController()
@@ -139,8 +125,6 @@ export function DeckPage() {
     }
   }
 
-  // A small distance threshold so a click on the grip is still a click, and
-  // the keyboard sensor so reordering does not require a pointer at all.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -150,45 +134,32 @@ export function DeckPage() {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const from = cards.findIndex((c) => c.id === active.id)
-    const to = cards.findIndex((c) => c.id === over.id)
-    if (from === -1 || to === -1) return
+    const fromIndex = cards.findIndex((card) => card.id === active.id)
+    const toIndex = cards.findIndex((card) => card.id === over.id)
+    if (fromIndex === -1 || toIndex === -1) return
 
-    // Any list response still in flight predates this reorder and would land
-    // on top of it, so it must not be applied. But it may have been fetching a
-    // *different* filter set — a show-archived toggle the user hit moments
-    // earlier — so dropping it outright would leave the switch and the list
-    // disagreeing. Note that we dropped one and re-issue it once the move
-    // settles.
     const droppedFetch = inFlight.current !== null
     inFlight.current?.abort()
     inFlight.current = null
     setLoading(false)
 
-    const previous = cards
-    const next = arrayMove(cards, from, to)
-    setCards(next)
+    const previousCards = cards
+    const reorderedCards = arrayMove(cards, fromIndex, toIndex)
+    setCards(reorderedCards)
 
-    // `before` is the card that FOLLOWS the moved one in the new order, not
-    // `over.id`. Dragging downwards, the over-row is the one being displaced
-    // and sits *above* the landing slot, so sending it would be off by one.
-    // Reading the new neighbour is correct in both directions with no special
-    // case. When archived cards are hidden this is the next *visible* card,
-    // which is exactly the semantics the endpoint implements: hidden cards
-    // keep their slots above it.
-    const landed = next.findIndex((c) => c.id === active.id)
-    const before = landed + 1 < next.length ? next[landed + 1].id : null
+    const landedIndex = reorderedCards.findIndex((card) => card.id === active.id)
+    const before =
+      landedIndex + 1 < reorderedCards.length
+        ? reorderedCards[landedIndex + 1].id
+        : null
 
     void api.moveCard(Number(active.id), before)
       .then(() => {
-        // Only when we actually dropped one: a refetch on every drag would be
-        // a wasted round trip, since the optimistic order already matches what
-        // the server just committed.
         if (droppedFetch) void loadCards()
       })
       .catch(() => {
         toast.error('Could not reorder cards')
-        setCards(previous)
+        setCards(previousCards)
         void loadCards()
       })
   }
@@ -228,9 +199,13 @@ export function DeckPage() {
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-2xl font-bold">{deck.name}</h1>
-              {deck.module_id !== null && <Badge variant="secondary">{deck.module_name}</Badge>}
+              {deck.module_id !== null && (
+                <Badge variant="secondary">{deck.module_name}</Badge>
+              )}
             </div>
-            {deck.description && <p className="text-muted-foreground">{deck.description}</p>}
+            {deck.description && (
+              <p className="text-muted-foreground">{deck.description}</p>
+            )}
             <p className="text-sm text-muted-foreground">
               {deck.card_count} card{deck.card_count === 1 ? '' : 's'}
             </p>
@@ -247,14 +222,22 @@ export function DeckPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <Switch id="show-archived" checked={showArchived} onCheckedChange={setShowArchived} />
+        <Switch
+          id="show-archived"
+          checked={showArchived}
+          onCheckedChange={setShowArchived}
+        />
         <Label htmlFor="show-archived">Show archived</Label>
       </div>
 
       {cards.length === 0 && !loading && (
         <div className="space-y-2">
           <p className="text-muted-foreground">No cards yet.</p>
-          <Button variant="secondary" size="sm" onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
+          >
             <Plus className="size-4" />
             Add card
           </Button>
@@ -267,17 +250,19 @@ export function DeckPage() {
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={cards.map((c) => c.id)}
+          items={cards.map((card) => card.id)}
           strategy={verticalListSortingStrategy}
         >
           <ul className="space-y-3">
-            {cards.map((c) => (
+            {cards.map((card) => (
               <CardRow
-                key={c.id}
-                card={c}
+                key={card.id}
+                card={card}
                 loadCard={api.getCard}
-                onEdit={() => navigate(`/cards/${c.id}/edit`)}
-                onArchiveToggle={() => void (c.archived ? unarchive(c) : archive(c))}
+                onEdit={() => navigate(`/cards/${card.id}/edit`)}
+                onArchiveToggle={() =>
+                  void (card.archived ? unarchive(card) : archive(card))
+                }
               />
             ))}
           </ul>

@@ -8,41 +8,38 @@ export class ApiError extends Error {
     this.status = status
     this.fields = fields
   }
-  /** Field errors keyed by field name, for inline rendering. */
   byField(): Record<string, string> {
-    return Object.fromEntries(this.fields.map((f) => [f.field, f.message]))
+    return Object.fromEntries(
+      this.fields.map((fieldError) => [fieldError.field, fieldError.message]),
+    )
   }
 }
 
-/**
- * Turns any non-2xx response into an ApiError carrying the envelope's
- * `fields`, so the caller can render them inline. Shared by `request` and
- * `uploadImage`: an upload failure must reach the editor in exactly the same
- * shape as a rejected save, because it lands in the same error slot.
- */
-async function fail(res: Response): Promise<never> {
-  const payload = await res.json().catch(() => null)
+async function throwApiError(response: Response): Promise<never> {
+  const payload = await response.json().catch(() => null)
   throw new ApiError(
-    res.status,
-    payload?.message ?? `Request failed (${res.status})`,
+    response.status,
+    payload?.message ?? `Request failed (${response.status})`,
     payload?.fields ?? [],
   )
 }
 
-async function request<T>(
+async function request<Result>(
   method: string,
   path: string,
   body?: unknown,
   signal?: AbortSignal,
-): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+): Promise<Result> {
+  const response = await fetch(`/api${path}`, {
     method,
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
-  if (!res.ok) await fail(res)
-  return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
+  if (!response.ok) await throwApiError(response)
+  return response.status === 204
+    ? (undefined as Result)
+    : ((await response.json()) as Result)
 }
 
 export type Module = { id: number; name: string; created_at: string; deck_count: number }
@@ -63,28 +60,27 @@ export type UpdateDeckInput = Partial<{
 }>
 
 export type DeckSort = 'newest' | 'oldest'
-/** 'all' | 'none' | a module id */
 export type ModuleFilter = 'all' | 'none' | number
 
 export type DeckQuery = {
-  q?: string
+  search?: string
   moduleId?: ModuleFilter
   sort?: DeckSort
 }
 
-function deckQueryString({ q, moduleId, sort }: DeckQuery): string {
-  const params = new URLSearchParams()
-  if (q && q.trim() !== '') params.set('q', q.trim())
-  if (moduleId !== undefined && moduleId !== 'all') params.set('module_id', String(moduleId))
-  if (sort) params.set('sort', sort)
-  const s = params.toString()
-  return s === '' ? '' : `?${s}`
+function deckQueryString({ search, moduleId, sort }: DeckQuery): string {
+  const searchParams = new URLSearchParams()
+  if (search && search.trim() !== '') searchParams.set('search', search.trim())
+  if (moduleId !== undefined && moduleId !== 'all') {
+    searchParams.set('module_id', String(moduleId))
+  }
+  if (sort) searchParams.set('sort', sort)
+  const queryString = searchParams.toString()
+  return queryString === '' ? '' : `?${queryString}`
 }
 
 export type CardKind = 'mc_single' | 'short_answer' | 'flashcard'
 
-/** User-facing labels for each kind. Single source of truth — DeckPage's list
- * badges and CardEditorPage's kind selector must not drift apart. */
 export const KIND_LABEL: Record<CardKind, string> = {
   mc_single: 'Multiple choice',
   short_answer: 'Short answer',
@@ -103,11 +99,6 @@ export type CardSummary = {
   answer_md: string | null
   explanation_md: string | null
   archived: boolean
-  /**
-   * Order within the deck: 0-based, dense, archived cards included.
-   * Server-assigned — absent from `CardInput` on purpose, like
-   * `choices.position` and `accepted.normalised`.
-   */
   position: number
   created_at: string
   updated_at: string
@@ -115,23 +106,12 @@ export type CardSummary = {
 
 export type Card = CardSummary & { choices: Choice[]; accepted: Accepted[] }
 
-/** `position` and `normalised` are server-assigned; never send them. */
 export type ChoiceInput = { text_md: string; is_correct: boolean }
 export type AcceptedInput = { text: string; is_primary: boolean }
 
-/**
- * The whole editable card. Unlike `updateDeck`, this is a full replace, not a
- * sparse patch — the editor always holds the entire card, so an omitted
- * optional means null on the server.
- */
 export type CardInput = {
   kind: CardKind
   prompt_md: string
-  /**
-   * `images/<hash>.<ext>` from `uploadImage`, or null for no image. Send it
-   * explicitly on every save: cards PATCH is a full replace, so an absent key
-   * means null on the server.
-   */
   image_path?: string | null
   answer_md?: string | null
   explanation_md?: string | null
@@ -146,30 +126,26 @@ export type CardQuery = {
 }
 
 function cardQueryString({ deckId, kind, archived }: CardQuery): string {
-  const params = new URLSearchParams()
-  if (deckId !== undefined) params.set('deck_id', String(deckId))
-  if (kind && kind !== 'all') params.set('kind', kind)
-  if (archived) params.set('archived', archived)
-  const s = params.toString()
-  return s === '' ? '' : `?${s}`
+  const searchParams = new URLSearchParams()
+  if (deckId !== undefined) searchParams.set('deck_id', String(deckId))
+  if (kind && kind !== 'all') searchParams.set('kind', kind)
+  if (archived) searchParams.set('archived', archived)
+  const queryString = searchParams.toString()
+  return queryString === '' ? '' : `?${queryString}`
 }
 
 export type UploadedImage = { path: string }
 
-/**
- * Cannot go through `request()`: the body is FormData, and the browser must
- * set `content-type` itself so it can include the multipart boundary. Setting
- * it by hand produces a boundary-less header the server cannot parse.
- *
- * The returned `path` is relative — `images/<hash>.<ext>` — and is what gets
- * stored on the card. Prefix it with `/` for a URL; `<CardImage>` does that.
- */
 async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedImage> {
-  const form = new FormData()
-  form.append('file', file)
-  const res = await fetch('/api/images', { method: 'POST', body: form, signal })
-  if (!res.ok) await fail(res)
-  return (await res.json()) as UploadedImage
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch('/api/images', {
+    method: 'POST',
+    body: formData,
+    signal,
+  })
+  if (!response.ok) await throwApiError(response)
+  return (await response.json()) as UploadedImage
 }
 
 export const api = {
@@ -179,8 +155,6 @@ export const api = {
     request<Deck[]>('GET', `/decks${deckQueryString(query)}`, undefined, signal),
   createDeck: (input: { name: string; module_id: number | null; description: string }) =>
     request<Deck>('POST', '/decks', input),
-  // Only send keys the user actually changed — an absent module_id means
-  // "leave it alone" on the server, while null means "unparent".
   updateDeck: (id: number, patch: UpdateDeckInput) =>
     request<Deck>('PATCH', `/decks/${id}`, patch),
   getDeck: (id: number, signal?: AbortSignal) =>
@@ -195,14 +169,6 @@ export const api = {
     request<Card>('PATCH', `/cards/${id}`, input),
   archiveCard: (id: number) => request<Card>('POST', `/cards/${id}/archive`, {}),
   unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
-  /**
-   * Move a card to immediately before `before`, or to the end of its deck
-   * when `before` is null.
-   *
-   * `before` is the card that FOLLOWS the moved one in the intended order —
-   * not the row it was dropped on. Dragging downwards those differ by one;
-   * see DeckPage's drag handler.
-   */
   moveCard: (id: number, before: number | null) =>
     request<Card>('POST', `/cards/${id}/move`, { before }),
   uploadImage,

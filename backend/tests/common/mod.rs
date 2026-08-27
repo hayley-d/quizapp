@@ -1,6 +1,3 @@
-// Shared test harness compiled fresh into every integration-test binary; a
-// given binary only ever exercises a subset of TestApp's helpers, so clippy
-// would otherwise flag the rest as dead_code in that binary.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
@@ -15,41 +12,42 @@ use tower::ServiceExt;
 pub struct TestApp {
     pub router: Router,
     pub pool: sqlx::SqlitePool,
-    pub images_dir: PathBuf,
-    _dir: tempfile::TempDir,
+    pub images_directory: PathBuf,
+    _temporary_directory: tempfile::TempDir,
 }
 
 pub async fn spawn_app() -> TestApp {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let url = format!("sqlite://{}/test.db?mode=rwc", dir.path().display());
-    let pool = quizapp::db::connect(&url).await.expect("db connect");
-    // Inside the same tempdir as the database, so a test's uploads are torn
-    // down with it and no test can see another's files.
-    let images_dir = dir.path().join("images");
-    std::fs::create_dir_all(&images_dir).expect("images dir");
+    let temporary_directory = tempfile::tempdir().expect("tempdir");
+    let database_url = format!(
+        "sqlite://{}/test.db?mode=rwc",
+        temporary_directory.path().display(),
+    );
+    let pool = quizapp::database::connect(&database_url).await.expect("database connect");
+    let images_directory = temporary_directory.path().join("images");
+    std::fs::create_dir_all(&images_directory).expect("images directory");
     let router = quizapp::app(quizapp::state::AppState {
         pool: pool.clone(),
-        images_dir: images_dir.clone(),
+        images_directory: images_directory.clone(),
     });
-    TestApp { router, pool, images_dir, _dir: dir }
+    TestApp { router, pool, images_directory, _temporary_directory: temporary_directory }
 }
 
 impl TestApp {
     pub async fn request(&self, method: &str, uri: &str, body: Option<Value>)
         -> (StatusCode, Value)
     {
-        let req = Request::builder().method(method).uri(uri);
-        let req = match body {
-            Some(b) => req
+        let builder = Request::builder().method(method).uri(uri);
+        let request = match body {
+            Some(body_value) => builder
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&b).unwrap())),
-            None => req.body(Body::empty()),
+                .body(Body::from(serde_json::to_vec(&body_value).unwrap())),
+            None => builder.body(Body::empty()),
         }
         .unwrap();
 
-        let res = self.router.clone().oneshot(req).await.unwrap();
-        let status = res.status();
-        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json = if bytes.is_empty() {
             Value::Null
         } else {
@@ -68,22 +66,18 @@ impl TestApp {
         self.request("PATCH", uri, Some(body)).await
     }
 
-    /// A GET returning the raw body: `request()` parses JSON, and the image
-    /// route returns image bytes.
     pub async fn get_raw(&self, uri: &str) -> (StatusCode, Vec<u8>) {
-        let req = Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap();
-        let res = self.router.clone().oneshot(req).await.unwrap();
-        let status = res.status();
-        let bytes = res.into_body().collect().await.unwrap().to_bytes().to_vec();
+        let request = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes().to_vec();
         (status, bytes)
     }
 
-    /// A multipart POST carrying a single part. Hand-rolled rather than
-    /// pulled from a crate: the boundary format is four lines and the test
-    /// harness is otherwise dependency-free.
-    ///
-    /// `field` is the part name, so a test can send something other than
-    /// `file` and check the endpoint notices.
     pub async fn post_file(
         &self, uri: &str, field: &str, filename: &str, bytes: &[u8],
     ) -> (StatusCode, Value) {
@@ -101,36 +95,35 @@ impl TestApp {
         body.extend_from_slice(bytes);
         body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
 
-        let req = Request::builder()
+        let request = Request::builder()
             .method("POST")
             .uri(uri)
             .header("content-type", format!("multipart/form-data; boundary={BOUNDARY}"))
             .body(Body::from(body))
             .unwrap();
 
-        let res = self.router.clone().oneshot(req).await.unwrap();
-        let status = res.status();
-        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let json = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, json)
     }
 
-    /// Number of files in this app's images directory.
     pub async fn image_count(&self) -> usize {
-        std::fs::read_dir(&self.images_dir).expect("read images dir").count()
+        std::fs::read_dir(&self.images_directory).expect("read images directory").count()
     }
 
-    /// Scalar count, for asserting on tables the HTTP surface does not expose.
     pub async fn count(&self, sql: &str) -> i64 {
         sqlx::query_scalar(sql).fetch_one(&self.pool).await.unwrap()
     }
 
-    /// (row count, due_at) for a card's schedule row.
     pub async fn schedule_for(&self, card_id: i64) -> (i64, String) {
-        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM schedule WHERE card_id = ?")
-            .bind(card_id).fetch_one(&self.pool).await.unwrap();
-        let due: String = sqlx::query_scalar("SELECT due_at FROM schedule WHERE card_id = ?")
-            .bind(card_id).fetch_one(&self.pool).await.unwrap();
-        (n, due)
+        let row_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM schedule WHERE card_id = ?")
+                .bind(card_id).fetch_one(&self.pool).await.unwrap();
+        let due_at: String =
+            sqlx::query_scalar("SELECT due_at FROM schedule WHERE card_id = ?")
+                .bind(card_id).fetch_one(&self.pool).await.unwrap();
+        (row_count, due_at)
     }
 }

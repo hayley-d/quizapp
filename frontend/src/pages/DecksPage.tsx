@@ -19,18 +19,17 @@ export function DecksPage() {
   const [decks, setDecks] = useState<Deck[]>([])
   const [editing, setEditing] = useState<Deck | 'new' | null>(null)
 
-  // `search` is what the user is typing; `debounced` is what we actually query with.
   const [search, setSearch] = useState('')
-  const [debounced, setDebounced] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [moduleFilter, setModuleFilter] = useState<ModuleFilter>(ALL)
   const [sort, setSort] = useState<DeckSort>('newest')
   const [loading, setLoading] = useState(false)
 
-  const filtersActive = debounced.trim() !== '' || moduleFilter !== ALL
+  const filtersActive = debouncedSearch.trim() !== '' || moduleFilter !== ALL
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(search), 250)
-    return () => clearTimeout(t)
+    const timeoutId = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(timeoutId)
   }, [search])
 
   const loadModules = useCallback(async () => {
@@ -43,8 +42,6 @@ export function DecksPage() {
 
   useEffect(() => { void loadModules() }, [loadModules])
 
-  // One in-flight deck request at a time. Aborting the previous one is what stops a
-  // slow earlier response from overwriting a newer one.
   const inFlight = useRef<AbortController | null>(null)
 
   const loadDecks = useCallback(async () => {
@@ -54,33 +51,32 @@ export function DecksPage() {
     setLoading(true)
     try {
       const rows = await api.listDecks(
-        { q: debounced, moduleId: moduleFilter, sort },
+        { search: debouncedSearch, moduleId: moduleFilter, sort },
         controller.signal,
       )
       setDecks(rows)
-    } catch (e) {
-      if ((e as Error)?.name === 'AbortError') return   // superseded; not an error
+    } catch (error) {
+      if ((error as Error)?.name === 'AbortError') return
       toast.error('Could not load decks')
     } finally {
       if (inFlight.current === controller) setLoading(false)
     }
-  }, [debounced, moduleFilter, sort])
+  }, [debouncedSearch, moduleFilter, sort])
 
   useEffect(() => { void loadDecks() }, [loadDecks])
 
-  // Cancel any in-flight deck request if the page unmounts.
   useEffect(() => () => inFlight.current?.abort(), [])
 
   function clearFilters() {
     setSearch('')
-    setDebounced('')
+    setDebouncedSearch('')
     setModuleFilter(ALL)
   }
 
-  const moduleName = (m: ModuleFilter) =>
-    m === ALL ? 'All modules'
-      : m === NONE ? 'No module'
-        : (modules.find((x) => x.id === m)?.name ?? 'Unknown module')
+  const moduleName = (filter: ModuleFilter) =>
+    filter === ALL ? 'All modules'
+      : filter === NONE ? 'No module'
+        : (modules.find((module) => module.id === filter)?.name ?? 'Unknown module')
 
   return (
     <div className="space-y-6">
@@ -100,24 +96,28 @@ export function DecksPage() {
           className="h-10 min-w-0 flex-1"
           placeholder="Search deck names…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(event) => setSearch(event.target.value)}
         />
         <Select
           value={String(moduleFilter)}
-          onValueChange={(v) =>
-            setModuleFilter(v === ALL || v === NONE ? (v as ModuleFilter) : Number(v))
+          onValueChange={(selectedValue) =>
+            setModuleFilter(
+              selectedValue === ALL || selectedValue === NONE
+                ? (selectedValue as ModuleFilter)
+                : Number(selectedValue),
+            )
           }
         >
           <SelectTrigger className="data-[size=default]:h-10 sm:w-52"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>All modules</SelectItem>
             <SelectItem value={NONE}>No module</SelectItem>
-            {modules.map((m) => (
-              <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+            {modules.map((module) => (
+              <SelectItem key={module.id} value={String(module.id)}>{module.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={sort} onValueChange={(v) => setSort(v as DeckSort)}>
+        <Select value={sort} onValueChange={(selectedValue) => setSort(selectedValue as DeckSort)}>
           <SelectTrigger className="data-[size=default]:h-10 sm:w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="newest">Newest first</SelectItem>
@@ -130,7 +130,7 @@ export function DecksPage() {
         filtersActive ? (
           <div className="space-y-2">
             <p className="text-muted-foreground">
-              No decks match “{debounced}” in {moduleName(moduleFilter)}.
+              No decks match “{debouncedSearch}” in {moduleName(moduleFilter)}.
             </p>
             <Button variant="secondary" size="sm" onClick={clearFilters}>
               Clear filters
@@ -144,11 +144,11 @@ export function DecksPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {decks.map((d) => (
+        {decks.map((deck) => (
           <DeckCard
-            key={d.id}
-            deck={d}
-            onEdit={() => setEditing(d)}
+            key={deck.id}
+            deck={deck}
+            onEdit={() => setEditing(deck)}
             onFilterModule={setModuleFilter}
           />
         ))}
@@ -160,7 +160,7 @@ export function DecksPage() {
           modules={modules}
           deck={editing === 'new' ? undefined : editing}
           open
-          onOpenChange={(o) => { if (!o) setEditing(null) }}
+          onOpenChange={(isOpen) => { if (!isOpen) setEditing(null) }}
           onSaved={() => { void loadDecks() }}
         />
       )}

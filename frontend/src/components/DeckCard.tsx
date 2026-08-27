@@ -11,8 +11,6 @@ type DeckCardProps = {
 export function DeckCard({ deck, onEdit, onFilterModule }: DeckCardProps) {
   return (
     <article className="flex min-h-64 flex-col overflow-hidden rounded-xl bg-[var(--deck-card)]">
-      {/* Header band: module pill on the left, edit affordance on the right. The band
-          keeps its height when a deck has no module. */}
       <div className="flex min-h-16 items-center justify-between gap-3 bg-[var(--deck-card-header)] px-4">
         {deck.module_id === null ? (
           <span />

@@ -24,47 +24,40 @@ pub enum AppError {
     Validation(Vec<FieldError>),
     #[error("{0}")]
     Conflict(String),
-    /// Body present but not syntactically valid JSON (e.g. truncated/malformed input).
     #[error("{0}")]
     BadRequest(String),
-    /// Missing or incorrect `Content-Type` on a request that requires a JSON body.
     #[error("{0}")]
     UnsupportedMediaType(String),
-    /// A server-side failure with nothing useful to tell the client (a
-    /// refused filesystem write, say). Always logged at the call site,
-    /// because this variant deliberately carries no detail onwards.
     #[error("internal error")]
     Internal,
     #[error(transparent)]
-    Db(#[from] sqlx::Error),
+    Database(#[from] sqlx::Error),
 }
 
 impl AppError {
-    pub fn validation<I, F, M>(fields: I) -> Self
+    pub fn validation<Fields, Field, Message>(fields: Fields) -> Self
     where
-        I: IntoIterator<Item = (F, M)>,
-        F: Into<String>,
-        M: Into<String>,
+        Fields: IntoIterator<Item = (Field, Message)>,
+        Field: Into<String>,
+        Message: Into<String>,
     {
         AppError::Validation(
             fields
                 .into_iter()
-                .map(|(f, m)| FieldError { field: f.into(), message: m.into() })
+                .map(|(field, message)| FieldError {
+                    field: field.into(),
+                    message: message.into(),
+                })
                 .collect(),
         )
     }
 
-    /// Retags a foreign-key violation with the field that caused it.
-    ///
-    /// SQLite reports every FK failure as the bare string "FOREIGN KEY
-    /// constraint failed" — no column, no table, nothing to parse. Only the
-    /// caller knows which reference it was satisfying, so the caller names it.
-    /// Any other error passes through unchanged.
-    pub fn fk_as(self, field: &str, message: &str) -> Self {
-        let is_fk = matches!(&self, AppError::Db(e)
-            if e.as_database_error().is_some_and(|d| d.is_foreign_key_violation()));
+    pub fn tag_foreign_key_violation(self, field: &str, message: &str) -> Self {
+        let is_foreign_key_violation = matches!(&self, AppError::Database(error)
+            if error.as_database_error()
+                .is_some_and(|database_error| database_error.is_foreign_key_violation()));
 
-        if is_fk {
+        if is_foreign_key_violation {
             AppError::validation([(field, message)])
         } else {
             self
@@ -100,9 +93,9 @@ impl AppError {
                 ErrorBody { error: "internal", message: "Something went wrong".into(),
                             fields: vec![] },
             ),
-            AppError::Db(e) => {
-                if let Some(dbe) = e.as_database_error() {
-                    if dbe.is_unique_violation() {
+            AppError::Database(error) => {
+                if let Some(database_error) = error.as_database_error() {
+                    if database_error.is_unique_violation() {
                         return (
                             StatusCode::CONFLICT,
                             ErrorBody { error: "conflict",
@@ -110,9 +103,7 @@ impl AppError {
                                         fields: vec![] },
                         );
                     }
-                    if dbe.is_foreign_key_violation() {
-                        // No field: SQLite does not say which reference failed, and a handler
-                        // that knows should have called `fk_as` before this point.
+                    if database_error.is_foreign_key_violation() {
                         return (
                             StatusCode::UNPROCESSABLE_ENTITY,
                             ErrorBody {
@@ -123,7 +114,7 @@ impl AppError {
                         );
                     }
                 }
-                tracing::error!(error = ?e, "database error");
+                tracing::error!(error = ?error, "database error");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     ErrorBody { error: "internal",
@@ -150,8 +141,8 @@ mod tests {
 
     #[test]
     fn validation_is_422_with_fields() {
-        let err = AppError::validation([("name", "Name must not be empty")]);
-        let (status, body) = err.parts();
+        let error = AppError::validation([("name", "Name must not be empty")]);
+        let (status, body) = error.parts();
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(body.error, "validation");
         assert_eq!(body.fields.len(), 1);
@@ -175,8 +166,7 @@ mod tests {
         assert!(body.fields.is_empty());
     }
 
-    /// Helper to create an in-memory SQLite connection for provocation tests.
-    async fn in_memory_db() -> sqlx::sqlite::SqliteConnection {
+    async fn in_memory_database() -> sqlx::sqlite::SqliteConnection {
         use sqlx::sqlite::SqliteConnectOptions;
         use sqlx::ConnectOptions;
 
@@ -188,78 +178,75 @@ mod tests {
             .unwrap()
     }
 
-    /// A real SQLite foreign-key violation. `sqlx`'s `DatabaseError` cannot be
-    /// constructed by hand, so provoke one.
-    fn fk_error() -> AppError {
+    fn provoked_foreign_key_error() -> AppError {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async {
-                let mut conn = in_memory_db().await;
+                let mut connection = in_memory_database().await;
                 sqlx::query("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
-                    .execute(&mut conn).await.unwrap();
+                    .execute(&mut connection).await.unwrap();
                 sqlx::query(
                     "CREATE TABLE child (parent_id INTEGER REFERENCES parent(id))")
-                    .execute(&mut conn).await.unwrap();
-                let err = sqlx::query("INSERT INTO child (parent_id) VALUES (99)")
-                    .execute(&mut conn).await.unwrap_err();
-                assert!(err.as_database_error().unwrap().is_foreign_key_violation());
-                AppError::Db(err)
+                    .execute(&mut connection).await.unwrap();
+                let error = sqlx::query("INSERT INTO child (parent_id) VALUES (99)")
+                    .execute(&mut connection).await.unwrap_err();
+                assert!(error.as_database_error().unwrap().is_foreign_key_violation());
+                AppError::Database(error)
             })
     }
 
-    /// A real SQLite unique-constraint violation. Used to verify that `fk_as` leaves
-    /// non-FK database errors untouched.
-    fn unique_violation() -> AppError {
+    fn provoked_unique_violation() -> AppError {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
             .block_on(async {
-                let mut conn = in_memory_db().await;
+                let mut connection = in_memory_database().await;
                 sqlx::query("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT UNIQUE)")
-                    .execute(&mut conn).await.unwrap();
+                    .execute(&mut connection).await.unwrap();
                 sqlx::query("INSERT INTO items (name) VALUES ('test')")
-                    .execute(&mut conn).await.unwrap();
-                let err = sqlx::query("INSERT INTO items (name) VALUES ('test')")
-                    .execute(&mut conn).await.unwrap_err();
-                assert!(err.as_database_error().unwrap().is_unique_violation());
-                AppError::Db(err)
+                    .execute(&mut connection).await.unwrap();
+                let error = sqlx::query("INSERT INTO items (name) VALUES ('test')")
+                    .execute(&mut connection).await.unwrap_err();
+                assert!(error.as_database_error().unwrap().is_unique_violation());
+                AppError::Database(error)
             })
     }
 
     #[test]
-    fn fk_as_leaves_non_fk_errors_alone() {
-        // Test with Validation error
-        let err = AppError::validation([("name", "Name must not be empty")])
-            .fk_as("deck_id", "That deck does not exist");
-        let (status, body) = err.parts();
+    fn tagging_leaves_non_foreign_key_errors_alone() {
+        let error = AppError::validation([("name", "Name must not be empty")])
+            .tag_foreign_key_violation("deck_id", "That deck does not exist");
+        let (status, body) = error.parts();
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(body.fields[0].field, "name", "fk_as must not rewrite Validation errors");
+        assert_eq!(
+            body.fields[0].field, "name",
+            "tagging must not rewrite Validation errors",
+        );
 
-        // Test with UNIQUE constraint violation to prove the guard checks specifically
-        // for FK violations, not all Db errors
-        let (status, body) = unique_violation()
-            .fk_as("deck_id", "That deck does not exist")
+        let (status, body) = provoked_unique_violation()
+            .tag_foreign_key_violation("deck_id", "That deck does not exist")
             .parts();
-        assert_eq!(status, StatusCode::CONFLICT, "fk_as must not rewrite UNIQUE violations");
+        assert_eq!(
+            status, StatusCode::CONFLICT,
+            "tagging must not rewrite UNIQUE violations",
+        );
         assert_eq!(body.error, "conflict");
     }
 
     #[test]
-    fn untagged_fk_violation_names_no_field() {
-        // Regression guard: the blanket branch used to claim "module_id" for every
-        // foreign key in the schema. Naming the wrong field is worse than naming none.
-        let (status, body) = fk_error().parts();
+    fn untagged_foreign_key_violation_names_no_field() {
+        let (status, body) = provoked_foreign_key_error().parts();
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(body.fields.is_empty());
     }
 
     #[test]
-    fn fk_as_tags_the_caller_s_field() {
-        let (status, body) = fk_error()
-            .fk_as("deck_id", "That deck does not exist")
+    fn tagging_applies_the_caller_s_field() {
+        let (status, body) = provoked_foreign_key_error()
+            .tag_foreign_key_violation("deck_id", "That deck does not exist")
             .parts();
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(body.fields[0].field, "deck_id");

@@ -1,10 +1,3 @@
-//! Cards, and their kind-specific children.
-//!
-//! One `cards` table with a `kind` discriminator means the schema cannot
-//! enforce per-kind invariants, so they are enforced here on every write —
-//! see `validate`. Field names in the errors match the client's form
-//! controls (`choices[1].text_md`) so the editor can render them inline.
-
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::get;
@@ -19,7 +12,7 @@ use crate::state::AppState;
 const KINDS: [&str; 3] = ["mc_single", "short_answer", "flashcard"];
 
 #[derive(Serialize)]
-pub struct ChoiceDto {
+pub struct ChoiceResponse {
     pub id: i64,
     pub text_md: String,
     pub is_correct: bool,
@@ -27,17 +20,15 @@ pub struct ChoiceDto {
 }
 
 #[derive(Serialize)]
-pub struct AcceptedDto {
+pub struct AcceptedResponse {
     pub id: i64,
     pub text: String,
     pub normalised: String,
     pub is_primary: bool,
 }
 
-/// List row. Deliberately without children: the list never renders them and
-/// loading them for a 200-card deck would be pure waste.
 #[derive(Serialize)]
-pub struct CardSummaryDto {
+pub struct CardSummaryResponse {
     pub id: i64,
     pub deck_id: i64,
     pub kind: String,
@@ -46,22 +37,17 @@ pub struct CardSummaryDto {
     pub answer_md: Option<String>,
     pub explanation_md: Option<String>,
     pub archived: bool,
-    /// Order within the deck: 0-based, dense, archived cards included.
-    /// Server-assigned — `CardInput` does not accept it.
     pub position: i64,
     pub created_at: String,
     pub updated_at: String,
 }
 
-/// Authoring view. Returns `is_correct` — the spec's answer-key leakage rule
-/// governs the session endpoints, which do not exist yet and will have their
-/// own DTOs.
 #[derive(Serialize)]
-pub struct CardDto {
+pub struct CardResponse {
     #[serde(flatten)]
-    pub card: CardSummaryDto,
-    pub choices: Vec<ChoiceDto>,
-    pub accepted: Vec<AcceptedDto>,
+    pub card: CardSummaryResponse,
+    pub choices: Vec<ChoiceResponse>,
+    pub accepted: Vec<AcceptedResponse>,
 }
 
 #[derive(Deserialize)]
@@ -80,8 +66,6 @@ pub struct AcceptedInput {
     pub is_primary: bool,
 }
 
-/// The editable content of a card. `POST` wraps this with a `deck_id`;
-/// `patch` uses it as-is and replaces the card wholesale.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CardInput {
@@ -107,7 +91,6 @@ pub struct CreateCard {
     pub card: CardInput,
 }
 
-/// A card that has passed validation: trimmed, kind-consistent, ready to write.
 pub struct ValidCard {
     pub kind: String,
     pub prompt_md: String,
@@ -118,36 +101,22 @@ pub struct ValidCard {
     pub accepted: Vec<AcceptedInput>,
 }
 
-/// True only for a path `POST /api/images` could have produced:
-/// `images/<16 lowercase hex>.<png|jpg|webp>`.
-///
-/// The server assigns every legitimate value of this field, so anything
-/// outside that shape did not come from an upload. It is worth a guard rather
-/// than a shrug because the string is handed straight back to the browser as
-/// a URL. Hand-rolled instead of pulling in `regex`: this is the only pattern
-/// the codebase matches, and the crate would be the larger change. The
-/// extension list must stay in step with `images::ImageType::extension`.
-fn is_uploaded_image_path(p: &str) -> bool {
-    let Some(rest) = p.strip_prefix("images/") else { return false };
-    let Some((stem, ext)) = rest.rsplit_once('.') else { return false };
+fn is_uploaded_image_path(path: &str) -> bool {
+    let Some(remainder) = path.strip_prefix("images/") else { return false };
+    let Some((stem, extension)) = remainder.rsplit_once('.') else { return false };
 
     stem.len() == 16
-        && stem.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
-        && ["png", "jpg", "webp"].contains(&ext)
+        && stem.bytes().all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        && ["png", "jpg", "webp"].contains(&extension)
 }
 
-/// Enforces the per-kind invariants the schema cannot express (spec: "the
-/// trade-off is that the schema cannot enforce per-kind invariants, so these
-/// are validated in Rust on write"). Collects every problem rather than
-/// stopping at the first, so the editor can highlight all of them at once.
 pub fn validate(input: CardInput) -> AppResult<ValidCard> {
     let mut errors: Vec<FieldError> = Vec::new();
-    let mut push = |field: &str, message: &str| {
+    let mut push_error = |field: &str, message: &str| {
         errors.push(FieldError { field: field.into(), message: message.into() })
     };
 
     if !KINDS.contains(&input.kind.as_str()) {
-        // Nothing else can be judged without a kind, so fail immediately.
         return Err(AppError::validation([(
             "kind",
             "kind must be mc_single, short_answer or flashcard",
@@ -156,85 +125,85 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
 
     let prompt_md = input.prompt_md.trim().to_string();
     if prompt_md.is_empty() {
-        push("prompt_md", "A prompt is required");
+        push_error("prompt_md", "A prompt is required");
     }
 
-    let answer_md = input.answer_md.as_deref().map(str::trim).filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let answer_md = input.answer_md.as_deref().map(str::trim)
+        .filter(|text| !text.is_empty()).map(str::to_string);
     let explanation_md = input.explanation_md.as_deref().map(str::trim)
-        .filter(|s| !s.is_empty()).map(str::to_string);
+        .filter(|text| !text.is_empty()).map(str::to_string);
 
-    // An empty string means "no image" — the editor clears the field rather
-    // than deleting the key — so it is filtered out before the shape check.
     let image_path = input.image_path.as_deref().map(str::trim)
-        .filter(|s| !s.is_empty()).map(str::to_string);
-    if image_path.as_deref().is_some_and(|p| !is_uploaded_image_path(p)) {
-        push("image_path", "That is not an uploaded image");
+        .filter(|text| !text.is_empty()).map(str::to_string);
+    if image_path.as_deref().is_some_and(|path| !is_uploaded_image_path(path)) {
+        push_error("image_path", "That is not an uploaded image");
     }
 
     let choices: Vec<ChoiceInput> = input.choices.into_iter()
-        .map(|c| ChoiceInput { text_md: c.text_md.trim().to_string(), ..c })
+        .map(|choice| ChoiceInput { text_md: choice.text_md.trim().to_string(), ..choice })
         .collect();
     let accepted: Vec<AcceptedInput> = input.accepted.into_iter()
-        .map(|a| AcceptedInput { text: a.text.trim().to_string(), ..a })
+        .map(|answer| AcceptedInput { text: answer.text.trim().to_string(), ..answer })
         .collect();
 
-    // Inside each arm below: cardinality errors (`choices`/`accepted` as a
-    // whole) are pushed BEFORE the per-row errors (`choices[i].text_md` etc)
-    // ON PURPOSE — several tests assert on `fields[0]`. Reordering the
-    // `push` calls within an arm will silently break those tests.
     match input.kind.as_str() {
         "mc_single" => {
             if choices.len() < 2 {
-                push("choices", "A multiple-choice card needs at least two options");
+                push_error("choices", "A multiple-choice card needs at least two options");
             }
-            match choices.iter().filter(|c| c.is_correct).count() {
+            match choices.iter().filter(|choice| choice.is_correct).count() {
                 1 => {}
-                0 => push("choices", "Mark one option as correct"),
-                _ => push("choices", "Only one option may be correct"),
+                0 => push_error("choices", "Mark one option as correct"),
+                _ => push_error("choices", "Only one option may be correct"),
             }
-            for (i, c) in choices.iter().enumerate() {
-                if c.text_md.is_empty() {
-                    push(&format!("choices[{i}].text_md"), "An option cannot be blank");
+            for (choice_index, choice) in choices.iter().enumerate() {
+                if choice.text_md.is_empty() {
+                    push_error(
+                        &format!("choices[{choice_index}].text_md"),
+                        "An option cannot be blank",
+                    );
                 }
             }
             if !accepted.is_empty() {
-                push("accepted", "Accepted answers belong to short-answer cards");
+                push_error("accepted", "Accepted answers belong to short-answer cards");
             }
             if answer_md.is_some() {
-                push("answer_md", "An answer belongs to a flashcard");
+                push_error("answer_md", "An answer belongs to a flashcard");
             }
         }
         "short_answer" => {
             if accepted.is_empty() {
-                push("accepted", "Add at least one accepted answer");
+                push_error("accepted", "Add at least one accepted answer");
             }
-            match accepted.iter().filter(|a| a.is_primary).count() {
+            match accepted.iter().filter(|answer| answer.is_primary).count() {
                 1 => {}
-                0 => push("accepted", "Mark one answer as the primary wording"),
-                _ => push("accepted", "Only one answer may be the primary wording"),
+                0 => push_error("accepted", "Mark one answer as the primary wording"),
+                _ => push_error("accepted", "Only one answer may be the primary wording"),
             }
-            for (i, a) in accepted.iter().enumerate() {
-                if a.text.is_empty() {
-                    push(&format!("accepted[{i}].text"), "An answer cannot be blank");
+            for (answer_index, answer) in accepted.iter().enumerate() {
+                if answer.text.is_empty() {
+                    push_error(
+                        &format!("accepted[{answer_index}].text"),
+                        "An answer cannot be blank",
+                    );
                 }
             }
             if !choices.is_empty() {
-                push("choices", "Options belong to multiple-choice cards");
+                push_error("choices", "Options belong to multiple-choice cards");
             }
             if answer_md.is_some() {
-                push("answer_md", "An answer belongs to a flashcard");
+                push_error("answer_md", "An answer belongs to a flashcard");
             }
         }
         "flashcard" => {
             if answer_md.is_none() {
-                push("answer_md", "A flashcard needs an answer");
+                push_error("answer_md", "A flashcard needs an answer");
             }
             if !choices.is_empty() {
-                push("choices", "Options belong to multiple-choice cards");
+                push_error("choices", "Options belong to multiple-choice cards");
             }
             if !accepted.is_empty() {
-                push("accepted", "Accepted answers belong to short-answer cards");
+                push_error("accepted", "Accepted answers belong to short-answer cards");
             }
         }
         _ => unreachable!("kind was checked above"),
@@ -249,9 +218,9 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
     })
 }
 
-async fn fetch_summary(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardSummaryDto> {
+async fn fetch_summary(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardSummaryResponse> {
     sqlx::query_as!(
-        CardSummaryDto,
+        CardSummaryResponse,
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
                   archived AS "archived!: bool", position AS "position!: i64",
@@ -264,11 +233,11 @@ async fn fetch_summary(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardSummar
     .ok_or(AppError::NotFound("card"))
 }
 
-async fn fetch_full(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardDto> {
+async fn fetch_full(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardResponse> {
     let card = fetch_summary(pool, id).await?;
 
     let choices = sqlx::query_as!(
-        ChoiceDto,
+        ChoiceResponse,
         r#"SELECT id AS "id!: i64", text_md, is_correct AS "is_correct!: bool",
                   position AS "position!: i64"
            FROM choices WHERE card_id = ? ORDER BY position"#,
@@ -278,7 +247,7 @@ async fn fetch_full(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardDto> {
     .await?;
 
     let accepted = sqlx::query_as!(
-        AcceptedDto,
+        AcceptedResponse,
         r#"SELECT id AS "id!: i64", text, normalised, is_primary AS "is_primary!: bool"
            FROM accepted WHERE card_id = ? ORDER BY is_primary DESC, id"#,
         id
@@ -286,30 +255,25 @@ async fn fetch_full(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardDto> {
     .fetch_all(pool)
     .await?;
 
-    Ok(CardDto { card, choices, accepted })
+    Ok(CardResponse { card, choices, accepted })
 }
 
-async fn get_one(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<CardDto>> {
-    Ok(Json(fetch_full(&st.pool, id).await?))
+async fn get_one(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<CardResponse>> {
+    Ok(Json(fetch_full(&state.pool, id).await?))
 }
 
-/// Full replace of a card's editable content.
-///
-/// Not a field-by-field patch, and deliberately not the absent-vs-null dance
-/// `PATCH /api/decks/:id` needs: the editor always holds the whole card and
-/// always submits the whole card, so an omitted optional means null. It is a
-/// PATCH by route because the spec's API table says so. Cards do not move
-/// between decks in 2a.
 async fn patch(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<i64>,
     AppJson(body): AppJson<CardInput>,
-) -> AppResult<Json<CardDto>> {
-    // 404 before validation and before any write, matching decks::patch.
-    fetch_summary(&st.pool, id).await?;
+) -> AppResult<Json<CardResponse>> {
+    fetch_summary(&state.pool, id).await?;
     let valid = validate(body)?;
 
-    let mut tx = st.pool.begin().await?;
+    let mut transaction = state.pool.begin().await?;
 
     sqlx::query!(
         r#"UPDATE cards
@@ -319,40 +283,40 @@ async fn patch(
         valid.kind, valid.prompt_md, valid.image_path, valid.answer_md, valid.explanation_md,
         id
     )
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await?;
 
-    // Both child tables are cleared regardless of kind: a kind change must not
-    // leave rows that would resurface if the kind changed back.
-    sqlx::query!("DELETE FROM choices WHERE card_id = ?", id).execute(&mut *tx).await?;
-    sqlx::query!("DELETE FROM accepted WHERE card_id = ?", id).execute(&mut *tx).await?;
-    write_children(&mut tx, id, &valid).await?;
+    sqlx::query!("DELETE FROM choices WHERE card_id = ?", id)
+        .execute(&mut *transaction).await?;
+    sqlx::query!("DELETE FROM accepted WHERE card_id = ?", id)
+        .execute(&mut *transaction).await?;
+    write_children(&mut transaction, id, &valid).await?;
 
-    tx.commit().await?;
+    transaction.commit().await?;
 
-    Ok(Json(fetch_full(&st.pool, id).await?))
+    Ok(Json(fetch_full(&state.pool, id).await?))
 }
 
-async fn archive(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<CardDto>> {
-    set_archived(&st, id, true).await
+async fn archive(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<CardResponse>> {
+    set_archived(&state, id, true).await
 }
 
-async fn unarchive(State(st): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<CardDto>> {
-    set_archived(&st, id, false).await
+async fn unarchive(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<CardResponse>> {
+    set_archived(&state, id, false).await
 }
 
-/// Cards are archived, never deleted: a hard delete would orphan the card's
-/// `reviews` rows and silently rewrite history. `reviews.card_id` has no
-/// ON DELETE CASCADE for the same reason.
-// NB the pre-check below is not observable from the HTTP surface: an UPDATE
-// against a nonexistent id matches zero rows and has no side effect, and
-// fetch_full() unconditionally re-runs fetch_summary() at the end anyway, so
-// a black-box test cannot tell this function apart from one that skips the
-// pre-check and lets the final fetch_summary() supply the 404. It is kept
-// because it avoids a wasted UPDATE and matches the 404-before-write shape
-// of patch() above, not because a test proves it.
-async fn set_archived(st: &AppState, id: i64, archived: bool) -> AppResult<Json<CardDto>> {
-    fetch_summary(&st.pool, id).await?; // 404 before the write
+async fn set_archived(
+    state: &AppState,
+    id: i64,
+    archived: bool,
+) -> AppResult<Json<CardResponse>> {
+    fetch_summary(&state.pool, id).await?;
 
     sqlx::query!(
         r#"UPDATE cards
@@ -360,24 +324,18 @@ async fn set_archived(st: &AppState, id: i64, archived: bool) -> AppResult<Json<
             WHERE id = ?"#,
         archived, id
     )
-    .execute(&st.pool)
+    .execute(&state.pool)
     .await?;
 
-    Ok(Json(fetch_full(&st.pool, id).await?))
+    Ok(Json(fetch_full(&state.pool, id).await?))
 }
 
-/// Reorders one card within its deck.
-///
-/// The whole deck's positions are rewritten in a single transaction rather
-/// than nudging neighbours or interpolating gaps: O(n) writes per move is
-/// nothing for a deck of a few hundred cards, and it keeps the dense 0-based
-/// invariant true by construction instead of by argument.
 async fn move_card(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     Path(id): Path<i64>,
     AppJson(body): AppJson<MoveCard>,
-) -> AppResult<Json<CardDto>> {
-    let card = fetch_summary(&st.pool, id).await?; // 404 before any write
+) -> AppResult<Json<CardResponse>> {
+    let card = fetch_summary(&state.pool, id).await?;
 
     if body.before == Some(id) {
         return Err(AppError::validation([(
@@ -386,21 +344,18 @@ async fn move_card(
         )]));
     }
 
-    let mut tx = st.pool.begin().await?;
+    let mut transaction = state.pool.begin().await?;
 
-    let mut ids: Vec<i64> = sqlx::query_scalar!(
+    let mut card_ids: Vec<i64> = sqlx::query_scalar!(
         r#"SELECT id AS "id!: i64" FROM cards
            WHERE deck_id = ? ORDER BY position ASC, id ASC"#,
         card.deck_id
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut *transaction)
     .await?;
 
-    // One check covers both "no such card" and "not in this deck": from the
-    // client's side they are the same mistake, and distinguishing them would
-    // leak whether an id exists in some other deck.
     if let Some(before) = body.before {
-        if !ids.contains(&before) {
+        if !card_ids.contains(&before) {
             return Err(AppError::validation([(
                 "before",
                 "That card is not in this deck",
@@ -408,74 +363,59 @@ async fn move_card(
         }
     }
 
-    ids.retain(|&x| x != id);
+    card_ids.retain(|&other_card_id| other_card_id != id);
     match body.before {
         Some(before) => {
-            // Deliberately not `expect`: the guarantee that `before` is still
-            // present here rests on two separate checks above (the self-move
-            // rejection before the transaction, and the membership check inside
-            // it). Re-deriving it locally means a future edit to either cannot
-            // turn this into a panic — which in an axum handler drops the
-            // connection rather than returning a clean error.
-            let Some(at) = ids.iter().position(|&x| x == before) else {
+            let Some(insertion_index) =
+                card_ids.iter().position(|&other_card_id| other_card_id == before)
+            else {
                 return Err(AppError::validation([(
                     "before",
                     "That card is not in this deck",
                 )]));
             };
-            ids.insert(at, id);
+            card_ids.insert(insertion_index, id);
         }
-        None => ids.push(id),
+        None => card_ids.push(id),
     }
 
-    for (i, card_id) in ids.iter().enumerate() {
-        let position = i as i64;
-        // updated_at is deliberately untouched: see the test
-        // `a_move_does_not_bump_updated_at`.
+    for (index, card_id) in card_ids.iter().enumerate() {
+        let position = index as i64;
         sqlx::query!("UPDATE cards SET position = ? WHERE id = ?", position, card_id)
-            .execute(&mut *tx)
+            .execute(&mut *transaction)
             .await?;
     }
 
-    tx.commit().await?;
+    transaction.commit().await?;
 
-    Ok(Json(fetch_full(&st.pool, id).await?))
+    Ok(Json(fetch_full(&state.pool, id).await?))
 }
 
-/// Where to put a card, relative to one of its deck-mates.
-///
-/// Relative rather than a whole-deck permutation on purpose: the deck screen
-/// can be filtered (archived hidden), so the client does not know where the
-/// hidden cards sit and cannot honestly send a complete order. "Before card X"
-/// stays well-defined whatever is filtered out, and is idempotent.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MoveCard {
-    /// The card to land immediately before, or null for the end of the deck.
     pub before: Option<i64>,
 }
 
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub deck_id: Option<String>,
-    /// "all" (default) or one of the three kinds.
     pub kind: Option<String>,
-    /// "false" (default), "true", or "all".
     pub archived: Option<String>,
 }
 
 async fn list(
-    State(st): State<AppState>,
-    Query(q): Query<ListQuery>,
-) -> AppResult<Json<Vec<CardSummaryDto>>> {
-    let deck_id = match q.deck_id.as_deref() {
+    State(state): State<AppState>,
+    Query(list_query): Query<ListQuery>,
+) -> AppResult<Json<Vec<CardSummaryResponse>>> {
+    let deck_id = match list_query.deck_id.as_deref() {
         None | Some("") => None,
         Some(raw) => Some(raw.parse::<i64>().map_err(|_| {
             AppError::validation([("deck_id", "deck_id must be a number")])
         })?),
     };
 
-    let kind = q.kind.as_deref().unwrap_or("all").to_string();
+    let kind = list_query.kind.as_deref().unwrap_or("all").to_string();
     if kind != "all" && !KINDS.contains(&kind.as_str()) {
         return Err(AppError::validation([(
             "kind",
@@ -483,7 +423,7 @@ async fn list(
         )]));
     }
 
-    let archived = q.archived.as_deref().unwrap_or("false").to_string();
+    let archived = list_query.archived.as_deref().unwrap_or("false").to_string();
     if !["false", "true", "all"].contains(&archived.as_str()) {
         return Err(AppError::validation([(
             "archived",
@@ -491,13 +431,8 @@ async fn list(
         )]));
     }
 
-    // Hand-ordered: `position` is dense and 0-based per deck (see migration
-    // 0002), and `POST /api/cards/:id/move` rewrites the whole deck's
-    // positions in one transaction, so there are no ties to break in practice.
-    // `id ASC` is kept as a determinism guarantee anyway — the same reasoning
-    // that kept it behind created_at before this column existed.
     let rows = sqlx::query_as!(
-        CardSummaryDto,
+        CardSummaryResponse,
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
                   archived AS "archived!: bool", position AS "position!: i64",
@@ -511,41 +446,29 @@ async fn list(
            ORDER BY position ASC, id ASC"#,
         deck_id, deck_id, kind, kind, archived, archived, archived
     )
-    .fetch_all(&st.pool)
+    .fetch_all(&state.pool)
     .await?;
 
     Ok(Json(rows))
 }
 
 async fn create(
-    State(st): State<AppState>,
+    State(state): State<AppState>,
     AppJson(body): AppJson<CreateCard>,
-) -> AppResult<(StatusCode, Json<CardDto>)> {
+) -> AppResult<(StatusCode, Json<CardResponse>)> {
     let valid = validate(body.card)?;
     let deck_id = body.deck_id;
 
-    let mut tx = st.pool.begin().await?;
+    let mut transaction = state.pool.begin().await?;
 
-    // End of the deck. A nonexistent deck yields 0 here and then fails on the
-    // INSERT's foreign key below, so the 400 for a bad deck_id is unchanged.
     let position = sqlx::query_scalar!(
         r#"SELECT COALESCE(MAX(position), -1) + 1 AS "next!: i64"
            FROM cards WHERE deck_id = ?"#,
         deck_id
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *transaction)
     .await?;
 
-    // Card, children and schedule row go in together or not at all: a card
-    // without its choices is unanswerable, and one without a schedule row
-    // would need a migration when SM-2 lands. Note: `validate` above already
-    // rejects every malformed body before this transaction opens, so there is
-    // currently no reachable path where a child or schedule insert fails
-    // after the card row has been written — the only failure inside the
-    // transaction today is the deck_id foreign key on the very first insert.
-    // The transaction still guards future code paths (and keeps the three
-    // writes atomic if that changes), but no test today exercises a rollback
-    // of a partial write; see the comment on `a_rejected_create_writes_nothing`.
     let id = sqlx::query_scalar!(
         r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md,
                               explanation_md, position)
@@ -553,53 +476,51 @@ async fn create(
         deck_id, valid.kind, valid.prompt_md, valid.image_path, valid.answer_md,
         valid.explanation_md, position
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *transaction)
     .await
-    .map_err(|e| AppError::from(e).fk_as("deck_id", "That deck does not exist"))?;
+    .map_err(|error| {
+        AppError::from(error)
+            .tag_foreign_key_violation("deck_id", "That deck does not exist")
+    })?;
 
-    write_children(&mut tx, id, &valid).await?;
+    write_children(&mut transaction, id, &valid).await?;
 
     sqlx::query!(
         r#"INSERT INTO schedule (card_id, due_at)
            VALUES (?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))"#,
         id
     )
-    .execute(&mut *tx)
+    .execute(&mut *transaction)
     .await?;
 
-    tx.commit().await?;
+    transaction.commit().await?;
 
-    Ok((StatusCode::CREATED, Json(fetch_full(&st.pool, id).await?)))
+    Ok((StatusCode::CREATED, Json(fetch_full(&state.pool, id).await?)))
 }
 
-/// Inserts the kind-appropriate children. Reused by `patch`, which deletes
-/// the old ones first and calls this again — which is why this takes a
-/// Transaction rather than a Pool.
 async fn write_children(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     card_id: i64,
     valid: &ValidCard,
 ) -> AppResult<()> {
-    for (i, c) in valid.choices.iter().enumerate() {
-        let position = i as i64;
+    for (index, choice) in valid.choices.iter().enumerate() {
+        let position = index as i64;
         sqlx::query!(
             "INSERT INTO choices (card_id, text_md, is_correct, position)
              VALUES (?, ?, ?, ?)",
-            card_id, c.text_md, c.is_correct, position
+            card_id, choice.text_md, choice.is_correct, position
         )
-        .execute(&mut **tx)
+        .execute(&mut **transaction)
         .await?;
     }
-    for a in &valid.accepted {
-        // The comparison key is computed once here, on write, so grading is an
-        // indexed lookup rather than a scan that re-normalises every row.
-        let key = normalise(&a.text);
+    for answer in &valid.accepted {
+        let comparison_key = normalise(&answer.text);
         sqlx::query!(
             "INSERT INTO accepted (card_id, text, normalised, is_primary)
              VALUES (?, ?, ?, ?)",
-            card_id, a.text, key, a.is_primary
+            card_id, answer.text, comparison_key, answer.is_primary
         )
-        .execute(&mut **tx)
+        .execute(&mut **transaction)
         .await?;
     }
     Ok(())

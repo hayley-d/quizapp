@@ -23,12 +23,13 @@ export function ModuleDialog({ onSaved }: { onSaved: () => void }) {
       setName('')
       setOpen(false)
       onSaved()
-    } catch (e) {
-      if (e instanceof ApiError) {
-        const byField = e.byField()
-        // A 409 has no field payload; surface it on the input that caused it.
-        setErrors(e.status === 409 ? { name: e.message } : byField)
-        if (e.status !== 409 && Object.keys(byField).length === 0) toast.error(e.message)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        const errorsByField = error.byField()
+        setErrors(error.status === 409 ? { name: error.message } : errorsByField)
+        if (error.status !== 409 && Object.keys(errorsByField).length === 0) {
+          toast.error(error.message)
+        }
       } else {
         toast.error('Could not reach the server')
       }
@@ -53,8 +54,8 @@ export function ModuleDialog({ onSaved }: { onSaved: () => void }) {
             id="module-name"
             autoFocus
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') save() }}
             aria-invalid={!!errors.name}
           />
           {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}

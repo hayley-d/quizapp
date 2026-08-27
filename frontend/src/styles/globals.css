@@ -7,7 +7,6 @@
   --radius: 0.9rem;
 }
 
-/* Bibble — light base: pale aqua and lilac */
 :root {
   --background: oklch(0.98 0.015 200);
   --foreground: oklch(0.28 0.045 265);
@@ -32,15 +31,12 @@
   --ring: var(--primary);
 }
 
-/* Deck card. The body tracks --primary so cards and primary buttons are the same
-   turquoise in both themes; the band and chip are fixed brand colours from Figma. */
 :root, .dark {
   --deck-card: var(--primary);
   --deck-card-header: rgb(211 112 224 / 0.7);
   --deck-card-chip: rgb(27 31 57 / 0.7);
 }
 
-/* Bibble — dark base (primary): deep twilight */
 .dark {
   --background: oklch(0.20 0.045 275);
   --foreground: oklch(0.94 0.02 220);
@@ -99,13 +95,6 @@
   h1, h2, h3, .font-display { font-family: var(--font-display); }
 }
 
-/* Everything rendered by <Markdown>.
-   Tailwind's preflight resets list markers, heading sizes and margins to
-   nothing, which is right for app chrome and wrong for prose: without this
-   block a card's bullets render as an unindented run of lines. Written out
-   here rather than pulling in @tailwindcss/typography, whose defaults would
-   fight the Bibble type scale for the handful of elements a card actually
-   uses. Colours come from the theme tokens, so both palettes are covered. */
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
 .markdown p { margin: 0.5em 0; }
@@ -140,7 +129,4 @@
 }
 .markdown pre code { background: none; padding: 0; }
 
-/* KaTeX inherits `color`, so it follows both Bibble palettes without help.
-   Display maths, though, is a wide inline-block: in a narrow card row it must
-   scroll inside itself rather than push the page sideways. */
 .markdown .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
