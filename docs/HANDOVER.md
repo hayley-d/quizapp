@@ -275,10 +275,11 @@ nine points were driven** — this is not a partial pass, it is a complete gap):
 - `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
   `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
   regenerates on startup.
-- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 833 kB, 254 kB gzipped),
-  which now trips Vite's 500 kB chunk warning on every build. Harmless for a LAN-served app
-  and deliberately not code-split yet, but build step 8 ("embed the bundle, LAN binding") is
-  where it should be looked at.
+- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 884 kB, 272 kB gzipped,
+  the latter figure grown further by the deck card list redesign's three `@dnd-kit`
+  packages), which now trips Vite's 500 kB chunk warning on every build. Harmless for a
+  LAN-served app and deliberately not code-split yet, but build step 8 ("embed the bundle,
+  LAN binding") is where it should be looked at.
 - Google Fonts: `frontend/src/styles/globals.css` imports Quicksand and Inter over the
   network, so typography silently falls back offline or on a LAN-only phone. Deferred to
   build step 8, which is already the "embed the bundle, LAN binding" task, and noted there
