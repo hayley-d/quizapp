@@ -2,8 +2,8 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, at `part2b-images-markdown` (Part 2b complete, not yet merged
-to `main`).
+**Last updated:** 2026-08-27, at `part2c-deck-card-list` (the deck card list redesign complete
+and gate-clean, not yet merged to `main`).
 
 ## What this is
 
@@ -13,9 +13,9 @@ document is the record of what the app is meant to be, and it is kept current.
 
 ## Where things stand
 
-Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1 and 2a are merged to
-`main`; Part 2b lives on `part2b-images-markdown`, gate-clean, awaiting merge. Concretely,
-working today:
+Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1, 2a and 2b are merged
+to `main`; the deck card list redesign lives on `part2c-deck-card-list`, gate-clean, awaiting
+merge. Concretely, working today:
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
@@ -67,7 +67,7 @@ working today:
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 106 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- 120 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
 `/study` and `/stats` are placeholder pages.
