@@ -46,6 +46,9 @@ pub struct CardSummaryDto {
     pub answer_md: Option<String>,
     pub explanation_md: Option<String>,
     pub archived: bool,
+    /// Order within the deck: 0-based, dense, archived cards included.
+    /// Server-assigned — `CardInput` does not accept it.
+    pub position: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -251,7 +254,8 @@ async fn fetch_summary(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardSummar
         CardSummaryDto,
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
-                  archived AS "archived!: bool", created_at, updated_at
+                  archived AS "archived!: bool", position AS "position!: i64",
+                  created_at, updated_at
            FROM cards WHERE id = ?"#,
         id
     )
@@ -362,6 +366,95 @@ async fn set_archived(st: &AppState, id: i64, archived: bool) -> AppResult<Json<
     Ok(Json(fetch_full(&st.pool, id).await?))
 }
 
+/// Reorders one card within its deck.
+///
+/// The whole deck's positions are rewritten in a single transaction rather
+/// than nudging neighbours or interpolating gaps: O(n) writes per move is
+/// nothing for a deck of a few hundred cards, and it keeps the dense 0-based
+/// invariant true by construction instead of by argument.
+async fn move_card(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    AppJson(body): AppJson<MoveCard>,
+) -> AppResult<Json<CardDto>> {
+    let card = fetch_summary(&st.pool, id).await?; // 404 before any write
+
+    if body.before == Some(id) {
+        return Err(AppError::validation([(
+            "before",
+            "A card cannot move before itself",
+        )]));
+    }
+
+    let mut tx = st.pool.begin().await?;
+
+    let mut ids: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64" FROM cards
+           WHERE deck_id = ? ORDER BY position ASC, id ASC"#,
+        card.deck_id
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    // One check covers both "no such card" and "not in this deck": from the
+    // client's side they are the same mistake, and distinguishing them would
+    // leak whether an id exists in some other deck.
+    if let Some(before) = body.before {
+        if !ids.contains(&before) {
+            return Err(AppError::validation([(
+                "before",
+                "That card is not in this deck",
+            )]));
+        }
+    }
+
+    ids.retain(|&x| x != id);
+    match body.before {
+        Some(before) => {
+            // Deliberately not `expect`: the guarantee that `before` is still
+            // present here rests on two separate checks above (the self-move
+            // rejection before the transaction, and the membership check inside
+            // it). Re-deriving it locally means a future edit to either cannot
+            // turn this into a panic — which in an axum handler drops the
+            // connection rather than returning a clean error.
+            let Some(at) = ids.iter().position(|&x| x == before) else {
+                return Err(AppError::validation([(
+                    "before",
+                    "That card is not in this deck",
+                )]));
+            };
+            ids.insert(at, id);
+        }
+        None => ids.push(id),
+    }
+
+    for (i, card_id) in ids.iter().enumerate() {
+        let position = i as i64;
+        // updated_at is deliberately untouched: see the test
+        // `a_move_does_not_bump_updated_at`.
+        sqlx::query!("UPDATE cards SET position = ? WHERE id = ?", position, card_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(Json(fetch_full(&st.pool, id).await?))
+}
+
+/// Where to put a card, relative to one of its deck-mates.
+///
+/// Relative rather than a whole-deck permutation on purpose: the deck screen
+/// can be filtered (archived hidden), so the client does not know where the
+/// hidden cards sit and cannot honestly send a complete order. "Before card X"
+/// stays well-defined whatever is filtered out, and is idempotent.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveCard {
+    /// The card to land immediately before, or null for the end of the deck.
+    pub before: Option<i64>,
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub deck_id: Option<String>,
@@ -398,28 +491,24 @@ async fn list(
         )]));
     }
 
-    // Oldest first: a deck reads in the order it was written. Timestamps have
-    // one-second resolution, so a burst of save-and-next cards all share a
-    // created_at and the `id ASC` tiebreak is needed to put them back in
-    // authoring order. On this schema/engine no black-box test can actually
-    // discriminate it: cards.id is the rowid, every INSERT assigns it in true
-    // insertion order, and SQLite scans a rowid B-tree (or the trailing-rowid
-    // idx_cards_deck_archived index) in ascending rowid order regardless, so
-    // ties already coincide with `id ASC` without it being named. It is kept
-    // anyway as a determinism guarantee against a future index or query-plan
-    // change that would break that coincidence.
+    // Hand-ordered: `position` is dense and 0-based per deck (see migration
+    // 0002), and `POST /api/cards/:id/move` rewrites the whole deck's
+    // positions in one transaction, so there are no ties to break in practice.
+    // `id ASC` is kept as a determinism guarantee anyway — the same reasoning
+    // that kept it behind created_at before this column existed.
     let rows = sqlx::query_as!(
         CardSummaryDto,
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
-                  archived AS "archived!: bool", created_at, updated_at
+                  archived AS "archived!: bool", position AS "position!: i64",
+                  created_at, updated_at
            FROM cards
            WHERE (? IS NULL OR deck_id = ?)
              AND (? = 'all' OR kind = ?)
              AND (? = 'all'
                   OR (? = 'true'  AND archived = 1)
                   OR (? = 'false' AND archived = 0))
-           ORDER BY created_at ASC, id ASC"#,
+           ORDER BY position ASC, id ASC"#,
         deck_id, deck_id, kind, kind, archived, archived, archived
     )
     .fetch_all(&st.pool)
@@ -437,6 +526,16 @@ async fn create(
 
     let mut tx = st.pool.begin().await?;
 
+    // End of the deck. A nonexistent deck yields 0 here and then fails on the
+    // INSERT's foreign key below, so the 400 for a bad deck_id is unchanged.
+    let position = sqlx::query_scalar!(
+        r#"SELECT COALESCE(MAX(position), -1) + 1 AS "next!: i64"
+           FROM cards WHERE deck_id = ?"#,
+        deck_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
     // Card, children and schedule row go in together or not at all: a card
     // without its choices is unanswerable, and one without a schedule row
     // would need a migration when SM-2 lands. Note: `validate` above already
@@ -448,10 +547,11 @@ async fn create(
     // writes atomic if that changes), but no test today exercises a rollback
     // of a partial write; see the comment on `a_rejected_create_writes_nothing`.
     let id = sqlx::query_scalar!(
-        r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md, explanation_md)
-           VALUES (?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+        r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md,
+                              explanation_md, position)
+           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
         deck_id, valid.kind, valid.prompt_md, valid.image_path, valid.answer_md,
-        valid.explanation_md
+        valid.explanation_md, position
     )
     .fetch_one(&mut *tx)
     .await
@@ -511,4 +611,5 @@ pub fn router() -> Router<AppState> {
         .route("/cards/{id}", get(get_one).patch(patch))
         .route("/cards/{id}/archive", axum::routing::post(archive))
         .route("/cards/{id}/unarchive", axum::routing::post(unarchive))
+        .route("/cards/{id}/move", axum::routing::post(move_card))
 }

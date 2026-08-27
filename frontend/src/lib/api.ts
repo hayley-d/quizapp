@@ -103,6 +103,12 @@ export type CardSummary = {
   answer_md: string | null
   explanation_md: string | null
   archived: boolean
+  /**
+   * Order within the deck: 0-based, dense, archived cards included.
+   * Server-assigned — absent from `CardInput` on purpose, like
+   * `choices.position` and `accepted.normalised`.
+   */
+  position: number
   created_at: string
   updated_at: string
 }
@@ -189,5 +195,15 @@ export const api = {
     request<Card>('PATCH', `/cards/${id}`, input),
   archiveCard: (id: number) => request<Card>('POST', `/cards/${id}/archive`, {}),
   unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
+  /**
+   * Move a card to immediately before `before`, or to the end of its deck
+   * when `before` is null.
+   *
+   * `before` is the card that FOLLOWS the moved one in the intended order —
+   * not the row it was dropped on. Dragging downwards those differ by one;
+   * see DeckPage's drag handler.
+   */
+  moveCard: (id: number, before: number | null) =>
+    request<Card>('POST', `/cards/${id}/move`, { before }),
   uploadImage,
 }

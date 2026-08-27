@@ -2,8 +2,8 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, at `part2b-images-markdown` (Part 2b complete, not yet merged
-to `main`).
+**Last updated:** 2026-08-27, at `part2c-deck-card-list` (the deck card list redesign complete
+and gate-clean, not yet merged to `main`).
 
 ## What this is
 
@@ -13,9 +13,9 @@ document is the record of what the app is meant to be, and it is kept current.
 
 ## Where things stand
 
-Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1 and 2a are merged to
-`main`; Part 2b lives on `part2b-images-markdown`, gate-clean, awaiting merge. Concretely,
-working today:
+Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1, 2a and 2b are merged
+to `main`; the deck card list redesign lives on `part2c-deck-card-list`, gate-clean, awaiting
+merge. Concretely, working today:
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
@@ -32,8 +32,20 @@ working today:
   short-answer grading
 - `/decks` screen: flat card list with module badges, a search/filter/sort toolbar,
   debounced input and a stale-response guard
-- `/decks/:id` screen: a deck's card list with kind badges, archive/unarchive, and a
-  show-archived toggle
+- `/decks/:id` screen: the deck as a list of flippable cards. Click or Enter on a card body flips
+  it (a half-flip: rotate to edge-on, swap the single mounted face, rotate back — a two-faced 3D
+  flip would need a fixed row height, which the unclamped markdown prompts rule out) and the
+  answer is fetched per row on first flip via `GET /api/cards/:id`. Multiple-choice backs show a
+  two-column grid whose options stay uniform until the eye button reveals the correct one. Rows
+  drag to reorder by their grip (`@dnd-kit/sortable`, keyboard reorder included), and the order
+  persists. Archive/unarchive and the show-archived toggle are unchanged. Design:
+  [`mitis/specs/2026-08-27-deck-card-list-redesign-design.md`](mitis/specs/2026-08-27-deck-card-list-redesign-design.md)
+
+  **Manual verification outstanding.** The nine-point browser walkthrough for this screen
+  (flip, drag reorder, keyboard reorder, reduced-motion, the image lightbox) has **not been
+  performed** — the dev-tools browser could not reach the dev server in this environment. The
+  code is complete and the automated gate is clean, but nothing on this screen has actually
+  been clicked. Do not assume it works until someone has driven it in a browser.
 - `/cards/new?deck_id=` and `/cards/:id/edit`: a keyboard-first editor for all three kinds,
   with a `ChoicesEditor` and an `AcceptedEditor`
 - `POST /api/images`: multipart upload, magic-byte type check (PNG/JPEG/WebP), 5 MiB cap,
@@ -48,7 +60,14 @@ working today:
   opens a lightbox
 - The card editor uploads an image while you write, and toggles the whole form between Edit
   and Preview with `⌘/Ctrl+P`
-- 106 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- `cards.position`: a dense 0-based order per deck (migration `0002`), backfilled from the
+  `created_at` ordering the list used before, with archived cards keeping their slots.
+  `GET /api/cards` orders by it. `POST /api/cards/:id/move` takes `{"before": id|null}` — land
+  immediately before that card, or at the end of the deck — and rewrites the deck's positions in
+  one transaction without touching `updated_at`. It is relative rather than a whole-deck
+  permutation because the deck screen can be filtered, so the client cannot honestly send a
+  complete order.
+- 120 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
 `/study` and `/stats` are placeholder pages.
@@ -62,6 +81,9 @@ than writing them, and the first consumer of `POST /api/sessions`.
 Two things already in place that Part 3 must use rather than reinvent: the `<Markdown>`
 component (the session runner is its third consumer — do not add a fourth rendering path),
 and `normalise()`, which computes the same key grading will look up.
+
+A third: `cards.position` is the deck's authored order, and practice mode should read it rather
+than inventing an order of its own.
 
 After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
 
@@ -231,15 +253,70 @@ Added by Part 2b (the extension was still not connected, so none of these were d
 - That a rejected upload leaves every other typed field untouched, and that the same file can
   be picked again straight after a failure (the input-value reset)
 
+Added by Part 2c (the browser tooling still could not reach the dev server, so **none of these
+nine points were driven** — this is not a partial pass, it is a complete gap):
+
+1. Clicking a card body flips it with a rotation; the answer appears.
+2. Tab to a card body, press Enter — same flip. Press Space — same flip, page does not scroll.
+3. A multiple-choice back shows uniform options; the eye button colours the correct one and the
+   label flips to "Hide answer".
+4. Flip back and forward again — the reveal has reset.
+5. Clicking a card's image opens the lightbox and does **not** flip the card. Then **Tab to the
+   thumbnail and press Enter** — the lightbox must open, and the card must NOT flip. Repeat with
+   Space. This keyboard half is the point: the mouse half passed while the keyboard path was
+   broken (Enter bubbled to the flip target, which cancelled the button's click), and that bug
+   was caught by review rather than by this list.
+6. Drag a card by its grip to a new position; reload the page — the new order persists.
+7. Tab to a grip, press Space, press ArrowDown twice, press Space — the card moves, and reload
+   confirms it persisted.
+8. Toggle "Show archived" on, drag a visible card past an archived one, reload — the archived
+   card is still where it was.
+9. In macOS System Settings → Accessibility → Display, turn on "Reduce motion", then flip a
+   card — the face swaps with no rotation.
+
+**Known defects and follow-ups from Part 2c's review** — each was found by review, judged
+non-blocking, and deliberately left. They are real; none is a mystery.
+
+- **Clicking a markdown link inside a card navigates *and* flips the card.** The flip target is
+  the card body, and its `onClick` has no target check, so a click on an `<a>` in a prompt or
+  answer bubbles into `flip()`. The keyboard path does not have this problem — `onKeyDown` got a
+  `e.target !== e.currentTarget` guard so Enter on a link or on the image thumbnail reaches its
+  own default action. The mouse path is guarded only by the `stopPropagation` wrapper around the
+  image thumbnail, which does not cover markdown. Fix is roughly
+  `if ((e.target as HTMLElement).closest('a,button')) return` at the top of `onClick`. Introduced
+  by Part 2c, since the row only became a flip target here.
+- **`move_card` and `create` are read-then-write deferred transactions.** With no WAL and
+  `max_connections(5)`, SQLite returns `SQLITE_BUSY` *immediately* on a lock upgrade —
+  `busy_timeout` does not retry that case — so two overlapping requests can 500. Data is safe
+  (the transaction rolls back) and the client toasts and refetches, so the worst symptom is a
+  spurious "Could not reorder cards" during rapid drags. Hardening is `BEGIN IMMEDIATE` for those
+  two transactions.
+- **A list fetch issued *during* an in-flight `moveCard` can land with pre-move data and stick.**
+  `droppedFetch` only covers fetches that predate the drag, so archiving a card inside the move's
+  round trip can leave the old order on screen until the next navigation. Cheapest fix is to
+  always refetch after a successful move, dropping the `droppedFetch` optimisation.
+- **Two accessible-name problems on the card row.** The flip target's `aria-label` ("Show answer")
+  becomes the element's whole accessible name, so a focused card announces nothing about which
+  card it is; and the drag grip's label slices raw markdown, so a prompt starting with `$$…$$` or
+  `# ` is read out as literal syntax. Both are fixed from the same place — `aria-labelledby`
+  pointing at the prompt, plus a visually-hidden action label. Related: `role="button"` gives its
+  children presentational semantics, which sits awkwardly with the nested image button.
+- **`strict` is off for the frontend.** `frontend/tsconfig.app.json` sets neither `strict` nor
+  `extends`, so `strictNullChecks` is not checking anything — including Part 2c's fairly heavy use
+  of nullable state (`full`, `inFlight.current`, `pending.current`, `image_path`). Pre-existing
+  config, but it is the highest-value frontend follow-up: the `tsc --noEmit` gate is weaker than
+  it looks.
+
 **Housekeeping**
 
 - `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
   `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
   regenerates on startup.
-- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 833 kB, 254 kB gzipped),
-  which now trips Vite's 500 kB chunk warning on every build. Harmless for a LAN-served app
-  and deliberately not code-split yet, but build step 8 ("embed the bundle, LAN binding") is
-  where it should be looked at.
+- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 884 kB, 272 kB gzipped,
+  the latter figure grown further by the deck card list redesign's three `@dnd-kit`
+  packages), which now trips Vite's 500 kB chunk warning on every build. Harmless for a
+  LAN-served app and deliberately not code-split yet, but build step 8 ("embed the bundle,
+  LAN binding") is where it should be looked at.
 - Google Fonts: `frontend/src/styles/globals.css` imports Quicksand and Inter over the
   network, so typography silently falls back offline or on a LAN-only phone. Deferred to
   build step 8, which is already the "embed the bundle, LAN binding" task, and noted there
