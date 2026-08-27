@@ -3,6 +3,8 @@
 // would otherwise flag the rest as dead_code in that binary.
 #![allow(dead_code)]
 
+use std::path::PathBuf;
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
@@ -13,6 +15,7 @@ use tower::ServiceExt;
 pub struct TestApp {
     pub router: Router,
     pub pool: sqlx::SqlitePool,
+    pub images_dir: PathBuf,
     _dir: tempfile::TempDir,
 }
 
@@ -20,8 +23,15 @@ pub async fn spawn_app() -> TestApp {
     let dir = tempfile::tempdir().expect("tempdir");
     let url = format!("sqlite://{}/test.db?mode=rwc", dir.path().display());
     let pool = quizapp::db::connect(&url).await.expect("db connect");
-    let router = quizapp::app(quizapp::state::AppState { pool: pool.clone() });
-    TestApp { router, pool, _dir: dir }
+    // Inside the same tempdir as the database, so a test's uploads are torn
+    // down with it and no test can see another's files.
+    let images_dir = dir.path().join("images");
+    std::fs::create_dir_all(&images_dir).expect("images dir");
+    let router = quizapp::app(quizapp::state::AppState {
+        pool: pool.clone(),
+        images_dir: images_dir.clone(),
+    });
+    TestApp { router, pool, images_dir, _dir: dir }
 }
 
 impl TestApp {
@@ -56,6 +66,21 @@ impl TestApp {
     }
     pub async fn patch(&self, uri: &str, body: Value) -> (StatusCode, Value) {
         self.request("PATCH", uri, Some(body)).await
+    }
+
+    /// A GET returning the raw body: `request()` parses JSON, and the image
+    /// route returns image bytes.
+    pub async fn get_raw(&self, uri: &str) -> (StatusCode, Vec<u8>) {
+        let req = Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap();
+        let res = self.router.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes().to_vec();
+        (status, bytes)
+    }
+
+    /// Number of files in this app's images directory.
+    pub async fn image_count(&self) -> usize {
+        std::fs::read_dir(&self.images_dir).expect("read images dir").count()
     }
 
     /// Scalar count, for asserting on tables the HTTP surface does not expose.
