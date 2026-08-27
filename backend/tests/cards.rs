@@ -867,3 +867,144 @@ async fn archiving_does_not_renumber_positions() {
     app.post(&format!("/api/cards/{b}/unarchive"), json!({})).await;
     assert_eq!(order(&app, d).await, vec![a, b, c], "and returns to it");
 }
+
+#[tokio::test]
+async fn moves_a_card_to_the_front() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "first").await;
+    let b = flash(&app, d, "second").await;
+    let c = flash(&app, d, "third").await;
+
+    let (status, _) = app.post(&format!("/api/cards/{c}/move"), json!({ "before": a })).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(order(&app, d).await, vec![c, a, b]);
+    assert_eq!(positions(&app, d).await, vec![0, 1, 2]);
+}
+
+#[tokio::test]
+async fn moves_a_card_to_the_middle() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "first").await;
+    let b = flash(&app, d, "second").await;
+    let c = flash(&app, d, "third").await;
+
+    // a lands immediately before c, i.e. between b and c.
+    app.post(&format!("/api/cards/{a}/move"), json!({ "before": c })).await;
+    assert_eq!(order(&app, d).await, vec![b, a, c]);
+}
+
+#[tokio::test]
+async fn a_null_before_moves_a_card_to_the_end() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "first").await;
+    let b = flash(&app, d, "second").await;
+    let c = flash(&app, d, "third").await;
+
+    let (status, moved) = app
+        .post(&format!("/api/cards/{a}/move"), json!({ "before": null }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(moved["position"], 2, "the response carries the new position");
+    assert_eq!(order(&app, d).await, vec![b, c, a]);
+}
+
+#[tokio::test]
+async fn positions_stay_dense_across_a_sequence_of_moves() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "first").await;
+    let b = flash(&app, d, "second").await;
+    let c = flash(&app, d, "third").await;
+    let e = flash(&app, d, "fourth").await;
+
+    app.post(&format!("/api/cards/{e}/move"), json!({ "before": a })).await;
+    app.post(&format!("/api/cards/{a}/move"), json!({ "before": null })).await;
+    app.post(&format!("/api/cards/{c}/move"), json!({ "before": b })).await;
+
+    assert_eq!(order(&app, d).await, vec![e, c, b, a]);
+    assert_eq!(positions(&app, d).await, vec![0, 1, 2, 3]);
+}
+
+#[tokio::test]
+async fn moving_before_a_card_in_another_deck_is_rejected() {
+    let app = common::spawn_app().await;
+    let d1 = deck(&app, "Deck one").await;
+    let d2 = deck(&app, "Deck two").await;
+    let a = flash(&app, d1, "mine").await;
+    let b = flash(&app, d1, "also mine").await;
+    let outsider = flash(&app, d2, "elsewhere").await;
+
+    let (status, body) = app
+        .post(&format!("/api/cards/{a}/move"), json!({ "before": outsider }))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "before");
+    assert_eq!(order(&app, d1).await, vec![a, b], "a rejected move writes nothing");
+}
+
+#[tokio::test]
+async fn moving_before_a_nonexistent_card_is_rejected() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "only").await;
+
+    let (status, body) = app
+        .post(&format!("/api/cards/{a}/move"), json!({ "before": 99_999 }))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "before");
+}
+
+#[tokio::test]
+async fn moving_a_card_before_itself_is_rejected() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "only").await;
+
+    let (status, body) = app.post(&format!("/api/cards/{a}/move"), json!({ "before": a })).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["fields"][0]["field"], "before");
+}
+
+#[tokio::test]
+async fn moving_a_nonexistent_card_is_404() {
+    let app = common::spawn_app().await;
+    let (status, _) = app.post("/api/cards/99999/move", json!({ "before": null })).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_move_does_not_bump_updated_at() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "first").await;
+    let b = flash(&app, d, "second").await;
+
+    let (_, before_move) = app.get(&format!("/api/cards/{a}")).await;
+
+    // Position is list metadata, not a content edit: Part 3's scheduling must
+    // not see a reorder as a revision.
+    let (_, moved) = app.post(&format!("/api/cards/{a}/move"), json!({ "before": null })).await;
+    assert_eq!(moved["updated_at"], before_move["updated_at"]);
+    assert_eq!(order(&app, d).await, vec![b, a]);
+}
+
+#[tokio::test]
+async fn a_move_keeps_interleaved_archived_cards_in_place() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Test 1").await;
+    let a = flash(&app, d, "visible one").await;
+    let hidden = flash(&app, d, "archived").await;
+    let c = flash(&app, d, "visible two").await;
+    app.post(&format!("/api/cards/{hidden}/archive"), json!({})).await;
+
+    // The UI would send this while `hidden` is filtered out of the list: move
+    // c before a. `hidden` must keep its relative slot rather than be pushed
+    // to an end.
+    app.post(&format!("/api/cards/{c}/move"), json!({ "before": a })).await;
+    assert_eq!(order(&app, d).await, vec![c, a, hidden]);
+    assert_eq!(positions(&app, d).await, vec![0, 1, 2]);
+}

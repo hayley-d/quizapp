@@ -366,6 +366,84 @@ async fn set_archived(st: &AppState, id: i64, archived: bool) -> AppResult<Json<
     Ok(Json(fetch_full(&st.pool, id).await?))
 }
 
+/// Reorders one card within its deck.
+///
+/// The whole deck's positions are rewritten in a single transaction rather
+/// than nudging neighbours or interpolating gaps: O(n) writes per move is
+/// nothing for a deck of a few hundred cards, and it keeps the dense 0-based
+/// invariant true by construction instead of by argument.
+async fn move_card(
+    State(st): State<AppState>,
+    Path(id): Path<i64>,
+    AppJson(body): AppJson<MoveCard>,
+) -> AppResult<Json<CardDto>> {
+    let card = fetch_summary(&st.pool, id).await?; // 404 before any write
+
+    if body.before == Some(id) {
+        return Err(AppError::validation([(
+            "before",
+            "A card cannot move before itself",
+        )]));
+    }
+
+    let mut tx = st.pool.begin().await?;
+
+    let mut ids: Vec<i64> = sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64" FROM cards
+           WHERE deck_id = ? ORDER BY position ASC, id ASC"#,
+        card.deck_id
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    // One check covers both "no such card" and "not in this deck": from the
+    // client's side they are the same mistake, and distinguishing them would
+    // leak whether an id exists in some other deck.
+    if let Some(before) = body.before {
+        if !ids.contains(&before) {
+            return Err(AppError::validation([(
+                "before",
+                "That card is not in this deck",
+            )]));
+        }
+    }
+
+    ids.retain(|&x| x != id);
+    match body.before {
+        Some(before) => {
+            let at = ids.iter().position(|&x| x == before).expect("checked above");
+            ids.insert(at, id);
+        }
+        None => ids.push(id),
+    }
+
+    for (i, card_id) in ids.iter().enumerate() {
+        let position = i as i64;
+        // updated_at is deliberately untouched: see the test
+        // `a_move_does_not_bump_updated_at`.
+        sqlx::query!("UPDATE cards SET position = ? WHERE id = ?", position, card_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(Json(fetch_full(&st.pool, id).await?))
+}
+
+/// Where to put a card, relative to one of its deck-mates.
+///
+/// Relative rather than a whole-deck permutation on purpose: the deck screen
+/// can be filtered (archived hidden), so the client does not know where the
+/// hidden cards sit and cannot honestly send a complete order. "Before card X"
+/// stays well-defined whatever is filtered out, and is idempotent.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveCard {
+    /// The card to land immediately before, or null for the end of the deck.
+    pub before: Option<i64>,
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub deck_id: Option<String>,
@@ -522,4 +600,5 @@ pub fn router() -> Router<AppState> {
         .route("/cards/{id}", get(get_one).patch(patch))
         .route("/cards/{id}/archive", axum::routing::post(archive))
         .route("/cards/{id}/unarchive", axum::routing::post(unarchive))
+        .route("/cards/{id}/move", axum::routing::post(move_card))
 }
