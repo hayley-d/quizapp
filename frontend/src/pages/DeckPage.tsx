@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArchiveRestore, Archive as ArchiveIcon, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { toast } from 'sonner'
-import { api, KIND_LABEL, type CardSummary, type Deck } from '@/lib/api'
+import { api, type CardSummary, type Deck } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Markdown } from '@/components/Markdown'
-import { CardImage } from '@/components/CardImage'
+import { CardRow } from '@/components/deck/CardRow'
 
 export function DeckPage() {
   const { id } = useParams<{ id: string }>()
@@ -118,6 +132,42 @@ export function DeckPage() {
     }
   }
 
+  // A small distance threshold so a click on the grip is still a click, and
+  // the keyboard sensor so reordering does not require a pointer at all.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const from = cards.findIndex((c) => c.id === active.id)
+    const to = cards.findIndex((c) => c.id === over.id)
+    if (from === -1 || to === -1) return
+
+    const previous = cards
+    const next = arrayMove(cards, from, to)
+    setCards(next)
+
+    // `before` is the card that FOLLOWS the moved one in the new order, not
+    // `over.id`. Dragging downwards, the over-row is the one being displaced
+    // and sits *above* the landing slot, so sending it would be off by one.
+    // Reading the new neighbour is correct in both directions with no special
+    // case. When archived cards are hidden this is the next *visible* card,
+    // which is exactly the semantics the endpoint implements: hidden cards
+    // keep their slots above it.
+    const landed = next.findIndex((c) => c.id === active.id)
+    const before = landed + 1 < next.length ? next[landed + 1].id : null
+
+    void api.moveCard(Number(active.id), before).catch(() => {
+      toast.error('Could not reorder cards')
+      setCards(previous)
+      void loadCards()
+    })
+  }
+
   if (notFound) {
     return (
       <div className="space-y-2">
@@ -139,19 +189,31 @@ export function DeckPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-display text-2xl font-bold">{deck.name}</h1>
-            {deck.module_id !== null && <Badge variant="secondary">{deck.module_name}</Badge>}
+        <div className="flex min-w-0 items-start gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 shrink-0"
+            aria-label="Back to decks"
+            title="Back to decks"
+            onClick={() => navigate('/decks')}
+          >
+            <ArrowLeft />
+          </Button>
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl font-bold">{deck.name}</h1>
+              {deck.module_id !== null && <Badge variant="secondary">{deck.module_name}</Badge>}
+            </div>
+            {deck.description && <p className="text-muted-foreground">{deck.description}</p>}
+            <p className="text-sm text-muted-foreground">
+              {deck.card_count} card{deck.card_count === 1 ? '' : 's'}
+            </p>
           </div>
-          {deck.description && <p className="text-muted-foreground">{deck.description}</p>}
-          <p className="text-sm text-muted-foreground">
-            {deck.card_count} card{deck.card_count === 1 ? '' : 's'}
-          </p>
         </div>
         <Button className="h-10 px-4" onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}>
           <Plus className="size-4" />
-          New card
+          Add card
         </Button>
       </div>
 
@@ -170,63 +232,28 @@ export function DeckPage() {
         </div>
       )}
 
-      <ul className="space-y-2">
-        {cards.map((c) => (
-          <li
-            key={c.id}
-            className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${
-              c.archived ? 'opacity-60' : ''
-            }`}
-          >
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Badge variant="outline">{KIND_LABEL[c.kind]}</Badge>
-                {c.archived && <Badge variant="secondary">Archived</Badge>}
-              </div>
-              {c.image_path !== null && (
-                <CardImage path={c.image_path} alt={c.prompt_md} />
-              )}
-              {/* Unclamped on purpose: a truncated single line cannot render
-                  markdown without a half-open `$…$` or a stray list marker
-                  looking broken. The cost is a long page for a 100+ card deck,
-                  which is a deliberate, recorded trade-off. */}
-              <Markdown className="min-w-0 flex-1">{c.prompt_md}</Markdown>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Edit card ${c.id}`}
-                title="Edit card"
-                onClick={() => navigate(`/cards/${c.id}/edit`)}
-              >
-                <Pencil className="size-4" />
-              </Button>
-              {c.archived ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Unarchive card ${c.id}`}
-                  title="Unarchive card"
-                  onClick={() => void unarchive(c)}
-                >
-                  <ArchiveRestore className="size-4" />
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Archive card ${c.id}`}
-                  title="Archive card"
-                  onClick={() => void archive(c)}
-                >
-                  <ArchiveIcon className="size-4" />
-                </Button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={cards.map((c) => c.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul className="space-y-3">
+            {cards.map((c) => (
+              <CardRow
+                key={c.id}
+                card={c}
+                loadCard={api.getCard}
+                onEdit={() => navigate(`/cards/${c.id}/edit`)}
+                onArchiveToggle={() => void (c.archived ? unarchive(c) : archive(c))}
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
     </div>
   )
 }
