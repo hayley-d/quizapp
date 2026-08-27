@@ -53,6 +53,10 @@ for what's already built rather than a new screen:
   deliberately rendered raw text everywhere instead of building this three times; that is
   the entire reason this task exists rather than being folded into Part 2a.
 
+**Before planning Part 2b, read [`PART-2B-HANDOFF.md`](PART-2B-HANDOFF.md).** It carries three
+open design decisions that need Hayley's answer first - one of which contradicts the spec's
+own API table - plus the dependency and path facts already checked.
+
 After that, the spec's build sequencing continues: practice mode → Bibble theme pass →
 mock test → stats → SM-2 → embed the bundle and LAN binding.
 
@@ -135,6 +139,10 @@ which tempts a query per filter combination. Let SQL branch on bound parameters 
 (`? = 'all' OR (? = 'none' AND …)`, `CASE WHEN ? = 'oldest' THEN …`). Use plain repeated
 `?` placeholders, never `?1`/`?2` — the macro counts by occurrence and numbered
 placeholders break the binding.
+
+The same counting rule bites when you *mutate* such a query to prove a clause is
+load-bearing: preserve the placeholder count, or you get a confusing compile error that on
+this machine's nightly arrives dressed up as the self-recovering ICE.
 
 **Foreign keys are per-connection.** Enforcement comes from `.foreign_keys(true)` in
 `backend/src/db.rs`, not from anything in the schema. Any other client — DBeaver, the
@@ -230,3 +238,9 @@ and a `json:metadata` fence.
 Two habits that earned their cost here: give reviewers the *both sides* of any seam they are
 judging (a per-task review structurally cannot see an API-to-client mismatch), and demand
 mutation evidence — a test that cannot fail is not a test.
+
+**Run one implementer at a time.** Part 2a dispatched two concurrently because their file
+lists were disjoint. Git's index is not per-file: one agent's `git add`/`commit` swept the
+other's staged work into a commit labelled as something else, recoverable only because the
+branch was local and unpushed. Read-only reviewers can run alongside an implementer; two
+writers cannot.
