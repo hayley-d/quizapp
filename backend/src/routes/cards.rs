@@ -89,6 +89,8 @@ pub struct CardInput {
     #[serde(default)]
     pub explanation_md: Option<String>,
     #[serde(default)]
+    pub image_path: Option<String>,
+    #[serde(default)]
     pub choices: Vec<ChoiceInput>,
     #[serde(default)]
     pub accepted: Vec<AcceptedInput>,
@@ -108,8 +110,27 @@ pub struct ValidCard {
     pub prompt_md: String,
     pub answer_md: Option<String>,
     pub explanation_md: Option<String>,
+    pub image_path: Option<String>,
     pub choices: Vec<ChoiceInput>,
     pub accepted: Vec<AcceptedInput>,
+}
+
+/// True only for a path `POST /api/images` could have produced:
+/// `images/<16 lowercase hex>.<png|jpg|webp>`.
+///
+/// The server assigns every legitimate value of this field, so anything
+/// outside that shape did not come from an upload. It is worth a guard rather
+/// than a shrug because the string is handed straight back to the browser as
+/// a URL. Hand-rolled instead of pulling in `regex`: this is the only pattern
+/// the codebase matches, and the crate would be the larger change. The
+/// extension list must stay in step with `images::ImageType::extension`.
+fn is_uploaded_image_path(p: &str) -> bool {
+    let Some(rest) = p.strip_prefix("images/") else { return false };
+    let Some((stem, ext)) = rest.rsplit_once('.') else { return false };
+
+    stem.len() == 16
+        && stem.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+        && ["png", "jpg", "webp"].contains(&ext)
 }
 
 /// Enforces the per-kind invariants the schema cannot express (spec: "the
@@ -139,6 +160,14 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
         .map(str::to_string);
     let explanation_md = input.explanation_md.as_deref().map(str::trim)
         .filter(|s| !s.is_empty()).map(str::to_string);
+
+    // An empty string means "no image" — the editor clears the field rather
+    // than deleting the key — so it is filtered out before the shape check.
+    let image_path = input.image_path.as_deref().map(str::trim)
+        .filter(|s| !s.is_empty()).map(str::to_string);
+    if image_path.as_deref().is_some_and(|p| !is_uploaded_image_path(p)) {
+        push("image_path", "That is not an uploaded image");
+    }
 
     let choices: Vec<ChoiceInput> = input.choices.into_iter()
         .map(|c| ChoiceInput { text_md: c.text_md.trim().to_string(), ..c })
@@ -213,7 +242,7 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
     }
 
     Ok(ValidCard {
-        kind: input.kind, prompt_md, answer_md, explanation_md, choices, accepted,
+        kind: input.kind, prompt_md, image_path, answer_md, explanation_md, choices, accepted,
     })
 }
 
@@ -280,10 +309,11 @@ async fn patch(
 
     sqlx::query!(
         r#"UPDATE cards
-              SET kind = ?, prompt_md = ?, answer_md = ?, explanation_md = ?,
+              SET kind = ?, prompt_md = ?, image_path = ?, answer_md = ?, explanation_md = ?,
                   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
             WHERE id = ?"#,
-        valid.kind, valid.prompt_md, valid.answer_md, valid.explanation_md, id
+        valid.kind, valid.prompt_md, valid.image_path, valid.answer_md, valid.explanation_md,
+        id
     )
     .execute(&mut *tx)
     .await?;
@@ -418,9 +448,10 @@ async fn create(
     // writes atomic if that changes), but no test today exercises a rollback
     // of a partial write; see the comment on `a_rejected_create_writes_nothing`.
     let id = sqlx::query_scalar!(
-        r#"INSERT INTO cards (deck_id, kind, prompt_md, answer_md, explanation_md)
-           VALUES (?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
-        deck_id, valid.kind, valid.prompt_md, valid.answer_md, valid.explanation_md
+        r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md, explanation_md)
+           VALUES (?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+        deck_id, valid.kind, valid.prompt_md, valid.image_path, valid.answer_md,
+        valid.explanation_md
     )
     .fetch_one(&mut *tx)
     .await
