@@ -236,7 +236,10 @@ export function DeckPage() {
             </p>
           </div>
         </div>
-        <Button className="h-10 px-4" onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}>
+        <Button
+          className="h-10 bg-accent px-4 text-accent-foreground hover:bg-accent/80"
+          onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
+        >
           <Plus className="size-4" />
           Add card
         </Button>

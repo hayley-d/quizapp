@@ -411,7 +411,18 @@ async fn move_card(
     ids.retain(|&x| x != id);
     match body.before {
         Some(before) => {
-            let at = ids.iter().position(|&x| x == before).expect("checked above");
+            // Deliberately not `expect`: the guarantee that `before` is still
+            // present here rests on two separate checks above (the self-move
+            // rejection before the transaction, and the membership check inside
+            // it). Re-deriving it locally means a future edit to either cannot
+            // turn this into a panic — which in an axum handler drops the
+            // connection rather than returning a clean error.
+            let Some(at) = ids.iter().position(|&x| x == before) else {
+                return Err(AppError::validation([(
+                    "before",
+                    "That card is not in this deck",
+                )]));
+            };
             ids.insert(at, id);
         }
         None => ids.push(id),

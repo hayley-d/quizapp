@@ -177,6 +177,12 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: Props) {
             aria-label={showingAnswer ? 'Show question' : 'Show answer'}
             onClick={flip}
             onKeyDown={(e) => {
+              // Only keys pressed on the card body itself. A keydown from a
+              // focusable descendant — the image thumbnail's button, or a link
+              // in the markdown — must reach its own default action: Enter's
+              // default action IS the button's click, so preventing it here
+              // would make the lightbox unreachable by keyboard.
+              if (e.target !== e.currentTarget) return
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
                 flip()
