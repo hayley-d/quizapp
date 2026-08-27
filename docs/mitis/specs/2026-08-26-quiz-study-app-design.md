@@ -167,7 +167,12 @@ PATCH /api/cards/:id               update; nested children replaced in one trans
 POST /api/cards/:id/archive        archive
 POST /api/cards/:id/unarchive      restore; not in the original design, added so the
                                     deck screen's show-archived toggle has something to undo
-POST /api/cards/:id/image          multipart upload -> data/images/, returns path
+POST /api/images                   multipart upload -> data/images/, returns path;
+                                    replaces the original card-scoped
+                                    POST /api/cards/:id/image so the editor can upload
+                                    before the card exists — a short_answer card cannot
+                                    be saved without an accepted answer, and the image
+                                    IS the prompt. Cost: orphan files, accepted
 
 POST /api/sessions                 {mode, deck_ids | module_id, target_count?}
 GET  /api/sessions/:id/next        next card: prompt, image, shuffled choices, no key
