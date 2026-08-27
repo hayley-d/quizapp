@@ -164,7 +164,7 @@ async fn a_client_supplied_position_is_rejected() {
             "prompt_md": "q", "answer_md": "a", "position": 7,
         }))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[tokio::test]
@@ -337,8 +337,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] `POST /api/cards/:id/move` with `{"before": <id>}` places the card immediately before that card
 - [ ] `{"before": null}` moves it to the end of its deck
 - [ ] Positions remain dense and 0-based after any sequence of moves
-- [ ] `before` naming a card in another deck, or a nonexistent card → 400 with field `before`
-- [ ] `before` equal to the moved card's own id → 400 with field `before`
+- [ ] `before` naming a card in another deck, or a nonexistent card → 422 with field `before`
+- [ ] `before` equal to the moved card's own id → 422 with field `before`
 - [ ] A nonexistent card id → 404, and nothing is written
 - [ ] The card's `updated_at` is unchanged by a move
 - [ ] Archived cards interleaved in the deck keep their relative order across a move
@@ -425,7 +425,7 @@ async fn moving_before_a_card_in_another_deck_is_rejected() {
     let (status, body) = app
         .post(&format!("/api/cards/{a}/move"), json!({ "before": outsider }))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["fields"][0]["field"], "before");
     assert_eq!(order(&app, d1).await, vec![a, b], "a rejected move writes nothing");
 }
@@ -439,7 +439,7 @@ async fn moving_before_a_nonexistent_card_is_rejected() {
     let (status, body) = app
         .post(&format!("/api/cards/{a}/move"), json!({ "before": 99_999 }))
         .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["fields"][0]["field"], "before");
 }
 
@@ -450,7 +450,7 @@ async fn moving_a_card_before_itself_is_rejected() {
     let a = flash(&app, d, "only").await;
 
     let (status, body) = app.post(&format!("/api/cards/{a}/move"), json!({ "before": a })).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["fields"][0]["field"], "before");
 }
 
@@ -502,6 +502,10 @@ cargo test --test cards
 ```
 
 Expected: the new tests fail with 405 Method Not Allowed / 404 — the route does not exist.
+
+Note on status codes: `AppError::Validation` maps to **422**, not 400 (`backend/src/error.rs`), and
+the codebase is uniform on this — 35 `UNPROCESSABLE_ENTITY` assertions against 2 `BAD_REQUEST`.
+The `deny_unknown_fields` rejection in Task 1 is 422 for the same reason.
 
 - [ ] **Step 3: Add the request type and handler**
 
@@ -591,10 +595,12 @@ async fn move_card(
 }
 ```
 
-Note the two early returns inside the transaction: `tx` is dropped without `commit`, which rolls
-back. Neither path has written anything by then, so the rollback is belt-and-braces rather than
-load-bearing — but it is what the "a rejected move writes nothing" assertion in
-`moving_before_a_card_in_another_deck_is_rejected` pins.
+Only one early return sits inside the transaction — the `before`-not-in-deck check. The self-move
+check runs before `pool.begin()`, which is preferable: rejecting it needs no transaction at all.
+For the in-transaction one, `tx` is dropped without `commit`, which rolls back; nothing has been
+written by then, so the rollback is belt-and-braces rather than load-bearing — but it is what the
+"a rejected move writes nothing" assertion in `moving_before_a_card_in_another_deck_is_rejected`
+pins.
 
 - [ ] **Step 4: Register the route**
 
@@ -725,6 +731,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] It takes no arguments — callers react to `face` changing, not to a callback
 - [ ] Only one face is ever rendered, so the element keeps its natural height
 - [ ] Rapid repeated clicks cannot interleave two flips
+- [ ] `toFront()` is never dropped: called mid-flip it queues and runs when the machine settles
 - [ ] Under `prefers-reduced-motion: reduce` the face swaps with no rotation
 - [ ] Every timer and animation frame is cancelled on unmount — no state updates after teardown
 - [ ] `pnpm exec tsc --noEmit` is clean
@@ -771,6 +778,16 @@ export function useFlip() {
 
   const busy = useRef(false)
   const cleanups = useRef<Array<() => void>>([])
+  // A return-to-front requested while a flip was still in flight. The flip
+  // that is running must finish — interrupting it mid-rotation would leave the
+  // element at an arbitrary angle — so the request waits here and runs the
+  // moment the machine settles.
+  const pending = useRef<Face | null>(null)
+  // `goTo` schedules a callback that may need to call `goTo` again, which it
+  // cannot reference during its own definition. The ref is refreshed after
+  // every render, so by the time a scheduled callback fires it holds the
+  // current closure.
+  const goToRef = useRef<(next: Face) => void>(() => {})
 
   const later = useCallback((fn: () => void, ms: number) => {
     const t = window.setTimeout(fn, ms)
@@ -819,6 +836,9 @@ export function useFlip() {
           setAngle(0)
           later(() => {
             busy.current = false
+            const queued = pending.current
+            pending.current = null
+            if (queued !== null) goToRef.current(queued)
           }, HALF_MS)
         })
       }, HALF_MS)
@@ -826,12 +846,27 @@ export function useFlip() {
     [face, later, nextFrame],
   )
 
+  useEffect(() => {
+    goToRef.current = goTo
+  }, [goTo])
+
   const flip = useCallback(() => {
     goTo(face === 'front' ? 'back' : 'front')
   }, [face, goTo])
 
-  /** Return to the question — used when the answer fetch fails. */
+  /**
+   * Return to the question — used when the answer fetch fails.
+   *
+   * Unlike `flip`, this is never dropped. The fetch it backs out is started
+   * the instant `face` becomes 'back', which is the midpoint of the flip, so
+   * a fast failure lands while the machine is still busy; ignoring it would
+   * leave the card resting on a face whose content never loaded.
+   */
   const toFront = useCallback(() => {
+    if (busy.current) {
+      pending.current = 'front'
+      return
+    }
     goTo('front')
   }, [goTo])
 
@@ -859,7 +894,7 @@ cd frontend && pnpm exec tsc --noEmit
 Expected: clean. If `React.CSSProperties` is unresolved, add `import type React from 'react'` at
 the top.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 cd .. && git add frontend/src/components/deck/useFlip.ts
@@ -1280,7 +1315,7 @@ cd frontend && pnpm exec tsc --noEmit
 Expected: clean. If `setActivatorNodeRef` is reported as missing from `useSortable`'s return type,
 the installed `@dnd-kit/sortable` is older than v7 — check the version before working around it.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 cd .. && git add frontend/package.json frontend/pnpm-lock.yaml \
@@ -1310,6 +1345,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [ ] `before` is read from the card that follows the moved one in the new order — **not** `over.id`
 - [ ] Dropping a card last sends `before: null`
 - [ ] A failed move toasts, reverts the local order and refetches
+- [ ] A list response that a drag superseded is discarded, not applied over the reorder
+- [ ] A list fetch dropped by a drag is re-issued once the move commits, so the show-archived
+      switch and the list cannot end up disagreeing
 - [ ] Keyboard reorder works: focus a grip, Space to lift, arrows to move, Space to drop
 - [ ] The show-archived switch, archive/unarchive and the empty state all still work
 - [ ] `pnpm exec tsc --noEmit` and `pnpm build` are clean
@@ -1351,7 +1389,39 @@ import { CardRow } from '@/components/deck/CardRow'
 `KIND_LABEL`, `Markdown` and `CardImage` are no longer used here — they moved into `CardRow`.
 Leaving the imports behind will fail the build on `noUnusedLocals`.
 
-- [ ] **Step 2: Add the sensors and the drag handler**
+- [ ] **Step 2: Guard `loadCards` against a superseded response**
+
+The page now has two writers to `cards`: this fetch and the drag's optimistic reorder. `loadCards`
+guards only `setLoading` with its stale-response check, so an in-flight response can land on top of
+a newer local reorder. Two edits.
+
+Immediately before `setCards(rows)`:
+
+```ts
+      // A newer request — or a drag's optimistic reorder, which clears this
+      // ref — has superseded this response. Applying it would overwrite newer
+      // state with older server data.
+      if (inFlight.current !== controller) return
+      setCards(rows)
+```
+
+And in the `finally`, clear the ref when this call owns it, so `inFlight.current !== null` genuinely
+means "a request is in flight" — without this it keeps pointing at a *completed* controller and the
+drag handler cannot tell in-flight from finished:
+
+```ts
+    } finally {
+      if (inFlight.current === controller) {
+        inFlight.current = null
+        setLoading(false)
+      }
+    }
+```
+
+Safe on every other consumer: `loadCards`' own leading `inFlight.current?.abort()` and the unmount
+cleanup both use optional chaining and no-op on null.
+
+- [ ] **Step 3: Add the sensors and the drag handler**
 
 Inside the component, after the existing `archive`/`unarchive` functions:
 
@@ -1371,6 +1441,17 @@ Inside the component, after the existing `archive`/`unarchive` functions:
     const to = cards.findIndex((c) => c.id === over.id)
     if (from === -1 || to === -1) return
 
+    // Any list response still in flight predates this reorder and would land
+    // on top of it, so it must not be applied. But it may have been fetching a
+    // *different* filter set — a show-archived toggle the user hit moments
+    // earlier — so dropping it outright would leave the switch and the list
+    // disagreeing. Note that we dropped one and re-issue it once the move
+    // settles.
+    const droppedFetch = inFlight.current !== null
+    inFlight.current?.abort()
+    inFlight.current = null
+    setLoading(false)
+
     const previous = cards
     const next = arrayMove(cards, from, to)
     setCards(next)
@@ -1385,15 +1466,23 @@ Inside the component, after the existing `archive`/`unarchive` functions:
     const landed = next.findIndex((c) => c.id === active.id)
     const before = landed + 1 < next.length ? next[landed + 1].id : null
 
-    void api.moveCard(Number(active.id), before).catch(() => {
-      toast.error('Could not reorder cards')
-      setCards(previous)
-      void loadCards()
-    })
+    void api.moveCard(Number(active.id), before)
+      .then(() => {
+        // Only when we actually dropped one: a refetch on every drag would be
+        // a wasted round trip, since the optimistic order already matches what
+        // the server just committed. Running it after the move resolves means
+        // it reconciles the reorder AND the filter set in one request.
+        if (droppedFetch) void loadCards()
+      })
+      .catch(() => {
+        toast.error('Could not reorder cards')
+        setCards(previous)
+        void loadCards()
+      })
   }
 ```
 
-- [ ] **Step 3: Replace the page header**
+- [ ] **Step 4: Replace the page header**
 
 Replace the existing header block (the `<div className="flex flex-wrap items-start justify-between gap-3">` and its contents) with:
 
@@ -1428,7 +1517,7 @@ Replace the existing header block (the `<div className="flex flex-wrap items-sta
       </div>
 ```
 
-- [ ] **Step 4: Replace the card list**
+- [ ] **Step 5: Replace the card list**
 
 Replace the whole `<ul className="space-y-2">…</ul>` block with:
 
@@ -1460,7 +1549,7 @@ Replace the whole `<ul className="space-y-2">…</ul>` block with:
 `loadCard={api.getCard}` matches `CardRow`'s `(id, signal) => Promise<Card>` — `api.getCard`'s
 `signal` is optional, which is assignable to a required parameter.
 
-- [ ] **Step 5: Typecheck, build, and check the whole screen by hand**
+- [ ] **Step 6: Typecheck, build, and check the whole screen by hand**
 
 ```bash
 cd frontend && pnpm exec tsc --noEmit && pnpm build
@@ -1483,7 +1572,7 @@ Then, with `cargo run` in one terminal and `pnpm dev` in another, open
 9. In macOS System Settings → Accessibility → Display, turn on "Reduce motion", then flip a card —
    the face swaps with no rotation.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 cd .. && git add frontend/src/pages/DeckPage.tsx
@@ -1589,5 +1678,5 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 command from the repo root — from `backend/` the cwd-relative `DATABASE_URL` default silently
 creates `backend/data/`.
 
-There is no frontend test framework, by an existing spec decision. Task 7 Step 5 is the manual
+There is no frontend test framework, by an existing spec decision. Task 7 Step 6 is the manual
 walkthrough that stands in for it; do not skip it.
