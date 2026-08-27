@@ -30,6 +30,11 @@ pub enum AppError {
     /// Missing or incorrect `Content-Type` on a request that requires a JSON body.
     #[error("{0}")]
     UnsupportedMediaType(String),
+    /// A server-side failure with nothing useful to tell the client (a
+    /// refused filesystem write, say). Always logged at the call site,
+    /// because this variant deliberately carries no detail onwards.
+    #[error("internal error")]
+    Internal,
     #[error(transparent)]
     Db(#[from] sqlx::Error),
 }
@@ -90,6 +95,11 @@ impl AppError {
                 StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 ErrorBody { error: "unsupported_media_type", message, fields: vec![] },
             ),
+            AppError::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody { error: "internal", message: "Something went wrong".into(),
+                            fields: vec![] },
+            ),
             AppError::Db(e) => {
                 if let Some(dbe) = e.as_database_error() {
                     if dbe.is_unique_violation() {
@@ -146,6 +156,15 @@ mod tests {
         assert_eq!(body.error, "validation");
         assert_eq!(body.fields.len(), 1);
         assert_eq!(body.fields[0].field, "name");
+    }
+
+    #[test]
+    fn internal_is_500_with_the_envelope_and_no_detail() {
+        let (status, body) = AppError::Internal.parts();
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body.error, "internal");
+        assert!(body.fields.is_empty());
+        assert_eq!(body.message, "Something went wrong", "must not leak the cause");
     }
 
     #[test]

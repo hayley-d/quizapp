@@ -2,7 +2,7 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-26, at `part2a-cards-editor` (Part 2a complete, not yet merged
+**Last updated:** 2026-08-27, at `part2b-images-markdown` (Part 2b complete, not yet merged
 to `main`).
 
 ## What this is
@@ -13,8 +13,8 @@ document is the record of what the app is meant to be, and it is kept current.
 
 ## Where things stand
 
-Parts 1 and 2a of the spec's build sequencing are **done**. Part 1 is merged to `main`;
-Part 2a lives on `part2a-cards-editor`, reviewed and gate-clean, awaiting merge. Concretely,
+Parts 1, 2a and 2b of the spec's build sequencing are **done**. Parts 1 and 2a are merged to
+`main`; Part 2b lives on `part2b-images-markdown`, gate-clean, awaiting merge. Concretely,
 working today:
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
@@ -36,29 +36,34 @@ working today:
   show-archived toggle
 - `/cards/new?deck_id=` and `/cards/:id/edit`: a keyboard-first editor for all three kinds,
   with a `ChoicesEditor` and an `AcceptedEditor`
-- 81 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- `POST /api/images`: multipart upload, magic-byte type check (PNG/JPEG/WebP), 5 MiB cap,
+  content-addressed filenames (`images/<16 hex>.<ext>`) written to `data/images/` and served
+  read-only at `/images`. Standalone rather than card-scoped, deliberately — see the Part 2b
+  spec §1. Orphan files from an abandoned upload are accepted and nothing sweeps them.
+- `image_path` on card create and PATCH, validated against the shape the upload endpoint
+  issues, under the existing cards full-replace rule
+- One `<Markdown>` component (`react-markdown` + `remark-math` + `rehype-katex`, KaTeX fonts
+  bundled locally) rendering the card list, the editor preview and, later, the session runner
+- The deck's card list renders full multi-line markdown per row, with an image thumbnail that
+  opens a lightbox
+- The card editor uploads an image while you write, and toggles the whole form between Edit
+  and Preview with `⌘/Ctrl+P`
+- 106 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
-`/study` and `/stats` are placeholder pages. No image upload yet, and card text renders as
-raw markdown — no KaTeX, no Markdown component (see "Next up").
+`/study` and `/stats` are placeholder pages.
 
 ## Next up
 
-**Part 2b: images and one shared `<Markdown>` component.** Two things, both infrastructure
-for what's already built rather than a new screen:
+**Part 3: practice mode.** The session runner, grading against `accepted.normalised`, the
+"I was right" override, and `reviews` rows. This is the first feature that reads cards rather
+than writing them, and the first consumer of `POST /api/sessions`.
 
-- Image upload to `data/images/` (`POST /api/cards/:id/image`, per the spec).
-- A single `<Markdown>` component — `react-markdown` plus `remark-math` and `rehype-katex`
-  — used by the card list, the editor's preview, and later the session runner. Part 2a
-  deliberately rendered raw text everywhere instead of building this three times; that is
-  the entire reason this task exists rather than being folded into Part 2a.
+Two things already in place that Part 3 must use rather than reinvent: the `<Markdown>`
+component (the session runner is its third consumer — do not add a fourth rendering path),
+and `normalise()`, which computes the same key grading will look up.
 
-**Before planning Part 2b, read [`PART-2B-HANDOFF.md`](PART-2B-HANDOFF.md).** It carries three
-open design decisions that need Hayley's answer first - one of which contradicts the spec's
-own API table - plus the dependency and path facts already checked.
-
-After that, the spec's build sequencing continues: practice mode → Bibble theme pass →
-mock test → stats → SM-2 → embed the bundle and LAN binding.
+After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
 
 ## Running it
 
@@ -169,6 +174,31 @@ being fine once real cards exist.
 **Archive, never delete.** Cards are archived so their `reviews` rows keep meaning.
 `reviews.card_id` deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly.
 
+**One rendering path.** `<Markdown>` in `frontend/src/components/Markdown.tsx` is the only
+markdown renderer in the app, and it is why Part 2a shipped raw text everywhere. The card
+list, the editor preview and Part 3's session runner all go through it. If you need different
+behaviour, add a prop — a second renderer is the exact outcome the 2a/2b split existed to
+prevent.
+
+**KaTeX's fonts come from the npm package**, imported as `katex/dist/katex.min.css`. Do not
+switch to a CDN. The Google Fonts `@import` in `globals.css` is already a known defect
+deferred to build step 8; a second network dependency makes it worse.
+
+**Tailwind's preflight strips list markers and heading sizes.** The `.markdown` block at the
+end of `globals.css` restores them. Delete it and every bullet in every card silently becomes
+an unindented line.
+
+**Uploaded filenames are content-addressed** — the first 8 bytes of the SHA-256 as hex, plus
+an extension from the *sniffed* type, never from the uploaded filename. Re-uploading the same
+image therefore reuses one file. The extension list in `images::ImageType::extension` and the
+one in `cards::is_uploaded_image_path` must stay in step; the second rejects any path the
+first could not have produced.
+
+**Upload failures use the same envelope as everything else**, with `fields[0].field == "file"`,
+which is why the upload route raises axum's `DefaultBodyLimit` above the 5 MiB check it does
+itself — axum's own 413 is raw `text/plain` and would be the one failure in the app the
+frontend cannot parse.
+
 ## Outstanding
 
 **Needs a human at a browser** — no agent could verify these; the Chrome extension is not
@@ -189,11 +219,27 @@ connected on this machine, so no agent could drive a browser for either Part 1 o
 - Still outstanding from Part 1: the OS theme toggle actually swapping the Bibble light/dark
   palettes, and `/decks` at 375px
 
+Added by Part 2b (the extension was still not connected, so none of these were driven):
+
+- Whether 100+ unclamped rows, each rendering KaTeX, stay responsive and scannable — this is
+  what COS781 will actually be. If not, the kind filter and prompt search deferred out of
+  Part 2a Task 4 are the fix.
+- The Edit/Preview toggle inside the keyboard loop, and where focus lands coming back
+- That `⌘/Ctrl+P` toggles the preview and does not open the browser's print dialog
+- The image thumbnail and its lightbox at 375px, and Escape closing the lightbox
+- KaTeX legibility against both Bibble palettes
+- That a rejected upload leaves every other typed field untouched, and that the same file can
+  be picked again straight after a failure (the input-value reset)
+
 **Housekeeping**
 
 - `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
   `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
   regenerates on startup.
+- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 833 kB, 254 kB gzipped),
+  which now trips Vite's 500 kB chunk warning on every build. Harmless for a LAN-served app
+  and deliberately not code-split yet, but build step 8 ("embed the bundle, LAN binding") is
+  where it should be looked at.
 - Google Fonts: `frontend/src/styles/globals.css` imports Quicksand and Inter over the
   network, so typography silently falls back offline or on a LAN-only phone. Deferred to
   build step 8, which is already the "embed the bundle, LAN binding" task, and noted there
@@ -221,7 +267,11 @@ connected on this machine, so no agent could drive a browser for either Part 1 o
 - **Spec** — [`mitis/specs/2026-08-26-quiz-study-app-design.md`](mitis/specs/2026-08-26-quiz-study-app-design.md). Kept current; amended when
   the implementation legitimately diverged (e.g. deck-name uniqueness per module).
 - **Plans** — `mitis/plans/*.md` plus their `.tasks.json`. These carry the full per-task
-  code, acceptance criteria and verification commands. Both are marked complete.
+  code, acceptance criteria and verification commands. All are marked complete.
+- **Part 2b's three open design questions** were answered in the design session of
+  2026-08-27 and are recorded in [`mitis/specs/2026-08-27-part2b-images-markdown-design.md`](mitis/specs/2026-08-27-part2b-images-markdown-design.md):
+  standalone upload endpoint, whole-form Edit/Preview toggle, unclamped markdown rows with a
+  thumbnail lightbox. `PART-2B-HANDOFF.md`, which posed them, has been deleted.
 - **Execution ledgers** — `.mitis/sdd/<plan-name>/progress.md`. **These are untracked and
   local to the machine that ran them**, so they will not exist in a fresh clone. They hold
   the fix-round history and adjudications; everything durable from them has been distilled
@@ -230,8 +280,8 @@ connected on this machine, so no agent could drive a browser for either Part 1 o
 
 ## If you are an agent picking this up
 
-Work through `mitis:brainstorming` before designing Part 2b, then `mitis:writing-plans`, then
-`mitis:subagent-driven-development`. The two existing plans are worth reading as a format
+Work through `mitis:brainstorming` before designing Part 3, then `mitis:writing-plans`, then
+`mitis:subagent-driven-development`. The three existing plans are worth reading as a format
 reference — particularly how each task carries complete code, an explicit verify command,
 and a `json:metadata` fence.
 

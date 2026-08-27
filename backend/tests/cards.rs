@@ -643,3 +643,136 @@ async fn archiving_never_touches_reviews_history() {
     app.post(&format!("/api/cards/{id}/unarchive"), json!({})).await;
     assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 1, "unarchive leaves reviews alone");
 }
+
+/// A path shaped exactly like one `POST /api/images` returns. The card
+/// endpoints deliberately do not check that the file exists: a swept or
+/// hand-deleted file should render as a broken image, not block every save of
+/// the card that references it.
+const UPLOADED: &str = "images/0123456789abcdef.png";
+
+#[tokio::test]
+async fn image_path_round_trips_through_create_and_get() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Clustering").await;
+
+    let (status, card) = app
+        .post("/api/cards", json!({
+            "deck_id": d, "kind": "short_answer",
+            "prompt_md": "Name the linkage shown in the dendrogram.",
+            "image_path": UPLOADED,
+            "accepted": [{ "text": "single linkage", "is_primary": true }]
+        }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(card["image_path"], UPLOADED);
+
+    let (_, fetched) = app.get(&format!("/api/cards/{}", card["id"].as_i64().unwrap())).await;
+    assert_eq!(fetched["image_path"], UPLOADED, "the stored path survives a re-read");
+}
+
+#[tokio::test]
+async fn a_patch_omitting_image_path_clears_it() {
+    // Cards PATCH is a full replace, not the decks absent-vs-null dance: the
+    // editor always holds the whole card, so an omitted optional means null.
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Clustering").await;
+
+    let (_, card) = app
+        .post("/api/cards", json!({
+            "deck_id": d, "kind": "flashcard", "prompt_md": "Define linkage.",
+            "answer_md": "How inter-cluster distance is measured.",
+            "image_path": UPLOADED
+        }))
+        .await;
+    let id = card["id"].as_i64().unwrap();
+    assert_eq!(card["image_path"], UPLOADED);
+
+    let (status, patched) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "flashcard", "prompt_md": "Define linkage.",
+            "answer_md": "How inter-cluster distance is measured."
+        }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(patched["image_path"].is_null(), "an omitted image_path must clear it");
+}
+
+#[tokio::test]
+async fn a_patch_can_set_an_image_on_a_card_that_had_none() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Clustering").await;
+    let (_, card) = app.post("/api/cards", mc(d)).await;
+    let id = card["id"].as_i64().unwrap();
+    assert!(card["image_path"].is_null());
+
+    let (status, patched) = app
+        .patch(&format!("/api/cards/{id}"), json!({
+            "kind": "mc_single",
+            "prompt_md": "Which linkage merges the two closest points?",
+            "image_path": "images/fedcba9876543210.webp",
+            "choices": [
+                { "text_md": "Single",   "is_correct": true  },
+                { "text_md": "Complete", "is_correct": false }
+            ]
+        }))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(patched["image_path"], "images/fedcba9876543210.webp");
+}
+
+#[tokio::test]
+async fn rejects_an_image_path_this_server_did_not_issue() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Clustering").await;
+
+    // Every one of these is a path `POST /api/images` cannot produce. The
+    // value ends up in the browser as a URL, so the shape is the guard.
+    let rejected = [
+        ("../../etc/passwd", "escapes the directory"),
+        ("images/../test.db", "traverses out of images/"),
+        ("images/short.png", "stem is not 16 characters"),
+        // Valid hex, wrong length: without this the length check is not
+        // pinned down at all, because every other short stem here also
+        // fails the hex check.
+        ("images/abcdef.png", "hex but only 6 characters"),
+        ("images/0123456789abcdef00.png", "hex but 18 characters"),
+        ("images/0123456789abcdeg.png", "g is not hex"),
+        ("images/0123456789ABCDEF.png", "uppercase hex is not what we emit"),
+        ("images/0123456789abcdef.gif", "gif is not an accepted type"),
+        ("images/0123456789abcdef", "no extension"),
+        ("http://example.com/x.png", "not a local path at all"),
+        ("uploads/0123456789abcdef.png", "wrong directory"),
+    ];
+
+    for (path, why) in rejected {
+        let (status, body) = app
+            .post("/api/cards", json!({
+                "deck_id": d, "kind": "flashcard", "prompt_md": "Q", "answer_md": "A",
+                "image_path": path
+            }))
+            .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{path} ({why}) was accepted");
+        assert!(
+            body["fields"].as_array().unwrap().iter()
+                .any(|f| f["field"] == "image_path"),
+            "{path} ({why}) was rejected but not against image_path: {body}",
+        );
+    }
+
+    assert_eq!(app.count("SELECT COUNT(*) FROM cards").await, 0, "none were written");
+}
+
+#[tokio::test]
+async fn an_empty_image_path_is_treated_as_absent() {
+    let app = common::spawn_app().await;
+    let d = deck(&app, "Clustering").await;
+
+    let (status, card) = app
+        .post("/api/cards", json!({
+            "deck_id": d, "kind": "flashcard", "prompt_md": "Q", "answer_md": "A",
+            "image_path": ""
+        }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "an empty string is 'no image', not an error");
+    assert!(card["image_path"].is_null());
+}

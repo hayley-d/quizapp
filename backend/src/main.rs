@@ -12,8 +12,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env();
     std::fs::create_dir_all(&config.data_dir)?;
+    let images_dir = config.images_dir();
+    std::fs::create_dir_all(&images_dir)?;
     let pool = quizapp::db::connect(&config.database_url).await?;
-    let app = quizapp::app(AppState { pool });
+    let app = quizapp::app(AppState { pool, images_dir });
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
     tracing::info!("listening on http://{}", config.bind_addr);

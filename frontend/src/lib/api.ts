@@ -14,6 +14,21 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Turns any non-2xx response into an ApiError carrying the envelope's
+ * `fields`, so the caller can render them inline. Shared by `request` and
+ * `uploadImage`: an upload failure must reach the editor in exactly the same
+ * shape as a rejected save, because it lands in the same error slot.
+ */
+async function fail(res: Response): Promise<never> {
+  const payload = await res.json().catch(() => null)
+  throw new ApiError(
+    res.status,
+    payload?.message ?? `Request failed (${res.status})`,
+    payload?.fields ?? [],
+  )
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -26,14 +41,7 @@ async function request<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
-  if (!res.ok) {
-    const payload = await res.json().catch(() => null)
-    throw new ApiError(
-      res.status,
-      payload?.message ?? `Request failed (${res.status})`,
-      payload?.fields ?? [],
-    )
-  }
+  if (!res.ok) await fail(res)
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
@@ -113,6 +121,12 @@ export type AcceptedInput = { text: string; is_primary: boolean }
 export type CardInput = {
   kind: CardKind
   prompt_md: string
+  /**
+   * `images/<hash>.<ext>` from `uploadImage`, or null for no image. Send it
+   * explicitly on every save: cards PATCH is a full replace, so an absent key
+   * means null on the server.
+   */
+  image_path?: string | null
   answer_md?: string | null
   explanation_md?: string | null
   choices?: ChoiceInput[]
@@ -132,6 +146,24 @@ function cardQueryString({ deckId, kind, archived }: CardQuery): string {
   if (archived) params.set('archived', archived)
   const s = params.toString()
   return s === '' ? '' : `?${s}`
+}
+
+export type UploadedImage = { path: string }
+
+/**
+ * Cannot go through `request()`: the body is FormData, and the browser must
+ * set `content-type` itself so it can include the multipart boundary. Setting
+ * it by hand produces a boundary-less header the server cannot parse.
+ *
+ * The returned `path` is relative — `images/<hash>.<ext>` — and is what gets
+ * stored on the card. Prefix it with `/` for a URL; `<CardImage>` does that.
+ */
+async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedImage> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/api/images', { method: 'POST', body: form, signal })
+  if (!res.ok) await fail(res)
+  return (await res.json()) as UploadedImage
 }
 
 export const api = {
@@ -157,4 +189,5 @@ export const api = {
     request<Card>('PATCH', `/cards/${id}`, input),
   archiveCard: (id: number) => request<Card>('POST', `/cards/${id}/archive`, {}),
   unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
+  uploadImage,
 }
