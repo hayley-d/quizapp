@@ -274,6 +274,39 @@ nine points were driven** — this is not a partial pass, it is a complete gap):
 9. In macOS System Settings → Accessibility → Display, turn on "Reduce motion", then flip a
    card — the face swaps with no rotation.
 
+**Known defects and follow-ups from Part 2c's review** — each was found by review, judged
+non-blocking, and deliberately left. They are real; none is a mystery.
+
+- **Clicking a markdown link inside a card navigates *and* flips the card.** The flip target is
+  the card body, and its `onClick` has no target check, so a click on an `<a>` in a prompt or
+  answer bubbles into `flip()`. The keyboard path does not have this problem — `onKeyDown` got a
+  `e.target !== e.currentTarget` guard so Enter on a link or on the image thumbnail reaches its
+  own default action. The mouse path is guarded only by the `stopPropagation` wrapper around the
+  image thumbnail, which does not cover markdown. Fix is roughly
+  `if ((e.target as HTMLElement).closest('a,button')) return` at the top of `onClick`. Introduced
+  by Part 2c, since the row only became a flip target here.
+- **`move_card` and `create` are read-then-write deferred transactions.** With no WAL and
+  `max_connections(5)`, SQLite returns `SQLITE_BUSY` *immediately* on a lock upgrade —
+  `busy_timeout` does not retry that case — so two overlapping requests can 500. Data is safe
+  (the transaction rolls back) and the client toasts and refetches, so the worst symptom is a
+  spurious "Could not reorder cards" during rapid drags. Hardening is `BEGIN IMMEDIATE` for those
+  two transactions.
+- **A list fetch issued *during* an in-flight `moveCard` can land with pre-move data and stick.**
+  `droppedFetch` only covers fetches that predate the drag, so archiving a card inside the move's
+  round trip can leave the old order on screen until the next navigation. Cheapest fix is to
+  always refetch after a successful move, dropping the `droppedFetch` optimisation.
+- **Two accessible-name problems on the card row.** The flip target's `aria-label` ("Show answer")
+  becomes the element's whole accessible name, so a focused card announces nothing about which
+  card it is; and the drag grip's label slices raw markdown, so a prompt starting with `$$…$$` or
+  `# ` is read out as literal syntax. Both are fixed from the same place — `aria-labelledby`
+  pointing at the prompt, plus a visually-hidden action label. Related: `role="button"` gives its
+  children presentational semantics, which sits awkwardly with the nested image button.
+- **`strict` is off for the frontend.** `frontend/tsconfig.app.json` sets neither `strict` nor
+  `extends`, so `strictNullChecks` is not checking anything — including Part 2c's fairly heavy use
+  of nullable state (`full`, `inFlight.current`, `pending.current`, `image_path`). Pre-existing
+  config, but it is the highest-value frontend follow-up: the `tsc --noEmit` gate is weaker than
+  it looks.
+
 **Housekeeping**
 
 - `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
