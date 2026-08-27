@@ -7,10 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-
-function firstLine(promptMd: string): string {
-  return promptMd.split('\n')[0]
-}
+import { Markdown } from '@/components/Markdown'
+import { CardImage } from '@/components/CardImage'
 
 export function DeckPage() {
   const { id } = useParams<{ id: string }>()
@@ -176,14 +174,23 @@ export function DeckPage() {
         {cards.map((c) => (
           <li
             key={c.id}
-            className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
+            className={`flex items-start justify-between gap-3 rounded-lg border p-3 ${
               c.archived ? 'opacity-60' : ''
             }`}
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <Badge variant="outline">{KIND_LABEL[c.kind]}</Badge>
-              {c.archived && <Badge variant="secondary">Archived</Badge>}
-              <span className="truncate">{firstLine(c.prompt_md)}</span>
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Badge variant="outline">{KIND_LABEL[c.kind]}</Badge>
+                {c.archived && <Badge variant="secondary">Archived</Badge>}
+              </div>
+              {c.image_path !== null && (
+                <CardImage path={c.image_path} alt={c.prompt_md} />
+              )}
+              {/* Unclamped on purpose: a truncated single line cannot render
+                  markdown without a half-open `$…$` or a stray list marker
+                  looking broken. The cost is a long page for a 100+ card deck,
+                  which is a deliberate, recorded trade-off. */}
+              <Markdown className="min-w-0 flex-1">{c.prompt_md}</Markdown>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <Button
