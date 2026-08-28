@@ -22,7 +22,7 @@
     {
       "id": 4,
       "subject": "Task 4: The theme toggle",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A Light / Dark / System control in the header, persisted to `localStorage`, writing the same `.dark` class the app already treats as the source of truth.\n\n**Files:**\n- Create: `frontend/src/hooks/useTheme.ts`\n- Create: `frontend/src/components/ThemeToggle.tsx`\n- Modify: `frontend/src/components/AppShell.tsx`\n- Modify: `frontend/index.html`\n\n**Acceptance Criteria:**\n- [ ] Three reachable states: Light, Dark, System\n- [ ] The choice survives a reload\n- [ ] With System selected, changing the OS theme changes the app live\n- [ ] No flash of the wrong theme on first paint in any of the three states\n- [ ] `components/ui/sonner.tsx` is unmodified and toasts still follow the theme\n- [ ] The storage key is the same string in `index.html` and `useTheme.ts`\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build`\n\n```json:metadata\n{\"files\": [\"frontend/src/hooks/useTheme.ts\", \"frontend/src/components/ThemeToggle.tsx\", \"frontend/src/components/AppShell.tsx\", \"frontend/index.html\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build\", \"acceptanceCriteria\": [\"Three reachable states: Light, Dark, System\", \"The choice survives a reload\", \"With System selected, changing the OS theme changes the app live\", \"No flash of the wrong theme on first paint in any of the three states\", \"`components/ui/sonner.tsx` is unmodified and toasts still follow the theme\", \"The storage key is the same string in `index.html` and `useTheme.ts`\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         3
@@ -31,13 +31,13 @@
     {
       "id": 5,
       "subject": "Task 5: Extract the runner's two terminal screens",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Move the \"Session finished\" summary and the \"Nothing left to practise\" screen out of `SessionPage.tsx` into their own components, with no behaviour change.\n\n**Files:**\n- Create: `frontend/src/components/session/SessionSummary.tsx`\n- Create: `frontend/src/components/session/SessionExhausted.tsx`\n- Modify: `frontend/src/pages/SessionPage.tsx:258-315`\n\n**Acceptance Criteria:**\n- [ ] `SessionPage.tsx` drops by roughly 60 lines\n- [ ] `formatDuration` moves to `SessionSummary.tsx` \u2014 it has no other caller\n- [ ] Rendered markup is byte-identical to before; this task changes structure only\n- [ ] No new props beyond what the extracted markup already reads\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/components/session/SessionSummary.tsx\", \"frontend/src/components/session/SessionExhausted.tsx\", \"frontend/src/pages/SessionPage.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"`SessionPage.tsx` drops by roughly 60 lines\", \"`formatDuration` moves to `SessionSummary.tsx` \\u2014 it has no other caller\", \"Rendered markup is byte-identical to before; this task changes structure only\", \"No new props beyond what the extracted markup already reads\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 6,
       "subject": "Task 6: The sparkle burst and the streak",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A gold sparkle burst over a correct verdict, and a magenta streak badge that flutters \u2014 neither able to delay the next card.\n\n**Files:**\n- Create: `frontend/src/components/session/SparkleBurst.tsx`\n- Create: `frontend/src/components/session/StreakBadge.tsx`\n- Modify: `frontend/src/pages/SessionPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] Sparkles render only when the verdict is correct, including after an override\n- [ ] The burst is `aria-hidden` and `pointer-events-none`\n- [ ] `consecutiveCorrect` increments on a correct answer, resets to 0 on a wrong one\n- [ ] An override restores the streak (design \u00a76) and does not replay the burst\n- [ ] The streak badge appears from 3 consecutive correct answers\n- [ ] No `setTimeout`, `requestAnimationFrame`, or animation `await` is added to the answer or advance path\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/components/session/SparkleBurst.tsx\", \"frontend/src/components/session/StreakBadge.tsx\", \"frontend/src/pages/SessionPage.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"Sparkles render only when the verdict is correct, including after an override\", \"The burst is `aria-hidden` and `pointer-events-none`\", \"`consecutiveCorrect` increments on a correct answer, resets to 0 on a wrong one\", \"An override restores the streak (design \\u00a76) and does not replay the burst\", \"The streak badge appears from 3 consecutive correct answers\", \"No `setTimeout`, `requestAnimationFrame`, or animation `await` is added to the answer or advance path\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         2,
@@ -47,7 +47,7 @@
     {
       "id": 7,
       "subject": "Task 7: Theme the runner and the study picker",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Bring `/session/:id` and `/study` onto the same surface vocabulary as `DeckCard`.\n\n**Files:**\n- Modify: `frontend/src/pages/SessionPage.tsx`\n- Modify: `frontend/src/pages/StudyPage.tsx`\n- Modify: `frontend/src/components/session/ChoiceList.tsx`\n- Modify: `frontend/src/components/session/AnswerVerdict.tsx`\n- Modify: `frontend/src/components/session/SessionSummary.tsx`\n\n**Acceptance Criteria:**\n- [ ] The runner's prompt sits on a rounded `bg-card` surface with a soft shadow, not on bare page background\n- [ ] The summary's four figures sit on card surfaces\n- [ ] `/study`'s mode and deck groups sit on card surfaces\n- [ ] Every colour comes from a token \u2014 no raw hex, no `text-white` outside the vendored `ui/` directory\n- [ ] Focus rings remain visible on every interactive element in both themes\n- [ ] No behavioural change: the keyboard loop, the counts and the grading are untouched\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint && grep -rn \"text-white\\|#[0-9a-fA-F]\\{3,6\\}\" src/pages src/components --include=*.tsx | grep -v \"components/ui/\"`\n\n```json:metadata\n{\"files\": [\"frontend/src/pages/SessionPage.tsx\", \"frontend/src/pages/StudyPage.tsx\", \"frontend/src/components/session/ChoiceList.tsx\", \"frontend/src/components/session/AnswerVerdict.tsx\", \"frontend/src/components/session/SessionSummary.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"The runner's prompt sits on a rounded `bg-card` surface with a soft shadow, not on bare page background\", \"The summary's four figures sit on card surfaces\", \"`/study`'s mode and deck groups sit on card surfaces\", \"Every colour comes from a token \\u2014 no raw hex, no `text-white` outside the vendored `ui/` directory\", \"Focus rings remain visible on every interactive element in both themes\", \"No behavioural change: the keyboard loop, the counts and the grading are untouched\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         1,
@@ -57,7 +57,7 @@
     {
       "id": 8,
       "subject": "Task 8: The lighter pass over the remaining screens",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Bring `/decks`, `/decks/:id` and the card editor into the same vocabulary, without restyling `DeckCard` itself.\n\n**Files:**\n- Modify: `frontend/src/pages/DecksPage.tsx`\n- Modify: `frontend/src/pages/DeckPage.tsx`\n- Modify: `frontend/src/pages/CardEditorPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] Page headings use `font-display` consistently with `/study` and the runner\n- [ ] The card editor's form sits on a card surface rather than bare background\n- [ ] `DeckCard.tsx` is **not** modified \u2014 it is the reference, and its contrast was measured in Task 1\n- [ ] The `/decks` toolbar (search, filter, sort) remains fully keyboard-operable\n- [ ] No behavioural change to search, filter, sort, drag-reorder or archive\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint && git diff --name-only | grep -c DeckCard.tsx`\n\n```json:metadata\n{\"files\": [\"frontend/src/pages/DecksPage.tsx\", \"frontend/src/pages/DeckPage.tsx\", \"frontend/src/pages/CardEditorPage.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"Page headings use `font-display` consistently with `/study` and the runner\", \"The card editor's form sits on a card surface rather than bare background\", \"`DeckCard.tsx` is **not** modified \\u2014 it is the reference, and its contrast was measured in Task 1\", \"The `/decks` toolbar (search, filter, sort) remains fully keyboard-operable\", \"No behavioural change to search, filter, sort, drag-reorder or archive\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         7
@@ -66,7 +66,7 @@
     {
       "id": 9,
       "subject": "Task 9: The Part 2c card-row defects",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Stop markdown links flipping the card, and give the card row real accessible names.\n\n**Files:**\n- Modify: `frontend/src/components/deck/CardRow.tsx:93`, `:155-156`\n\n**Acceptance Criteria:**\n- [ ] Clicking an `<a>` or `<button>` inside a card body does not flip the card\n- [ ] Clicking the card body anywhere else still flips it\n- [ ] A focused card announces the prompt text, not just \"Show answer\"\n- [ ] The drag grip's accessible name contains no raw markdown syntax\n- [ ] The keyboard flip path (Enter, Space) still works and still ignores events from children\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/components/deck/CardRow.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"Clicking an `<a>` or `<button>` inside a card body does not flip the card\", \"Clicking the card body anywhere else still flips it\", \"A focused card announces the prompt text, not just \\\"Show answer\\\"\", \"The drag grip's accessible name contains no raw markdown syntax\", \"The keyboard flip path (Enter, Space) still works and still ignores events from children\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
@@ -94,5 +94,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-08-28T07:52:54"
+  "lastUpdated": "2026-08-28T08:18:13"
 }
