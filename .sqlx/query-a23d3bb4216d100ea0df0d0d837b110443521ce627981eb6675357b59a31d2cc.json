@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT MIN(schedule.due_at) AS \"next_due_at?: String\"\n        FROM cards\n        JOIN schedule ON schedule.card_id = cards.id\n        WHERE cards.archived = 0\n          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "next_due_at?: String",
+        "ordinal": 0,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a23d3bb4216d100ea0df0d0d837b110443521ce627981eb6675357b59a31d2cc"
+}

@@ -51,8 +51,6 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
 
     if !MODES.contains(&body.mode.as_str()) {
         push_error("mode", "mode must be practice, mock or sm2");
-    } else if body.mode == "sm2" {
-        push_error("mode", "Only practice and mock modes are available yet");
     }
 
     match (&body.deck_ids, body.module_id) {
@@ -65,14 +63,12 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
     }
 
     if body.target_count.is_some() {
-        if body.mode == "mock" {
-            push_error(
-                "target_count",
-                "A mock test is the whole deck, so its length is not yours to set",
-            );
-        } else {
-            push_error("target_count", "Practice sessions have no target count");
-        }
+        let message = match body.mode.as_str() {
+            "mock" => "A mock test is the whole deck, so its length is not yours to set",
+            "sm2" => "A spaced repetition session is whatever is due, so its length is not yours to set",
+            _ => "Practice sessions have no target count",
+        };
+        push_error("target_count", message);
     }
 
     if errors.is_empty() {
@@ -211,7 +207,25 @@ async fn create(
         return Err(AppError::validation([(field, "Those decks have no cards to practise")]));
     }
 
-    let target_count = if body.mode == "mock" { Some(pool_count) } else { None };
+    let target_count = match body.mode.as_str() {
+        "mock" => Some(pool_count),
+        "sm2" => {
+            let due_count = count_due(&state.pool, &encoded).await?;
+            if due_count == 0 {
+                let field = if body.module_id.is_some() { "module_id" } else { "deck_ids" };
+                let message = match next_due_at(&state.pool, &encoded).await? {
+                    Some(next_due) => format!(
+                        "Nothing is due yet — the next card is due {}",
+                        &next_due[..10],
+                    ),
+                    None => "Nothing is due yet".to_string(),
+                };
+                return Err(AppError::validation([(field, message)]));
+            }
+            Some(due_count)
+        }
+        _ => None,
+    };
 
     let session_id = sqlx::query_scalar!(
         r#"
@@ -560,6 +574,43 @@ async fn count_pool(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i
     .fetch_one(pool)
     .await?;
     Ok(count)
+}
+
+async fn count_due(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i64> {
+    let due_count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "due_count!: i64"
+        FROM cards
+        LEFT JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND (schedule.due_at IS NULL
+               OR schedule.due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        "#,
+        deck_ids_json,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(due_count)
+}
+
+async fn next_due_at(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+) -> AppResult<Option<String>> {
+    let next_due = sqlx::query_scalar!(
+        r#"
+        SELECT MIN(schedule.due_at) AS "next_due_at?: String"
+        FROM cards
+        JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+        "#,
+        deck_ids_json,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(next_due)
 }
 
 async fn load_served_card(
