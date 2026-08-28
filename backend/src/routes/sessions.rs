@@ -15,7 +15,7 @@ use crate::grading::{
 use crate::mock::{first_unanswered, mock_order};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
-use crate::scheduler::{apply, initial_state, quality_for, ScheduleState};
+use crate::scheduler::{apply, initial_state, quality_for, replay, ScheduleState};
 use crate::state::AppState;
 
 const MODES: [&str; 3] = ["practice", "mock", "sm2"];
@@ -1179,6 +1179,40 @@ async fn write_schedule(
     Ok(())
 }
 
+async fn recompute_schedule_from_history(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+) -> AppResult<()> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT reviews.correct    AS "correct!: bool",
+               reviews.self_grade AS "self_grade?: String",
+               reviews.answered_at AS "answered_at!: String"
+        FROM reviews
+        JOIN sessions ON sessions.id = reviews.session_id
+        WHERE reviews.card_id = ? AND sessions.mode = 'sm2'
+        ORDER BY reviews.answered_at ASC, reviews.id ASC
+        "#,
+        card_id,
+    )
+    .fetch_all(&mut **transaction)
+    .await?;
+
+    let Some(last_answered_at) = rows.last().map(|row| row.answered_at.clone()) else {
+        return Ok(());
+    };
+
+    let qualities: Vec<u8> = rows
+        .iter()
+        .map(|row| {
+            quality_for(row.correct, row.self_grade.as_deref().and_then(parse_self_grade))
+        })
+        .collect();
+
+    let state = replay(&qualities);
+    write_schedule(transaction, card_id, &state, &last_answered_at).await
+}
+
 #[derive(Serialize)]
 pub struct OverrideResponse {
     pub review_id: i64,
@@ -1296,6 +1330,11 @@ async fn override_review(
     )
     .execute(&mut *transaction)
     .await?;
+
+    if review.mode == "sm2" {
+        recompute_schedule_from_history(&mut transaction, review.card_id).await?;
+    }
+
     transaction.commit().await?;
 
     let expected = sqlx::query_scalar!(

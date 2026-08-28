@@ -419,3 +419,106 @@ async fn a_failed_schedule_write_rolls_back_the_review() {
         "the review must roll back with the schedule write",
     );
 }
+
+async fn answer_typed(
+    app: &common::TestApp,
+    session_id: i64,
+    card_id: i64,
+    given: &str,
+) -> Value {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": given }),
+        )
+        .await;
+    assert_eq!(status, 200, "could not answer: {body}");
+    body
+}
+
+#[tokio::test]
+async fn an_override_recomputes_the_schedule_rather_than_leaving_the_lapse() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_short_answer(&app, deck_id, "short").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let answered = answer_typed(&app, session_id, card_id, "hopelessly wrong").await;
+    assert_eq!(answered["correct"], false);
+
+    let (_, _, _, repetitions_after_miss, lapses_after_miss) =
+        app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions_after_miss, 0);
+    assert_eq!(lapses_after_miss, 1);
+
+    let review_id = answered["review_id"].as_i64().unwrap();
+    let (status, body) = app
+        .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+        .await;
+    assert_eq!(status, 200, "{body}");
+
+    let (_, interval_days, _, repetitions, lapses) = app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions, 1, "the replay must treat the override as a correct answer");
+    assert_eq!(lapses, 0, "the lapse must be replayed away, not left behind");
+    assert_eq!(interval_days, 1.0);
+}
+
+#[tokio::test]
+async fn the_replay_ignores_reviews_from_other_modes() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_short_answer(&app, deck_id, "short").await;
+
+    let (_, practice) = app
+        .post("/api/sessions", json!({ "mode": "practice", "deck_ids": [deck_id] }))
+        .await;
+    let practice_id = practice["id"].as_i64().unwrap();
+    answer_typed(&app, practice_id, card_id, "wrong in practice").await;
+    answer_typed(&app, practice_id, card_id, "wrong again in practice").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let answered = answer_typed(&app, session_id, card_id, "wrong in sm2").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+    app.post(&format!("/api/reviews/{review_id}/override"), json!({})).await;
+
+    let (_, _, _, repetitions, lapses) = app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions, 1, "only the one sm2 review may feed the replay");
+    assert_eq!(lapses, 0);
+}
+
+#[tokio::test]
+async fn overriding_a_practice_review_leaves_the_schedule_alone() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_short_answer(&app, deck_id, "short").await;
+
+    let (_, practice) = app
+        .post("/api/sessions", json!({ "mode": "practice", "deck_ids": [deck_id] }))
+        .await;
+    let practice_id = practice["id"].as_i64().unwrap();
+    let answered = answer_typed(&app, practice_id, card_id, "wrong").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    let before = app.schedule_for(card_id).await;
+    app.post(&format!("/api/reviews/{review_id}/override"), json!({})).await;
+    let after = app.schedule_for(card_id).await;
+
+    assert_eq!(before, after, "a practice override must not reach the schedule");
+}
+
+#[tokio::test]
+async fn an_sm2_flashcard_override_is_still_refused() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "the answer").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let answered = answer_self_graded(&app, session_id, card_id, "again").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    let (status, body) = app
+        .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+        .await;
+
+    assert_eq!(status, 409, "a self-grade is the student's own verdict: {body}");
+}
