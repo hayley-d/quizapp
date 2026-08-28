@@ -92,26 +92,48 @@ Grading and weighting live in separate modules from the routes because the spec 
 
 ---
 
-## Task 3: Spike — can sqlx type `json_each(?)` in a CTE beside a window function?
+## Task 3: Spike — can sqlx type `json_each(?)` in a CTE beside a window function? — **COMPLETE: yes, no fallback needed**
 
 **Goal:** Prove the candidate query's shape is macro-checkable **before** anything is built on it. This is a gate, not ceremony: every query in Tasks 6–9 depends on it.
 
 **Files:** No permanent files. A throwaway query in a scratch binary or a temporary test, deleted afterwards.
 
 **Steps:**
-- [ ] Write a throwaway `sqlx::query!` using the exact shape from the design doc §10 — a `WITH pool AS (SELECT … WHERE deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))` CTE, a second CTE with `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)`, and a `LEFT JOIN` with a bound rank limit
-- [ ] Run `cargo sqlx prepare --workspace` from the repo root (needs `export PATH="$HOME/.cargo/bin:$PATH"`)
-- [ ] Record which of the three fallbacks, if any, is needed
-- [ ] Delete the throwaway
+- [x] Write a throwaway `sqlx::query!` using the exact shape from the design doc §10 — a `WITH pool AS (SELECT … WHERE deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?)))` CTE, a second CTE with `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)`, and a `LEFT JOIN` with a bound rank limit
+- [x] Run `cargo sqlx prepare --workspace` from the repo root (needs `export PATH="$HOME/.cargo/bin:$PATH"`)
+- [x] Record which of the three fallbacks, if any, is needed
+- [x] Delete the throwaway
 
 **Acceptance Criteria:**
-- [ ] It is known and written into this task whether `json_each(?)` types cleanly inside a CTE
-- [ ] If it does not, the chosen fallback is recorded here before Task 6 starts
+- [x] It is known and written into this task whether `json_each(?)` types cleanly inside a CTE
+- [x] If it does not, the chosen fallback is recorded here before Task 6 starts
 
-**Fallbacks, in order of preference:**
-1. `WHERE EXISTS (SELECT 1 FROM json_each(?) AS deck_element WHERE CAST(deck_element.value AS INTEGER) = cards.deck_id)`
-2. Pass the deck ids as a delimited string and match with `instr` — ugly, keeps macro checking
-3. `sqlx::query_as::<_, CandidateRow>` with `.bind()` — **last resort**, loses compile-time checking, and must be flagged in the handover if used
+### Outcome: the design doc §10 query works verbatim. **No fallback is needed.**
+
+`cargo sqlx prepare --workspace` typed the full query — `json_each(?)` inside a CTE, a second
+CTE with `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)`, and a `LEFT JOIN` with a bound rank
+limit — and `SQLX_OFFLINE=true cargo build` then compiled against the cache. The cache entry
+recorded 2 parameters, as expected.
+
+**One thing Task 7 must not forget.** SQLite cannot statically type three of the five
+columns; the cache came back with `type_info: Null` for `review_count` (a `COALESCE`),
+`recency_rank` (a window function) and `age_seconds` (`strftime` arithmetic). The explicit
+overrides are therefore **load-bearing, not decoration** — write
+`AS "review_count!: i64"`, `AS "recency_rank?: i64"`, `AS "age_seconds?: i64"` exactly as the
+design doc has them, or the macro cannot produce a typed struct.
+
+**Semantics were verified too**, not just compilation, against a throwaway integration test
+with real rows. All five assumptions `fold_candidate_rows` makes hold:
+
+- Archived cards and cards from unselected decks are absent from the pool
+- A never-seen card yields **exactly one** row, with `review_count = 0` and `correct`,
+  `recency_rank` and `age_seconds` all NULL
+- A card with two reviews yields two rows, `recency_rank = 1` being the **newest**
+- `age_seconds` increases with rank, so `reviews.first()` is genuinely the least stale
+- The bound rank limit caps rows per card, and `json_each` unpacks a multi-element array
+
+The throwaway module, its test and its cache entry were all removed; `.sqlx` is back to its
+23 committed entries and the tree builds clean.
 
 **Verify:** `export PATH="$HOME/.cargo/bin:$PATH" && cargo sqlx prepare --workspace && SQLX_OFFLINE=true cargo build`
 
