@@ -72,7 +72,9 @@ feature branch outstanding. Concretely, working today:
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 119 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- 229 backend tests (the count of all lib and integration test binaries combined; the
+  earlier figure of 119 recorded here was stale). No frontend test framework — that is a
+  deliberate spec decision, not an
   omission.
 
 - **Part 3, practice mode** — `grading.rs` and `practice.rs` (two pure modules, no database
@@ -341,31 +343,31 @@ frontend cannot parse.
 
 ## Outstanding
 
-### Part 4 — NOT VERIFIED
+### Part 4 — verification status
 
-**The full browser walkthrough was not performed.** No Chrome browser was connected to the
-session that did Part 4's gate task, so no agent could drive one. Every visual and
-interaction claim in Part 4 is therefore unobserved:
+**Part 4 was driven and checked by Hayley on 2026-08-28, who confirmed it working.** This
+was a human walkthrough, not an agent one — no Chrome browser was connected to the session
+that ran Part 4's gate task, so no agent drove the app or produced an itemised record. The
+confirmation given was general rather than a point-by-point report, so the individual
+walkthrough items (the theme toggle's three states and no-flash-on-load behaviour, the
+light-mode `brand` button's legibility, the sparkle burst, the streak badge and its
+flutter, reduced motion suppressing both, the deck-card flip under reduced motion, KaTeX in
+both palettes, and the markdown-link-does-not-flip fix) are **attested by the user rather
+than itemised here** — nobody wrote down a per-item observation for any of them, and this
+document does not invent one after the fact.
 
-- The theme toggle's three states, and its no-flash-on-load behaviour.
-- The light-mode `brand` button actually being legible.
-- The sparkle burst firing on a correct answer.
-- The streak badge appearing and fluttering at three in a row.
-- Reduced motion suppressing both the sparkle and the flutter.
-- The deck-card flip under reduced motion swapping faces without rotating.
-- KaTeX rendering legibly in both palettes.
-- The markdown-link-does-not-flip fix actually navigating without flipping the card.
+**The one Part 4 visual claim backed by arithmetic rather than observation is the contrast
+fix** — computed from the token values and checked in the gate by
+`frontend/scripts/check-contrast.py`. That distinction is worth keeping because it is the
+only Part 4 claim a future reader can re-verify without a browser.
 
-**The one Part 4 visual claim backed by evidence rather than observation is the contrast
-fix** — it is arithmetic from the token values, computed and checked by
-`frontend/scripts/check-contrast.py` in the gate, not something seen on screen.
+**What remains genuinely unverified**, because the user did not say they checked these:
 
-**375px phone width remains unverified**, now across Parts 1, 2b, 2c, 3 and 4.
-`resize_window` reports success in this environment but the viewport does not change. It
-belongs to build step 8's phone layout pass and needs a human at a browser.
-
-**Part 2c's nine-point walkthrough is still outstanding** and was not performed here
-either — see the list further down.
+- **375px phone width**, now across Parts 1, 2b, 2c, 3 and 4. `resize_window` reports
+  success in this environment but the viewport does not change. It belongs to build step
+  8's phone layout pass and needs a human at a browser.
+- **Part 2c's nine-point walkthrough**, still outstanding — it was not performed here
+  either. See the list further down.
 
 **Part 4 deferred minor findings**, recorded during execution:
 
