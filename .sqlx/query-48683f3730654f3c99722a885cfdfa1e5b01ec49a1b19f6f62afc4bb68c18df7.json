@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT accepted.card_id AS \"card_id!: i64\", accepted.text\n        FROM accepted\n        WHERE accepted.card_id IN (SELECT card_id FROM reviews WHERE session_id = ?)\n        ORDER BY accepted.card_id, accepted.is_primary DESC, accepted.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "text",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "48683f3730654f3c99722a885cfdfa1e5b01ec49a1b19f6f62afc4bb68c18df7"
+}

@@ -164,12 +164,24 @@ export type NextCard = {
   choices: NextChoice[]
 }
 
-export type NextResponse = {
+export type PracticeNextResponse = {
+  mode: 'practice'
   card: NextCard
   pool_count: number
   answered_count: number
   correct_count: number
 }
+
+export type MockNextResponse = {
+  mode: 'mock'
+  card: NextCard
+  target_count: number | null
+  started_at: string
+  pool_count: number
+  answered_count: number
+}
+
+export type NextResponse = PracticeNextResponse | MockNextResponse
 
 export type RevealedAnswer = {
   card_id: number
@@ -210,6 +222,38 @@ export type SessionSummary = {
   distinct_card_count: number
   accuracy: number | null
   total_ms: number
+}
+
+export type RecordedAnswer = {
+  mode: SessionMode
+  answered_count: number
+  pool_count: number
+  correct?: never
+  expected?: never
+  explanation_md?: never
+  can_override?: never
+}
+
+export type ResultQuestion = {
+  review_id: number
+  card_id: number
+  kind: CardKind
+  prompt_md: string
+  image_path: string | null
+  given: string | null
+  self_grade: SelfGrade | null
+  expected: string[]
+  explanation_md: string | null
+  correct: boolean
+  overridden: boolean
+  can_override: boolean
+  ms: number | null
+  answered_at: string
+}
+
+export type SessionResults = {
+  summary: SessionSummary
+  questions: ResultQuestion[]
 }
 
 async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedImage> {
@@ -255,6 +299,10 @@ export const api = {
     request<RevealedAnswer>('POST', `/sessions/${sessionId}/reveal`, { card_id: cardId }),
   submitAnswer: (sessionId: number, input: SubmitAnswerInput) =>
     request<AnswerResult>('POST', `/sessions/${sessionId}/answer`, input),
+  recordAnswer: (sessionId: number, input: SubmitAnswerInput) =>
+    request<RecordedAnswer>('POST', `/sessions/${sessionId}/answer`, input),
+  sessionResults: (sessionId: number, signal?: AbortSignal) =>
+    request<SessionResults>('GET', `/sessions/${sessionId}/results`, undefined, signal),
   overrideReview: (reviewId: number) =>
     request<OverrideResult>('POST', `/reviews/${reviewId}/override`, {}),
   finishSession: (sessionId: number) =>

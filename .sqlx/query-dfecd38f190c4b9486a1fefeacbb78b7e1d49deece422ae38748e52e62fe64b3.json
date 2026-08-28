@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT cards.id AS \"card_id!: i64\"\n        FROM cards\n        WHERE cards.archived = 0\n          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n          AND NOT EXISTS (\n                SELECT 1 FROM reviews\n                WHERE reviews.card_id = cards.id AND reviews.session_id = ?\n              )\n        ORDER BY cards.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "dfecd38f190c4b9486a1fefeacbb78b7e1d49deece422ae38748e52e62fe64b3"
+}

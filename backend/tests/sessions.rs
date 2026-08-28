@@ -135,24 +135,22 @@ async fn rejects_an_unknown_mode_value() {
 }
 
 #[tokio::test]
-async fn rejects_mock_and_sm2_modes_for_now() {
+async fn rejects_sm2_mode_for_now() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
     create_flashcard(&app, deck_id, "a").await;
 
-    for mode in ["mock", "sm2"] {
-        let (status, body) = app
-            .post("/api/sessions", json!({ "mode": mode, "deck_ids": [deck_id] }))
-            .await;
-        assert_eq!(status, 422, "{mode} should not be accepted yet");
-        assert!(
-            field_errors(&body).contains(&(
-                "mode".to_string(),
-                "Only practice mode is available yet".to_string()
-            )),
-            "{mode} must get the not-yet message, not the unknown-mode one: {body}",
-        );
-    }
+    let (status, body) = app
+        .post("/api/sessions", json!({ "mode": "sm2", "deck_ids": [deck_id] }))
+        .await;
+    assert_eq!(status, 422);
+    assert!(
+        field_errors(&body).contains(&(
+            "mode".to_string(),
+            "Only practice and mock modes are available yet".to_string()
+        )),
+        "sm2 must get the not-yet message, not the unknown-mode one: {body}",
+    );
 }
 
 #[tokio::test]
@@ -426,8 +424,8 @@ async fn next_never_returns_answer_data_for_any_kind() {
         envelope_keys.sort_unstable();
         assert_eq!(
             envelope_keys,
-            vec!["answered_count", "card", "correct_count", "pool_count"],
-            "the serve envelope must carry exactly the card and the session progress counts",
+            vec!["answered_count", "card", "correct_count", "mode", "pool_count"],
+            "the serve envelope must carry exactly the card, the mode and the progress counts",
         );
 
         let serialised_card = body["card"].to_string();
