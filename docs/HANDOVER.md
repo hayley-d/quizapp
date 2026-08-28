@@ -2,16 +2,19 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `feat/part5-mock-test`, at commit `f7f6c67`.
+**Last updated:** 2026-08-28, on `main`, at commit `f19da1b` (the Part 5 merge).
+**Part 5 (the mock test) is done and merged** — `feat/part5-mock-test` landed as `f19da1b`,
+and there is no feature branch outstanding.
 
-**Part 5 (the mock test) is code-complete and its automated gate is green, but it is NOT
-merged and it has NOT been driven in a browser.** This is the one thing to understand
-before you touch anything: `f7f6c67` is a single large commit ("finish mock test") sitting
-on a branch, and its plan's Task 17 — a twenty-one-point browser walkthrough — was never
-performed, because the Chrome extension is not available on this machine. Four of those
-twenty-one points (3, 7, 9 and 21) are answer-leak checks, and point 9 in particular can
-only be settled in a browser's Network tab. See "Part 5 — verification status" under
-Outstanding for the itemised list of what is and is not known.
+**Part 5 was merged on a green automated gate and an unperformed browser walkthrough**, and
+that is the one thing to understand before you touch anything. Its plan's Task 17 — a
+twenty-one-point walkthrough — was never driven, because the Chrome extension is not
+available on this machine; Hayley reviewed the position and chose to merge anyway. Four of
+those points (3, 7, 9 and 21) are answer-leak checks, and point 9 in particular can only be
+settled in a browser's Network tab: the tests prove `/results` refuses mid-run, but only the
+Network tab proves the client never asks. **So mock mode has never been used.** See "Part 5
+— verification status" under Outstanding for the itemised list of what is and is not known,
+and treat the first real mock test on a COS781 deck as the walkthrough.
 
 Part 4 (the Bibble theme pass) is done and merged; so is Hayley's `e09e76d` styling pass,
 which is a structural change as much as a styling one — it deleted the `/study` screen and
@@ -237,7 +240,8 @@ other — do not assume a value carries over.
   - Two manual layout offsets on the deck page, `pl-11` on the container and `-ml-7` on
     the card list, aligning the card rows' drag grips outside the content column.
 
-- **Part 5, the mock test** — on `feat/part5-mock-test` as `f7f6c67`, **not merged**.
+- **Part 5, the mock test** — merged to `main` as `f19da1b`; the implementation is the
+  single commit `f7f6c67`. **Merged without its browser walkthrough** — see Outstanding.
   Design: [`mitis/specs/2026-08-28-part5-mock-test-design.md`](mitis/specs/2026-08-28-part5-mock-test-design.md);
   plan: [`mitis/plans/2026-08-28-part5-mock-test.md`](mitis/plans/2026-08-28-part5-mock-test.md).
   No migration, no new column, no new table, no new dependency, and no new colour token.
@@ -346,11 +350,9 @@ other — do not assume a value carries over.
 
 ## Next up
 
-**Merge Part 5, once someone has driven it.** The code is complete and the automated gate is
-green; the twenty-one-point browser walkthrough in the plan's Task 17 is the outstanding
-blocker, and nine of its points are answer-leak checks that need a Network tab. Do not merge
-`feat/part5-mock-test` on the strength of the gate alone — the gate cannot see a leak, only a
-type error.
+**Drive a mock test.** Part 5 is merged but has never been used, so the highest-value next
+action is not code: sit one mock test on a real COS781 deck with DevTools open, and work the
+twenty-one points in the plan's Task 17. The gate cannot see a leak, only a type error.
 
 **Then Part 6: stats.** `/stats` is still a placeholder page. Part 5 leaves it two gifts:
 `GET /api/sessions/:id/results` is gated on state rather than mode, so it already returns a
@@ -594,7 +596,9 @@ Verified, by running it on 2026-08-28:
 
 **Not verified, because no browser was available.** The Chrome extension is not connected on
 this machine, and the plan's Task 17 walkthrough has twenty-one points, none of which were
-driven. What that costs is specific rather than general:
+driven. **Part 5 was merged anyway, as a deliberate decision**, so this list is not a
+pre-merge blocker but a standing list of what remains unobserved in shipped code. What that
+costs is specific rather than general:
 
 - **Four points (3, 7, 9 and 21) are the answer-leak checks**, and they are the reason this
   gap is not merely tidiness. The tests assert the leak boundary at the Rust level, but the
