@@ -163,8 +163,15 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
 cargo test
 cargo clippy --all-targets -- -D warnings        # --all-targets matters, see below
 SQLX_OFFLINE=true cargo build
-cd frontend && pnpm exec tsc --noEmit && pnpm build
+cd frontend && pnpm exec tsc -b --noEmit && pnpm build
 ```
+
+**`tsc --noEmit` alone checks nothing — use `tsc -b --noEmit`.** `frontend/tsconfig.json` is a
+solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it,
+finds zero files, and exits 0 whatever the code says. Verified: a deliberate
+`const x: number = 'string'` passes `tsc --noEmit` and fails `tsc -b`. This was in the gate
+from Part 1 to Part 3 and never caught anything. Nothing was actually unprotected, because
+`pnpm build` runs `tsc -b`, but the first half of the gate was theatre. Fixed 2026-08-28.
 
 **Use `--all-targets`.** Plain `cargo clippy -- -D warnings` does not build test targets. It
 was the gate for all of Part 1, which meant roughly 370 lines of test code had zero lint
@@ -341,8 +348,9 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 - **`strict` is off for the frontend.** `frontend/tsconfig.app.json` sets neither `strict` nor
   `extends`, so `strictNullChecks` is not checking anything — including Part 2c's fairly heavy use
   of nullable state (`full`, `inFlight.current`, `pending.current`, `image_path`). Pre-existing
-  config, but it is the highest-value frontend follow-up: the `tsc --noEmit` gate is weaker than
-  it looks.
+  config, but it is the highest-value frontend follow-up. (Separately, the gate's
+  `tsc --noEmit` was checking nothing at all until Part 3 corrected it to `tsc -b --noEmit` —
+  see The verification gate. `strict` being off is the remaining half of that problem.)
 
 **Housekeeping**
 

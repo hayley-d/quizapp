@@ -136,6 +136,81 @@ function cardQueryString({ deckId, kind, archived }: CardQuery): string {
 
 export type UploadedImage = { path: string }
 
+export type SessionMode = 'practice' | 'mock' | 'sm2'
+export type SelfGrade = 'again' | 'hard' | 'good' | 'easy'
+
+export type Session = {
+  id: number
+  mode: SessionMode
+  deck_ids: number[]
+  target_count: number | null
+  started_at: string
+  ended_at: string | null
+  pool_count: number
+  answered_count: number
+}
+
+export type CreateSessionInput =
+  | { mode: SessionMode; deck_ids: number[]; module_id?: never }
+  | { mode: SessionMode; deck_ids?: never; module_id: number }
+
+export type NextChoice = { id: number; text_md: string }
+
+export type NextCard = {
+  id: number
+  kind: CardKind
+  prompt_md: string
+  image_path: string | null
+  choices: NextChoice[]
+}
+
+export type NextResponse = {
+  card: NextCard
+  pool_count: number
+  answered_count: number
+}
+
+export type RevealedAnswer = {
+  card_id: number
+  answer_md: string | null
+  explanation_md: string | null
+}
+
+export type SubmitAnswerInput = { card_id: number; ms?: number } & (
+  | { given: string; choice_id?: never; self_grade?: never }
+  | { given?: never; choice_id: number; self_grade?: never }
+  | { given?: never; choice_id?: never; self_grade: SelfGrade }
+)
+
+export type AnswerResult = {
+  review_id: number
+  correct: boolean
+  expected: string[]
+  explanation_md: string | null
+  can_override: boolean
+}
+
+export type OverrideResult = {
+  review_id: number
+  correct: boolean
+  overridden: boolean
+  accepted_added: boolean
+  expected: string[]
+}
+
+export type SessionSummary = {
+  id: number
+  mode: SessionMode
+  started_at: string
+  ended_at: string | null
+  answered_count: number
+  correct_count: number
+  overridden_count: number
+  distinct_card_count: number
+  accuracy: number | null
+  total_ms: number
+}
+
 async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedImage> {
   const formData = new FormData()
   formData.append('file', file)
@@ -171,5 +246,17 @@ export const api = {
   unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
   moveCard: (id: number, before: number | null) =>
     request<Card>('POST', `/cards/${id}/move`, { before }),
+  createSession: (input: CreateSessionInput) =>
+    request<Session>('POST', '/sessions', input),
+  nextCard: (sessionId: number, signal?: AbortSignal) =>
+    request<NextResponse>('GET', `/sessions/${sessionId}/next`, undefined, signal),
+  revealCard: (sessionId: number, cardId: number) =>
+    request<RevealedAnswer>('POST', `/sessions/${sessionId}/reveal`, { card_id: cardId }),
+  submitAnswer: (sessionId: number, input: SubmitAnswerInput) =>
+    request<AnswerResult>('POST', `/sessions/${sessionId}/answer`, input),
+  overrideReview: (reviewId: number) =>
+    request<OverrideResult>('POST', `/reviews/${reviewId}/override`, {}),
+  finishSession: (sessionId: number) =>
+    request<SessionSummary>('POST', `/sessions/${sessionId}/finish`, {}),
   uploadImage,
 }

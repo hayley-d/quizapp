@@ -722,7 +722,7 @@ UPDATE sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 
 ---
 
-## Task 10: `frontend/src/lib/api.ts` — session types and calls
+## Task 10: `frontend/src/lib/api.ts` — session types and calls — **COMPLETE**
 
 **Goal:** Typed access to the six endpoints, with no `any`, over the existing `request()` wrapper.
 
@@ -734,17 +734,23 @@ New calls on the existing `api` object: `createSession`, `nextCard`, `revealCard
 
 Note `NextCard` deliberately has **no** `answer_md`, `explanation_md`, `is_correct` or `accepted` field — mirroring the backend's structural guarantee on the client side, so a component cannot reach for a key that is not there.
 
-**Acceptance Criteria:**
-- [ ] Every new type is concrete — no `any`, per `CLAUDE.md` rule 3
-- [ ] `NextCard` and `NextChoice` carry no answer or correctness fields
-- [ ] `submitAnswer` accepts exactly one of `given` / `choice_id` / `self_grade` in its parameter type
-- [ ] All six calls go through the existing private `request<Result>()`, so `ApiError` and `.byField()` work unchanged
-- [ ] `pnpm exec tsc --noEmit` is clean
+**Outcome:** ten types and six calls, zero `any`. Two findings, the second serious.
 
-**Verify:** `cd frontend && pnpm exec tsc --noEmit`
+**The unions were too loose.** `{ card_id, given } | { card_id, choice_id }` still admitted `{ card_id, given, choice_id }`, because TypeScript's excess-property check accepts any property present in *some* union member. Both unions now mark the absent fields `?: never`, and a throwaway type probe confirms all four bad shapes are rejected while the four valid ones compile.
+
+**The gate's `pnpm exec tsc --noEmit` was checking nothing — for the whole project.** `frontend/tsconfig.json` is a solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it, finds zero files, and exits 0 whatever the code says. Proved with a deliberate `const x: number = 'string'`: it passes `tsc --noEmit` and fails `tsc -b`. Nothing was actually unprotected, since `pnpm build` runs `tsc -b`, but the first half of the gate has been theatre since Part 1. Every reference is now `tsc -b --noEmit`, including in `docs/HANDOVER.md`.
+
+**Acceptance Criteria:**
+- [x] Every new type is concrete — no `any`, per `CLAUDE.md` rule 3
+- [x] `NextCard` and `NextChoice` carry no answer or correctness fields
+- [x] `submitAnswer` accepts exactly one of `given` / `choice_id` / `self_grade` in its parameter type
+- [x] All six calls go through the existing private `request<Result>()`, so `ApiError` and `.byField()` work unchanged
+- [x] `pnpm exec tsc -b --noEmit` is clean
+
+**Verify:** `cd frontend && pnpm exec tsc -b --noEmit`
 
 ```json:metadata
-{"files": ["frontend/src/lib/api.ts"], "verifyCommand": "cd frontend && pnpm exec tsc --noEmit", "acceptanceCriteria": ["Every new type is concrete with no use of any", "NextCard and NextChoice carry no answer or correctness fields", "submitAnswer's parameter type admits exactly one of given, choice_id or self_grade", "All six calls go through the existing request wrapper so ApiError and byField work unchanged", "pnpm exec tsc --noEmit is clean"], "modelTier": "mechanical"}
+{"files": ["frontend/src/lib/api.ts"], "verifyCommand": "cd frontend && pnpm exec tsc -b --noEmit", "acceptanceCriteria": ["Every new type is concrete with no use of any", "NextCard and NextChoice carry no answer or correctness fields", "submitAnswer's parameter type admits exactly one of given, choice_id or self_grade", "All six calls go through the existing request wrapper so ApiError and byField work unchanged", "pnpm exec tsc -b --noEmit is clean"], "modelTier": "mechanical"}
 ```
 
 ---
@@ -769,12 +775,12 @@ Note `NextCard` deliberately has **no** `answer_md`, `explanation_md`, `is_corre
 - [ ] The selected-card count updates live and Start is disabled at zero selected
 - [ ] Mock test and SM-2 are visible but disabled, labelled with the part they arrive in
 - [ ] A server-side validation error renders inline on the right field
-- [ ] `pnpm exec tsc --noEmit` and `pnpm build` are clean
+- [ ] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
 
-**Verify:** `cd frontend && pnpm exec tsc --noEmit && pnpm build`
+**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build`
 
 ```json:metadata
-{"files": ["frontend/src/pages/StudyPage.tsx", "frontend/src/App.tsx", "frontend/package.json"], "verifyCommand": "cd frontend && pnpm exec tsc --noEmit && pnpm build", "acceptanceCriteria": ["/study renders the real page rather than StubPage", "Decks are grouped by module with unparented decks in their own group", "The selected-card count updates live and Start is disabled at zero", "Mock test and SM-2 are visible but disabled and labelled with their part", "A server-side validation error renders inline on the right field", "tsc --noEmit and pnpm build are clean"], "modelTier": "standard"}
+{"files": ["frontend/src/pages/StudyPage.tsx", "frontend/src/App.tsx", "frontend/package.json"], "verifyCommand": "cd frontend && pnpm exec tsc -b --noEmit && pnpm build", "acceptanceCriteria": ["/study renders the real page rather than StubPage", "Decks are grouped by module with unparented decks in their own group", "The selected-card count updates live and Start is disabled at zero", "Mock test and SM-2 are visible but disabled and labelled with their part", "A server-side validation error renders inline on the right field", "tsc -b --noEmit and pnpm build are clean"], "modelTier": "standard"}
 ```
 
 ---
@@ -807,12 +813,12 @@ Note `NextCard` deliberately has **no** `answer_md`, `explanation_md`, `is_corre
 - [ ] `ms` is sent and is never negative
 - [ ] End session shows a summary whose numbers match the run
 - [ ] No `window` event listener is added; keyboard handling is container-level
-- [ ] `pnpm exec tsc --noEmit` and `pnpm build` are clean
+- [ ] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
 
-**Verify:** `cd frontend && pnpm exec tsc --noEmit && pnpm build`, then the browser walkthrough in Task 13.
+**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build`, then the browser walkthrough in Task 13.
 
 ```json:metadata
-{"files": ["frontend/src/pages/SessionPage.tsx", "frontend/src/components/session/", "frontend/src/App.tsx"], "verifyCommand": "cd frontend && pnpm exec tsc --noEmit && pnpm build", "acceptanceCriteria": ["All three kinds render and submit with their own answer control", "1 to 9 select a multiple-choice option, Enter submits, Enter again advances", "Number keys do not hijack typing in the short-answer input", "A flashcard reveals via POST /reveal before its four grade buttons appear", "The verdict shows expected and the explanation when present", "I was right appears only when the server says can_override and flips the banner in place", "The header's answered and correct counts survive a browser reload", "ms is sent and is never negative", "End session shows a summary matching the run", "No window event listener is added; keyboard handling is container-level", "tsc --noEmit and pnpm build are clean"], "modelTier": "standard"}
+{"files": ["frontend/src/pages/SessionPage.tsx", "frontend/src/components/session/", "frontend/src/App.tsx"], "verifyCommand": "cd frontend && pnpm exec tsc -b --noEmit && pnpm build", "acceptanceCriteria": ["All three kinds render and submit with their own answer control", "1 to 9 select a multiple-choice option, Enter submits, Enter again advances", "Number keys do not hijack typing in the short-answer input", "A flashcard reveals via POST /reveal before its four grade buttons appear", "The verdict shows expected and the explanation when present", "I was right appears only when the server says can_override and flips the banner in place", "The header's answered and correct counts survive a browser reload", "ms is sent and is never negative", "End session shows a summary matching the run", "No window event listener is added; keyboard handling is container-level", "tsc -b --noEmit and pnpm build are clean"], "modelTier": "standard"}
 ```
 
 ---
@@ -831,7 +837,7 @@ cargo sqlx prepare --workspace
 cargo test
 cargo clippy --all-targets -- -D warnings
 SQLX_OFFLINE=true cargo build
-cd frontend && pnpm exec tsc --noEmit && pnpm build
+cd frontend && pnpm exec tsc -b --noEmit && pnpm build
 ```
 
 `--all-targets` matters — plain `cargo clippy` skips test targets, which once left ~370 lines of test code unlinted for all of Part 1.
@@ -865,7 +871,7 @@ The leakage point is also asserted in the integration tests, which is where it r
 - [ ] Add the two Part 5 follow-ups from the design doc: `/next` needs a stable serve under `target_count`, and a flashcard in a no-feedback mock test is an open question
 
 ```json:metadata
-{"files": ["docs/HANDOVER.md"], "verifyCommand": "export PATH=\"$HOME/.cargo/bin:$PATH\" && cargo sqlx prepare --workspace && cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && cd frontend && pnpm exec tsc --noEmit && pnpm build", "acceptanceCriteria": ["cargo test passes with all new tests included", "cargo clippy --all-targets -- -D warnings is clean", "SQLX_OFFLINE=true cargo build succeeds and .sqlx is regenerated and committed", "tsc --noEmit and pnpm build are clean", "The browser walkthrough passes, including the no-leakage Network check for all three kinds", "docs/HANDOVER.md records the six endpoints, migration 0003, rand, CLAUDE.md rule 3, the spike outcome, and the Part 5 follow-ups"], "modelTier": "standard"}
+{"files": ["docs/HANDOVER.md"], "verifyCommand": "export PATH=\"$HOME/.cargo/bin:$PATH\" && cargo sqlx prepare --workspace && cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && cd frontend && pnpm exec tsc -b --noEmit && pnpm build", "acceptanceCriteria": ["cargo test passes with all new tests included", "cargo clippy --all-targets -- -D warnings is clean", "SQLX_OFFLINE=true cargo build succeeds and .sqlx is regenerated and committed", "tsc -b --noEmit and pnpm build are clean", "The browser walkthrough passes, including the no-leakage Network check for all three kinds", "docs/HANDOVER.md records the six endpoints, migration 0003, rand, CLAUDE.md rule 3, the spike outcome, and the Part 5 follow-ups"], "modelTier": "standard"}
 ```
 
 ---
