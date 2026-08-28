@@ -181,7 +181,16 @@ export type MockNextResponse = {
   answered_count: number
 }
 
-export type NextResponse = PracticeNextResponse | MockNextResponse
+export type Sm2NextResponse = {
+  mode: 'sm2'
+  card: NextCard
+  target_count: number | null
+  pool_count: number
+  answered_count: number
+  correct_count: number
+}
+
+export type NextResponse = PracticeNextResponse | MockNextResponse | Sm2NextResponse
 
 export type RevealedAnswer = {
   card_id: number
@@ -196,6 +205,7 @@ export type SubmitAnswerInput = { card_id: number; ms?: number } & (
 )
 
 export type AnswerResult = {
+  mode: 'practice' | 'sm2'
   review_id: number
   correct: boolean
   expected: string[]
@@ -275,6 +285,10 @@ export type DeckStatsSummary = {
   mock_review_count: number
   practice_accuracy: number | null
   practice_review_count: number
+  sm2_accuracy: number | null
+  sm2_review_count: number
+  due_count: number
+  next_due_at: string | null
   last_answered_at: string | null
 }
 
