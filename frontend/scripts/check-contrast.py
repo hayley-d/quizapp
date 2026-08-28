@@ -76,13 +76,13 @@ WHITE = (255, 255, 255)
 LIGHT_TOKENS_OKLCH = {
     "foreground": (0.29, 0.020, 70),
     "primary": (0.47, 0.075, 68),
-    "secondary-foreground": (0.32, 0.030, 70),
+    "secondary-foreground": (0.30, 0.030, 70),
     "accent": (0.53, 0.085, 40),
-    "muted-foreground": (0.48, 0.025, 70),
+    "muted-foreground": (0.45, 0.025, 70),
     "success": (0.72, 0.115, 88),
     "success-foreground": (0.26, 0.045, 80),
     "destructive": (0.52, 0.150, 28),
-    "border": (0.84, 0.020, 70),
+    "border": (0.80, 0.022, 70),
     "streak": (0.53, 0.085, 40),
     "brand": (0.47, 0.075, 68),
     "deck-card-chip": (0.47, 0.075, 68),
@@ -90,16 +90,16 @@ LIGHT_TOKENS_OKLCH = {
 }
 
 LIGHT_TOKENS_HEX = {
-    "background": "#edede9",
-    "card": "#f5ebe0",
+    "background": "#f5ebe0",
+    "card": "#e3d5ca",
     "primary-foreground": "#f5ebe0",
-    "secondary": "#e3d5ca",
+    "secondary": "#d5bdaf",
     "accent-foreground": "#f5ebe0",
-    "muted": "#e3d5ca",
+    "muted": "#d5bdaf",
     "destructive-foreground": "#f5ebe0",
     "brand-foreground": "#f5ebe0",
-    "deck-card": "#f5ebe0",
-    "deck-card-header": "#e3d5ca",
+    "deck-card": "#e3d5ca",
+    "deck-card-header": "#d5bdaf",
     "deck-card-chip-foreground": "#f5ebe0",
 }
 

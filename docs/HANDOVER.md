@@ -166,12 +166,13 @@ other — do not assume a value carries over.
     - `--deck-card` was decoupled from `--primary` in light mode. It used to be
       `--deck-card: var(--primary)`; the repalette made that combination
       cream-text-on-tan-card at **1.22:1, invisible**, so light mode now has its own
-      `--deck-card` values: a cream `#f5ebe0` body with a tan `#e3d5ca` header band, matching
-      `--card` so deck cards are no longer the app's one tan surface. Two new tokens,
+      `--deck-card` values: a tan `#e3d5ca` body with a taupe `#d5bdaf` header band, matching
+      `--card` so deck cards are not a one-off surface. Two new tokens,
       `--deck-card-foreground` and `--deck-card-chip-foreground`, carry the per-theme text
-      colours. The body and band were swapped from their first arrangement (tan body, cream
-      band) on 2026-08-28; the swap raised the deck-card title from 9.86:1 to **12.02:1** and
-      left every other measured pair passing.
+      colours. The light palette went through two revisions on 2026-08-28 after the user saw
+      the numbers — body and band were inverted, then the whole stack was shifted one step
+      warmer and darker. It settled as a three-layer stack: page `#f5ebe0`, card `#e3d5ca`,
+      recessed `#d5bdaf`.
       `frontend/src/components/DeckCard.tsx` changed for the first time in this whole branch
       — exactly two swaps, `text-primary-foreground*` and `text-white` to those two new
       tokens. Nothing else in that file moved.
@@ -418,17 +419,26 @@ colour in it is backed by a computed contrast ratio (`frontend/scripts/check-con
 16 enforced pairs, all passing), but **arithmetic is not observation**: a contrast ratio says
 text is legible against its background, and says nothing about whether the palette looks
 good, whether surfaces read as visually distinct from one another, or whether the
-ochre-on-stone combination works as a whole.
+ochre-on-cream combination works as a whole.
 
-**Surface separation in light mode is deliberately very subtle, and is the first thing to
-check.** The card is **1.00:1** against the page (stone `#edede9` vs cream `#f5ebe0` carry
-no ambient-contrast readout worth the name), and the deck-card header band is **1.22:1**
-against the card body. Borders and shadows do the entire job of showing where one surface
-ends and the next begins — there is close to no colour difference to do it instead. This
-was a deliberate choice (the palette was picked as "stone page, cream cards, tan recessed"
-with these exact numbers already known), not an oversight, but it is the single most likely
-thing to look wrong in practice, and it is unverified. Check it first, in a browser, before
-trusting anything else about the new palette.
+**Surface separation in light mode is subtle, and is the first thing to check.** The palette
+is a three-layer warm stack — page `#f5ebe0`, card `#e3d5ca`, recessed `#d5bdaf` — and each
+step is about a 1.2:1 luminance difference: card against page **1.22:1**, an unselected
+choice against the card it sits on **1.25:1**, the deck-card header band against the deck
+body **1.25:1**. That is enough to perceive but not much more; borders and shadows carry a
+large share of the work of showing where one surface ends and the next begins.
+
+An earlier revision was flatter still — the card was **1.00:1** against the page, identical
+in lightness and differing only in hue. The current stack was chosen specifically to fix
+that, so this is the better of the two arrangements, but it has still never been looked at.
+Check it first, in a browser, before trusting anything else about the palette.
+
+**A collision worth knowing about, because it will recur.** `--secondary` is the unselected
+multiple-choice background and it previously shared `#e3d5ca` with what is now `--card`. When
+the card moved to `#e3d5ca`, every choice button would have rendered at 1.00:1 against the
+card it sits on — invisible. `--secondary` and `--muted` were moved down to `#d5bdaf` to
+restore the step. Any future change to one layer of this stack has to be checked against the
+layers either side of it; the contrast script covers text legibility, not surface separation.
 
 **What remains genuinely unverified**, because no one has looked:
 

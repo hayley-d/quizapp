@@ -8,33 +8,33 @@
 }
 
 :root {
-  --background: #edede9;                     /* stone */
+  --background: #f5ebe0;                     /* cream */
   --foreground: oklch(0.29 0.020 70);        /* warm dark */
-  --card: #f5ebe0;                            /* cream */
+  --card: #e3d5ca;                            /* tan */
   --card-foreground: var(--foreground);
-  --popover: #f5ebe0;                         /* cream */
+  --popover: #e3d5ca;                         /* tan */
   --popover-foreground: var(--foreground);
   --primary: oklch(0.47 0.075 68);           /* deep ochre-brown */
   --primary-foreground: #f5ebe0;              /* cream */
-  --secondary: #e3d5ca;                       /* tan */
-  --secondary-foreground: oklch(0.32 0.030 70);
+  --secondary: #d5bdaf;                       /* taupe */
+  --secondary-foreground: oklch(0.30 0.030 70);
   --accent: oklch(0.53 0.085 40);            /* clay */
   --accent-foreground: #f5ebe0;               /* cream */
-  --muted: #e3d5ca;                           /* tan */
-  --muted-foreground: oklch(0.48 0.025 70);
+  --muted: #d5bdaf;                           /* taupe */
+  --muted-foreground: oklch(0.45 0.025 70);
   --success: oklch(0.72 0.115 88);           /* warmed gold — correct answers */
   --success-foreground: oklch(0.26 0.045 80);
   --sparkle: oklch(0.72 0.115 88);           /* warmed gold, matching --success */
   --streak: oklch(0.53 0.085 40);            /* clay */
   --destructive: oklch(0.52 0.150 28);       /* brick */
   --destructive-foreground: #f5ebe0;          /* cream */
-  --border: oklch(0.84 0.020 70);
+  --border: oklch(0.80 0.022 70);
   --input: var(--border);
   --ring: var(--primary);
   --brand: oklch(0.47 0.075 68);             /* deep ochre-brown, same as primary in light */
   --brand-foreground: #f5ebe0;                /* cream */
-  --deck-card: #f5ebe0;                       /* cream */
-  --deck-card-header: #e3d5ca;                /* tan */
+  --deck-card: #e3d5ca;                       /* tan */
+  --deck-card-header: #d5bdaf;                /* taupe */
   --deck-card-chip: oklch(0.47 0.075 68);    /* deep ochre-brown */
   --deck-card-foreground: oklch(0.29 0.020 70);
   --deck-card-chip-foreground: #f5ebe0;       /* cream */
