@@ -287,7 +287,7 @@ function CardEditorPageInner() {
       </div>
 
       {view === 'edit' ? (
-      <>
+      <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
       {errors.deck_id && <p className="text-sm text-destructive">{errors.deck_id}</p>}
 
       <div className="space-y-2">
@@ -395,7 +395,7 @@ function CardEditorPageInner() {
           <p className="text-sm text-destructive">{errors.explanation_md}</p>
         )}
       </div>
-      </>
+      </div>
       ) : (
         <CardPreview
           kind={kind}
