@@ -265,7 +265,7 @@ export function DeckPage() {
     return null
   }
 
-  const activeDeck = deck
+  const deckCardCount = deck.card_count
   const dueCount = deckStats?.summary.due_count ?? null
   const nextDueAt = deckStats?.summary.next_due_at ?? null
 
@@ -278,8 +278,8 @@ export function DeckPage() {
   }
 
   function isDisabled(option: TestTypeOption): boolean {
-    if (option.mode === 'sm2' && dueCount !== null && dueCount === 0) return true
-    return !option.available || activeDeck.card_count === 0 || startingMode !== null
+    if (option.mode === 'sm2' && (dueCount === null || dueCount === 0)) return true
+    return !option.available || deckCardCount === 0 || startingMode !== null
   }
 
   return (
