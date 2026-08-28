@@ -755,7 +755,7 @@ Note `NextCard` deliberately has **no** `answer_md`, `explanation_md`, `is_corre
 
 ---
 
-## Task 11: `/study` — the picker
+## Task 11: `/study` — the picker — **COMPLETE**
 
 **Goal:** Pick a mode and decks, see how many cards that is, and start a session.
 
@@ -769,13 +769,17 @@ Note `NextCard` deliberately has **no** `answer_md`, `explanation_md`, `is_corre
 - [ ] Start → `createSession` → `navigate('/session/' + id)`
 - [ ] Errors follow the established pattern: `ApiError` → `byField()` inline, empty `fields` → `toast.error(error.message)`, otherwise `toast.error('Could not reach the server')`
 
+**Outcome:** the checkbox needed **no new dependency and no network**. The project uses the `radix-ui` umbrella package rather than the individual `@radix-ui/react-*` ones, and it already exports `Checkbox` — so `components/ui/checkbox.tsx` was written by hand in the same style as the existing `switch.tsx` and `radio-group.tsx`, importing `{ Checkbox as CheckboxPrimitive } from "radix-ui"`. `pnpm dlx shadcn add` was never run.
+
+Decks with zero cards render disabled with a "No cards yet" note rather than being hidden, so an empty deck is visibly empty rather than mysteriously absent.
+
 **Acceptance Criteria:**
-- [ ] `/study` renders the real page, not `StubPage`
-- [ ] Decks are grouped by module, with unparented decks in their own group
-- [ ] The selected-card count updates live and Start is disabled at zero selected
-- [ ] Mock test and SM-2 are visible but disabled, labelled with the part they arrive in
-- [ ] A server-side validation error renders inline on the right field
-- [ ] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
+- [x] `/study` renders the real page, not `StubPage`
+- [x] Decks are grouped by module, with unparented decks in their own group
+- [x] The selected-card count updates live and Start is disabled at zero selected
+- [x] Mock test and SM-2 are visible but disabled, labelled with the part they arrive in
+- [x] A server-side validation error renders inline on the right field
+- [x] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
 
 **Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build`
 
