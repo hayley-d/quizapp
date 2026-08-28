@@ -48,6 +48,38 @@ Use instead:
 Long names are preferred over short ones. `currentQuestionIndex` beats `idx`;
 `selectedAnswerIdentifier` beats `ansId`.
 
+## 3. Never use `any` in TypeScript
+
+`any` switches off the type checker exactly where a type is hardest to get right, and it
+spreads: every value derived from an `any` is unchecked too. It is never the answer.
+
+Not allowed:
+
+- Bare `any`, `any[]`, `Array<any>`, `Promise<any>`, `Record<string, any>`
+- `as any`, or `as unknown as T` used to launder a cast
+- `any` as a generic argument or a type-parameter default
+- `// @ts-ignore` or `// @ts-expect-error` used to hide a typing problem
+
+Use instead:
+
+| Instead of | Write |
+| --- | --- |
+| `catch (error: any)` | `catch (error: unknown)`, then narrow |
+| `as any` to silence a cast | the real type, or a type guard |
+| `any` for JSON of unknown shape | `unknown`, narrowed at the boundary |
+| `Record<string, any>` | `Record<string, unknown>`, or a declared shape |
+| `any` for a callback you do not want to type | the actual signature |
+
+`unknown` is the correct escape hatch. It is honest about what is not known and forces a
+narrowing step before use. The existing error path already reads this way:
+`catch (error: unknown)` followed by `error instanceof ApiError`.
+
+If a type is genuinely hard to express, that is a signal to name the shape in
+`frontend/src/lib/api.ts` alongside the other response types, not to reach for `any`.
+
+This applies to `frontend/src/`, but not to `frontend/src/components/ui/`, which is
+shadcn-generated and treated as vendored third-party code (see Accepted short forms).
+
 ## Accepted short forms
 
 These are settled and must not be "fixed" by a later pass:
