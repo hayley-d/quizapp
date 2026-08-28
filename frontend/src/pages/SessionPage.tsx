@@ -6,6 +6,8 @@ import { AnswerVerdict } from '@/components/session/AnswerVerdict'
 import { ChoiceList } from '@/components/session/ChoiceList'
 import { SessionExhausted } from '@/components/session/SessionExhausted'
 import { SessionSummary as SessionSummaryScreen } from '@/components/session/SessionSummary'
+import { SparkleBurst } from '@/components/session/SparkleBurst'
+import { StreakBadge } from '@/components/session/StreakBadge'
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { Button } from '@/components/ui/button'
@@ -28,6 +30,8 @@ const SELF_GRADES: { grade: SelfGrade; label: string }[] = [
   { grade: 'easy', label: 'Easy' },
 ]
 
+const STREAK_THRESHOLD = 3
+
 function elapsedSince(startedAt: number): number {
   return Math.max(0, Date.now() - startedAt)
 }
@@ -43,6 +47,7 @@ export function SessionPage() {
   const [selectedChoiceId, setSelectedChoiceId] = useState<number | null>(null)
   const [typedAnswer, setTypedAnswer] = useState('')
   const [overridden, setOverridden] = useState(false)
+  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0)
   const [overriding, setOverriding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -116,6 +121,7 @@ export function SessionPage() {
     try {
       const result = await api.submitAnswer(sessionId, input)
       setVerdict(result)
+      setConsecutiveCorrect((current) => (result.correct ? current + 1 : 0))
       setServed((current) =>
         current === null
           ? current
@@ -170,6 +176,7 @@ export function SessionPage() {
     try {
       await api.overrideReview(verdict.review_id)
       setOverridden(true)
+      setConsecutiveCorrect((current) => current + 1)
       setServed((current) =>
         current === null ? current : { ...current, correct_count: current.correct_count + 1 },
       )
@@ -273,6 +280,9 @@ export function SessionPage() {
           {' · '}
           {served?.pool_count ?? 0} in the pool
         </p>
+        {consecutiveCorrect >= STREAK_THRESHOLD && (
+          <StreakBadge streak={consecutiveCorrect} />
+        )}
         <Button variant="ghost" size="sm" onClick={() => void endSession()}>
           End session
         </Button>
@@ -332,14 +342,17 @@ export function SessionPage() {
       )}
 
       {graded ? (
-        <AnswerVerdict
-          verdict={verdict}
-          overridden={overridden}
-          overriding={overriding}
-          onOverride={() => void override()}
-          onNext={() => void loadNext()}
-          nextButtonRef={nextButton}
-        />
+        <div className="relative">
+          {verdict.correct && <SparkleBurst />}
+          <AnswerVerdict
+            verdict={verdict}
+            overridden={overridden}
+            overriding={overriding}
+            onOverride={() => void override()}
+            onNext={() => void loadNext()}
+            nextButtonRef={nextButton}
+          />
+        </div>
       ) : (
         card.kind !== 'flashcard' && (
           <div className="flex items-center gap-3">
