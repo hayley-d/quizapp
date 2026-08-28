@@ -35,9 +35,9 @@ vocabulary to the rest of the app rather than inventing a second one.
 **Consequence for the plan:** most tasks are class-string work against existing tokens. The
 genuinely new CSS is small — a few motion tokens, two `@keyframes`, and one media query.
 
-## 2. `--deck-card-*` is a live bug, not a preference
+## 2. The `brand` button fails contrast in light mode
 
-Three tokens are declared under a shared selector:
+Three tokens are declared under a shared selector, identical in both themes:
 
 ```css
 :root, .dark {
@@ -47,18 +47,67 @@ Three tokens are declared under a shared selector:
 }
 ```
 
-`--deck-card` is fine — it indirects through `--primary`, which is per-theme. The other two
-are literal and identical in both themes. `--deck-card-chip` is a near-black at 70% opacity,
-designed against the deep-twilight dark background; in light mode it sits on
-`oklch(0.98 0.015 200)` pale aqua.
+This *looks* like a theming bug and the design session initially recorded it as one. It was
+then measured, and the first reading was wrong in an instructive way.
 
-**Decision: split both out and give each theme its own value.** This is a correctness fix,
-not a restyle.
+Both literal tokens are at 70% alpha, so what they actually render depends on what they
+composite over. Inside `DeckCard.tsx` the chain is chip → header band → `--deck-card` →
+`--primary`, and `--primary` *is* per-theme. The shared declaration is therefore
+self-correcting there:
 
-It has gone unnoticed for three parts because there is no way to switch themes without
-visiting macOS System Settings, which is the direct argument for decision 3. Every
-"outstanding: both themes" line in `docs/HANDOVER.md` — Part 1's palette check, Part 2b's
-KaTeX legibility, Part 3's runner — traces to the same missing affordance.
+| Surface | Light | Dark |
+| --- | --- | --- |
+| Deck card chip, white text | 10.10:1 | 9.24:1 |
+
+**The bug is one token further out.** `components/ui/button.tsx`'s custom `brand` variant
+reuses `--deck-card-header` — but on a button sitting on the *page*, with no turquoise card
+beneath it to composite against:
+
+```
+brand: "bg-[var(--deck-card-header)] text-white hover:brightness-110",
+```
+
+| Surface | Light | Dark |
+| --- | --- | --- |
+| `brand` button, white text | **2.14:1 — fails WCAG AA** | 4.68:1 — passes |
+
+In light mode that is white text on pale orchid `rgb(221 153 232)`. AA wants 4.5:1 for body
+text and 3:1 even for large text; 2.14:1 clears neither.
+
+This matters more than the chip would have, because `brand` is the app's primary action
+everywhere: "Start practising", "Check", "Next card", "Study again", the deck edit button,
+and all three icon buttons on every card row. **In light mode the main call to action across
+the entire app is close to illegible** — which is exactly the class of thing that goes
+unnoticed for three parts when there is no way to switch themes (decision 3).
+
+**Decision: give the `brand` button its own opaque token, `--brand` / `--brand-foreground`,
+and leave `--deck-card-header` alone.**
+
+Two findings drive this, and both make the fix smaller than it first looked.
+
+*The alpha is the entire bug.* An opaque colour's contrast does not depend on its backdrop,
+so once the 70% is dropped, one value serves both themes and no per-theme split is needed.
+
+*Dark mode already renders that colour.* `rgb(211 112 224 / 0.7)` composited over the dark
+page is `rgb(159 88 174)`. Choosing `rgb(158 84 170)` — **4.88:1 with white text, comfortable
+headroom over the 4.5:1 floor** — therefore leaves dark mode visually unchanged and fixes
+light mode alone. A regression in the one theme that has actually been looked at is the main
+risk in this whole pass, and this sidesteps it.
+
+*Why a new token rather than editing `--deck-card-header`.* The two uses have genuinely
+different backdrops: the band sits on turquoise inside `DeckCard`, the button sits on the
+page. One token cannot be correct for both, and `DeckCard` is a screen that has already been
+reviewed and approved — retuning its band to fix a button is a visual regression traded for
+a contrast fix. Splitting keeps `DeckCard.tsx` untouched. The `brand` comment's intent
+("the orchid band colour … shared by every create/add affordance") is preserved: it is the
+same hue at a legible lightness, not a different colour.
+
+`--deck-card-chip` stays exactly as it is. It measures 10.10:1 and 9.24:1; changing it would
+be a restyle dressed up as a fix.
+
+**This is verified by arithmetic, not by eye.** `frontend/scripts/check-contrast.py` computes
+the ratios from the token values and exits non-zero below 4.5:1, so it belongs in the gate
+rather than in a walkthrough step. A screenshot cannot tell you 4.4 from 4.6.
 
 ## 3. A 3-way theme toggle, with the `.dark` class still the single source of truth
 
