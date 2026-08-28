@@ -758,6 +758,19 @@ satisfied, a `can_override` test missing the case that mattered, and an accuracy
 removal produced `Some(NaN)` — which serde serialises as `null`, making it byte-identical
 over HTTP. Run the mutation, one change at a time; roughly one test per task was hollow.
 
+**When a hollow test is found, re-read the acceptance criterion it was meant to satisfy — not
+just the assertion that was hollow.** Part 7 shipped five hollow tests, and the fifth was
+caught only by the final whole-branch review. Its Task 4 criterion read "`due_at` one day on";
+the test asserted `due_at.ends_with("T00:00:00Z")`, which cannot fail because the SQL appends
+that literal unconditionally. That was spotted mid-plan and fixed with a `len() == 20`
+assertion — which does kill a `date()`-to-`datetime()` mutation, so it looked like a fix. But
+it addressed the *symptom*, and the criterion stayed untested: `date()` returns ten characters
+for any offset, and `interval_days` is written from a separate binding, so forcing the offset
+to `+0 days` — a scheduler that never delays anything, SM-2 silently degraded to practice with
+extra bookkeeping — passed all 364 tests and looked correct on every screen. The test now
+reads the review's own `answered_at` back and compares against a computed
+`date(answered_at, '+1 days')`. Fixing the assertion is not the same as testing the criterion.
+
 **shadcn's `destructive` badge variant fails AA on `bg-card`.** It is a 10%-alpha tint of
 `--destructive` under `--destructive` text, which measures **3.64:1 in light and 3.60:1 in
 dark** against the card surface. Part 6's weakness badge therefore uses the solid pair,
