@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT COUNT(*) AS \"found!: i64\"\n        FROM decks\n        WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "found!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5d99bd49b98c98f78f9c4d8b64817142cc9b782e5b0b5bc9139f933fb2cfddc4"
+}

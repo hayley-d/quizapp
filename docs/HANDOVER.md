@@ -2,8 +2,9 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, on `main` (Part 2c, the deck card list redesign, merged — its
-nine-point browser walkthrough is still outstanding, see Outstanding).
+**Last updated:** 2026-08-28, on branch `feat/part3-practice-mode`. **Part 3 (practice mode)
+is complete and driven in a browser** — the first part of this project to get a real
+walkthrough. Part 2c's own walkthrough is still outstanding (see Outstanding).
 
 ## What this is
 
@@ -67,25 +68,47 @@ feature branch outstanding. Concretely, working today:
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 120 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- 119 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
-`/study` and `/stats` are placeholder pages.
+- **Part 3, practice mode** — `grading.rs` and `practice.rs` (two pure modules, no database
+  access, randomness injected as a `roll: f64`), `routes/sessions.rs` with six endpoints, and
+  two screens. Design and rationale:
+  [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md);
+  plan: [`mitis/plans/2026-08-27-part3-practice-mode.md`](mitis/plans/2026-08-27-part3-practice-mode.md).
+  - `POST /api/sessions` — expands a module to its decks, refuses at creation when the pool
+    is empty, rejects `target_count` rather than ignoring it
+  - `GET /api/sessions/:id/next` — weighted sample, choices shuffled per serve, **no answer
+    content for any kind**, plus `pool_count`/`answered_count`/`correct_count`
+  - `POST /api/sessions/:id/reveal` — flashcard only; 409 for the two graded kinds
+  - `POST /api/sessions/:id/answer` — `{card_id, given | choice_id | self_grade, ms?}`
+  - `POST /api/sessions/:id/finish` — idempotent, `accuracy` null when nothing was answered
+  - `POST /api/reviews/:id/override` — the only write that mutates a `reviews` row
+  - `/study` picks mode and decks; `/session/:id` is the keyboard-first runner, **unthemed**
+    pending Part 4
+- `migrations/0003_review_self_grade.sql`: `reviews.self_grade`, nullable, CHECK-constrained
+  to the four flashcard grades, with `correct` derived (`again` → 0, the rest → 1)
+- `CLAUDE.md` rule 3, never use `any` in TypeScript. Prose-only —
+  `typescript/no-explicit-any` is **not** in the oxlint config and `pnpm lint` is not in the
+  gate, so nothing enforces it mechanically yet.
+
+`/stats` is still a placeholder page.
 
 ## Next up
 
-**Part 3: practice mode.** The session runner, grading against `accepted.normalised`, the
-"I was right" override, and `reviews` rows. This is the first feature that reads cards rather
-than writing them, and the first consumer of `POST /api/sessions`.
+**Part 4: the Bibble theme pass.** Part 3 shipped the runner deliberately unthemed — the
+sparkle burst on a correct answer and the wing-flutter on a streak are step 4's work, and
+both must respect `prefers-reduced-motion` without blocking the advance to the next card.
 
-Two things already in place that Part 3 must use rather than reinvent: the `<Markdown>`
-component (the session runner is its third consumer — do not add a fourth rendering path),
-and `normalise()`, which computes the same key grading will look up.
+After that: mock test → stats → SM-2 → embed the bundle and LAN binding.
 
-A third: `cards.position` is the deck's authored order, and practice mode should read it rather
-than inventing an order of its own.
+**Two things Part 5 (mock test) must resolve**, both recorded in the Part 3 design doc:
 
-After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
+- `/next` re-rolls on reload. That is correct for practice, where an unanswered serve wrote
+  no row and there is no ordered position to resume to. Under `target_count` each serve is
+  consequential, so mock mode needs a stable serve.
+- What a flashcard means in a mock test, where there is no feedback during the run but
+  self-grading structurally needs the answer.
 
 ## Running it
 
@@ -100,6 +123,16 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
 
 - **Port 5273, not 5173.** 5173 is permanently occupied by an unrelated project on this
   machine.
+- **The browser tooling reaches the dev server on the LAN IP, not on `localhost`.** This is
+  what blocked the walkthroughs for Parts 1, 2a, 2b and 2c, each recorded as "the dev-tools
+  browser could not reach the dev server". Two separate problems, both fixable:
+  1. `pnpm dev` binds to `localhost` only, which resolves to IPv6 `::1`. Chrome asks for
+     IPv4 `127.0.0.1` and gets nothing. Start it as `pnpm dev --host 0.0.0.0`.
+  2. Even then the Chrome instance is not on this machine's loopback. Navigate to the
+     **Network** address vite prints (e.g. `http://192.168.2.161:5273`), not `localhost`.
+
+  With both, Part 3's walkthrough drove cleanly. Do this before concluding the browser
+  cannot reach the app.
 - **pnpm, not npm.** `packageManager` is pinned in `frontend/package.json`. If a
   `package-lock.json` appears, something went wrong — delete it.
 - **All cargo commands run from the repo root**, never from `backend/`. The cwd-relative
@@ -126,8 +159,20 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
 cargo test
 cargo clippy --all-targets -- -D warnings        # --all-targets matters, see below
 SQLX_OFFLINE=true cargo build
-cd frontend && pnpm exec tsc --noEmit && pnpm build
+cd frontend && pnpm exec tsc -b --noEmit && pnpm build
 ```
+
+**`tsc --noEmit` alone checks nothing — use `tsc -b --noEmit`.** `frontend/tsconfig.json` is a
+solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it,
+finds zero files, and exits 0 whatever the code says. Verified: a deliberate
+`const x: number = 'string'` passes `tsc --noEmit` and fails `tsc -b`. This was in the gate
+from Part 1 to Part 3 and never caught anything. Nothing was actually unprotected, because
+`pnpm build` runs `tsc -b`, but the first half of the gate was theatre. Fixed 2026-08-28.
+
+**Regenerate the sqlx cache against a scratch database, not `data/quizapp.db`.**
+`cargo sqlx prepare --workspace` needs `DATABASE_URL` pointing at a migrated database. Build
+one in a temp directory by running the migrations in order with `sqlite3`, and point
+`DATABASE_URL` at that. It keeps the dev database out of the loop entirely.
 
 **Use `--all-targets`.** Plain `cargo clippy -- -D warnings` does not build test targets. It
 was the gate for all of Part 1, which meant roughly 370 lines of test code had zero lint
@@ -172,7 +217,7 @@ load-bearing: preserve the placeholder count, or you get a confusing compile err
 this machine's nightly arrives dressed up as the self-recovering ICE.
 
 **Foreign keys are per-connection.** Enforcement comes from `.foreign_keys(true)` in
-`backend/src/db.rs`, not from anything in the schema. Any other client — DBeaver, the
+`backend/src/database.rs`, not from anything in the schema. Any other client — DBeaver, the
 `sqlite3` CLI — has them OFF unless it asks.
 
 **PATCH distinguishes absent from null.** A key missing from the body means "leave
@@ -195,6 +240,20 @@ being fine once real cards exist.
 
 **Archive, never delete.** Cards are archived so their `reviews` rows keep meaning.
 `reviews.card_id` deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly.
+
+**Session state lives only in `reviews`.** The weights, the staleness, the no-repeat window
+and the progress counts are all derived from it, which is why a mid-session reload resumes
+correctly with no client state. Adding a second store — a "served card" table, a client-side
+queue — breaks that property. `/next` re-rolling on reload is a consequence, not a defect:
+an unanswered serve wrote no row, so there is nothing to resume to.
+
+**A test that passes for the wrong reason is worse than no test.** Part 3's mutation pass
+found six that could not fail: a dominance test that only built one side of its comparison,
+a `roll.clamp` that no input could reach, an error assertion that checked only the field name
+while two different messages used that field, a no-repeat test that the weighting alone
+satisfied, a `can_override` test missing the case that mattered, and an accuracy guard whose
+removal produced `Some(NaN)` — which serde serialises as `null`, making it byte-identical
+over HTTP. Run the mutation, one change at a time; roughly one test per task was hollow.
 
 **One rendering path.** `<Markdown>` in `frontend/src/components/Markdown.tsx` is the only
 markdown renderer in the app, and it is why Part 2a shipped raw text everywhere. The card
@@ -222,6 +281,27 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+**Part 3's walkthrough was driven and passed.** Recorded here because it is the first part of
+this project to get one. Verified in a browser on 2026-08-28: the `/study` picker and its live
+card count; the multiple-choice loop by keyboard (`2`, Enter); the flashcard loop (Space to
+reveal via `/reveal`, `3` to grade); short-answer normalisation, where `  K-MEANS!  ` graded
+correct against accepted `k-means`; the override, where a wrong answer flipped to "Counted as
+correct" and the *same wording in different case and punctuation* then graded correct on the
+next serve; a mid-session reload preserving the answered/correct counts; the finish summary
+reporting "1 counted correct by override"; KaTeX and markdown rendering in prompts; and forty
+consecutive serves across all three kinds carrying no `is_correct`, `answer_md`,
+`explanation_md` or `accepted` in the card object, with both choice orderings observed.
+
+**Still outstanding from Part 3:**
+
+- **Phone width.** `resize_window` reports success but the viewport does not change in this
+  environment, so 375px was never actually rendered. The runner uses the same `max-w-2xl`
+  shell as every other screen and the multiple-choice grid is `sm:grid-cols-2`, so it should
+  collapse to one column — but that is reasoning, not observation.
+- **Both themes.** Only the dark palette was seen.
+- Whether a 100+ card deck stays responsive in the runner, which is what COS781 will be.
+
 
 **Needs a human at a browser** — no agent could verify these; the Chrome extension is not
 connected on this machine, so no agent could drive a browser for either Part 1 or Part 2a:
@@ -304,13 +384,16 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 - **`strict` is off for the frontend.** `frontend/tsconfig.app.json` sets neither `strict` nor
   `extends`, so `strictNullChecks` is not checking anything — including Part 2c's fairly heavy use
   of nullable state (`full`, `inFlight.current`, `pending.current`, `image_path`). Pre-existing
-  config, but it is the highest-value frontend follow-up: the `tsc --noEmit` gate is weaker than
-  it looks.
+  config, but it is the highest-value frontend follow-up. (Separately, the gate's
+  `tsc --noEmit` was checking nothing at all until Part 3 corrected it to `tsc -b --noEmit` —
+  see The verification gate. `strict` being off is the remaining half of that problem.)
 
 **Housekeeping**
 
-- `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
-  `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
+- `data/quizapp.db` holds verification debris from Part 1, Part 2a **and Part 3's
+  walkthrough** (modules like `REVIEW_MOD_1` and `COS781 walkthrough`; decks like
+  `kinetics 100%`, `Clustering walkthrough`, `Override walkthrough`, `Leak check deck`; and
+  the sessions and reviews they generated). Clear it before writing real cards — it
   regenerates on startup.
 - KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 884 kB, 272 kB gzipped,
   the latter figure grown further by the deck card list redesign's three `@dnd-kit`
@@ -324,20 +407,21 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 **Known-and-accepted minors**
 
-- `AppError::Conflict` is constructed nowhere in production code — real 409s arrive via the
-  sqlx unique-violation path.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
-- `AppError::fk_as` takes `&str` while `AppError::validation` is generic over `Into<String>`.
+- `AppError::tag_foreign_key_violation` takes `&str` while `AppError::validation` is generic
+  over `Into<String>`.
   Both call sites pass literals; generalising it now would be churn.
 - `patch_unknown_card_is_404`'s `count(cards) == 0` assertion cannot fail — each test gets a
   fresh empty database. Not a false claim, just an assertion carrying no weight; the 404
   assertion above it is the real test.
 - `CardEditorPage` renders an inline error slot for `explanation_md`, which the validator
   never emits. Dead but harmless; Part 2b may give it a use.
-- Duplicate accepted answers that normalise to the same key are accepted — `validate` does
-  not dedupe and `idx_accepted_card_normalised` is a plain, non-unique index. Harmless in
-  2a, but Part 3's grading lookup will meet it, so it belongs on the record now.
+- Duplicate accepted answers that normalise to the same key are still accepted on card
+  *authoring* — `validate` does not dedupe and `idx_accepted_card_normalised` is a plain,
+  non-unique index. Part 3 met this and found it harmless to grading, because the lookup is
+  set membership rather than a fetch. The override endpoint carries a `WHERE NOT EXISTS`
+  guard so it cannot add to the pile.
 
 ## Where the record lives
 
@@ -345,6 +429,10 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   the implementation legitimately diverged (e.g. deck-name uniqueness per module).
 - **Plans** — `mitis/plans/*.md` plus their `.tasks.json`. These carry the full per-task
   code, acceptance criteria and verification commands. All are marked complete.
+- **Part 3's design decisions** — [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md).
+  Records the weighted-sampling-over-`position` ruling, the two API amendments, why the
+  flashcard reveal is its own endpoint, why never-seen dominance is derived rather than
+  tuned, and the small-deck window rule.
 - **Part 2b's three open design questions** were answered in the design session of
   2026-08-27 and are recorded in [`mitis/specs/2026-08-27-part2b-images-markdown-design.md`](mitis/specs/2026-08-27-part2b-images-markdown-design.md):
   standalone upload endpoint, whole-form Edit/Preview toggle, unclamped markdown rows with a

@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT id AS \"choice_id!: i64\", text_md, is_correct AS \"is_correct!: bool\"\n                FROM choices WHERE card_id = ? ORDER BY position\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "choice_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "text_md",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_correct!: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2870fb3f5462310a843997d56878002533bdf37eca8e212bf2f94d6fae224ddf"
+}

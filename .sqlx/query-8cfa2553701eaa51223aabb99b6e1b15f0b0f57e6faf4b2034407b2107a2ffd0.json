@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT COUNT(*)                  AS \"answered_count!: i64\",\n               COALESCE(SUM(correct), 0) AS \"correct_count!: i64\"\n        FROM reviews WHERE session_id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "answered_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "correct_count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8cfa2553701eaa51223aabb99b6e1b15f0b0f57e6faf4b2034407b2107a2ffd0"
+}

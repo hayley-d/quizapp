@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT reviews.id AS \"id!: i64\",\n               reviews.card_id AS \"card_id!: i64\",\n               reviews.given,\n               reviews.correct AS \"correct!: bool\",\n               cards.kind\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        WHERE reviews.id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "card_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "given",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "correct!: bool",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "kind",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "742365936f2cffc142c8f374ce51f33c11a3cc254534b05125f0cdd79c94543c"
+}

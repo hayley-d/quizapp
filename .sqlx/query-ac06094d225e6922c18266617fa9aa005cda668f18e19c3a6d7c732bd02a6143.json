@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\", deck_ids, ended_at FROM sessions WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "deck_ids",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "ended_at",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "ac06094d225e6922c18266617fa9aa005cda668f18e19c3a6d7c732bd02a6143"
+}

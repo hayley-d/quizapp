@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT card_id AS \"card_id!: i64\"\n        FROM reviews\n        WHERE session_id = ?\n        ORDER BY answered_at DESC, id DESC\n        LIMIT ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0c5aac6e32c91ff03c8e699a2027384a944ec8062e84538c60718031dfde6505"
+}
