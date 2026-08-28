@@ -789,7 +789,7 @@ Decks with zero cards render disabled with a "No cards yet" note rather than bei
 
 ---
 
-## Task 12: `/session/:id` — the runner
+## Task 12: `/session/:id` — the runner — **COMPLETE**
 
 **Goal:** A keyboard-first practice loop: serve, answer, verdict, advance — all three kinds, no mouse required.
 
@@ -806,18 +806,26 @@ Decks with zero cards render disabled with a "No cards yet" note rather than bei
 
 **Other:** `ms` from a `useRef` stamped when the card is served. Header shows answered/correct from `NextResponse`, so a reload does not reset it. "End session" → `finishSession` → a summary panel with links back to `/study` and `/decks`. The runner ships **unthemed** — the sparkle burst and streak flourish are Part 4.
 
+**Outcome:** built as planned, with one backend addition and one test correction.
+
+`/next` now returns `correct_count` beside `answered_count`, so the header's running score survives a reload instead of being tracked in browser memory — which is the spec's rule, not just a convenience.
+
+That addition **tripped the leakage test**, because its forbidden-substring scan matched `"correct"` inside `"correct_count"`. A false positive, but the fix made the check *stricter* rather than looser: the forbidden-key scan now runs against the `card` object alone, and the envelope's key set is pinned exactly to `{card, pool_count, answered_count, correct_count}`. Adding `is_correct` to `ServedChoice` still kills it.
+
+Keyboard detail worth recording: the container handler calls `preventDefault()` on Enter and Space, which suppresses the focused button's native click. Without that, Enter on the focused "Next card" button would both click it *and* run the container's handler, advancing two cards at once.
+
 **Acceptance Criteria:**
-- [ ] All three kinds render and submit, each with its own answer control
-- [ ] `1`–`9` select a multiple-choice option; `Enter` submits; `Enter` again advances
-- [ ] Number keys do **not** hijack typing in the short-answer input
-- [ ] A flashcard reveals via `POST /reveal` before its four grade buttons appear
-- [ ] The verdict shows `expected` and the explanation when present
-- [ ] "I was right" appears only when the server says `can_override`, and flips the banner in place
-- [ ] The header's answered/correct counts survive a browser reload
-- [ ] `ms` is sent and is never negative
-- [ ] End session shows a summary whose numbers match the run
-- [ ] No `window` event listener is added; keyboard handling is container-level
-- [ ] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
+- [x] All three kinds render and submit, each with its own answer control
+- [x] `1`–`9` select a multiple-choice option; `Enter` submits; `Enter` again advances
+- [x] Number keys do **not** hijack typing in the short-answer input
+- [x] A flashcard reveals via `POST /reveal` before its four grade buttons appear
+- [x] The verdict shows `expected` and the explanation when present
+- [x] "I was right" appears only when the server says `can_override`, and flips the banner in place
+- [x] The header's answered/correct counts survive a browser reload
+- [x] `ms` is sent and is never negative
+- [x] End session shows a summary whose numbers match the run
+- [x] No `window` event listener is added; keyboard handling is container-level
+- [x] `pnpm exec tsc -b --noEmit` and `pnpm build` are clean
 
 **Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build`, then the browser walkthrough in Task 13.
 

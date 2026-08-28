@@ -421,21 +421,32 @@ async fn next_never_returns_answer_data_for_any_kind() {
             assert_eq!(choice_keys, vec!["id", "text_md"]);
         }
 
-        let serialised = body.to_string();
+        let mut envelope_keys: Vec<&str> =
+            body.as_object().unwrap().keys().map(String::as_str).collect();
+        envelope_keys.sort_unstable();
+        assert_eq!(
+            envelope_keys,
+            vec!["answered_count", "card", "correct_count", "pool_count"],
+            "the serve envelope must carry exactly the card and the session progress counts",
+        );
+
+        let serialised_card = body["card"].to_string();
         for forbidden in
             ["is_correct", "answer_md", "explanation_md", "accepted", "expected", "correct"]
         {
             assert!(
-                !serialised.contains(forbidden),
-                "a served card leaked {forbidden}: {serialised}",
+                !serialised_card.contains(forbidden),
+                "a served card leaked {forbidden}: {serialised_card}",
             );
         }
+
+        let serialised = body.to_string();
         for answer_text in
             ["because the centroid moves", "k-means", "lloyd's algorithm", "an answer"]
         {
             assert!(
                 !serialised.contains(answer_text),
-                "a served card leaked the answer text {answer_text}: {serialised}",
+                "the serve response leaked the answer text {answer_text}: {serialised}",
             );
         }
 
@@ -651,6 +662,22 @@ async fn next_reports_the_progress_counts_from_reviews() {
 
     let (_, after) = app.get(&format!("/api/sessions/{session_id}/next")).await;
     assert_eq!(after["answered_count"], 1, "progress must come from reviews, not the client");
+    assert_eq!(after["correct_count"], 1);
+
+    let another = after["card"]["id"].as_i64().unwrap();
+    sqlx::query("INSERT INTO reviews (card_id, session_id, correct) VALUES (?, ?, 0)")
+        .bind(another)
+        .bind(session_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (_, final_progress) = app.get(&format!("/api/sessions/{session_id}/next")).await;
+    assert_eq!(final_progress["answered_count"], 2);
+    assert_eq!(
+        final_progress["correct_count"], 1,
+        "a wrong answer must raise answered without raising correct",
+    );
 }
 
 #[tokio::test]

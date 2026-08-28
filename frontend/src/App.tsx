@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
 import { StubPage } from '@/pages/StubPage'
 import { StudyPage } from '@/pages/StudyPage'
+import { SessionPage } from '@/pages/SessionPage'
 import { DecksPage } from '@/pages/DecksPage'
 import { DeckPage } from '@/pages/DeckPage'
 import { CardEditorPage } from '@/pages/CardEditorPage'
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/cards/new" element={<CardEditorPage />} />
           <Route path="/cards/:id/edit" element={<CardEditorPage />} />
           <Route path="/study" element={<StudyPage />} />
+          <Route path="/session/:id" element={<SessionPage />} />
           <Route
             path="/stats"
             element={<StubPage title="Stats" note="Statistics arrive in part 6." />}

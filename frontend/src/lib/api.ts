@@ -168,6 +168,7 @@ export type NextResponse = {
   card: NextCard
   pool_count: number
   answered_count: number
+  correct_count: number
 }
 
 export type RevealedAnswer = {

@@ -240,6 +240,7 @@ pub struct NextResponse {
     pub card: NextCardResponse,
     pub pool_count: i64,
     pub answered_count: i64,
+    pub correct_count: i64,
 }
 
 #[derive(Deserialize)]
@@ -377,14 +378,18 @@ async fn load_recent_review_card_ids(
     Ok(card_ids)
 }
 
-async fn count_answered(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<i64> {
-    let answered = sqlx::query_scalar!(
-        r#"SELECT COUNT(*) AS "answered_count!: i64" FROM reviews WHERE session_id = ?"#,
+async fn count_progress(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<(i64, i64)> {
+    let row = sqlx::query!(
+        r#"
+        SELECT COUNT(*)                  AS "answered_count!: i64",
+               COALESCE(SUM(correct), 0) AS "correct_count!: i64"
+        FROM reviews WHERE session_id = ?
+        "#,
         session_id,
     )
     .fetch_one(pool)
     .await?;
-    Ok(answered)
+    Ok((row.answered_count, row.correct_count))
 }
 
 async fn next(
@@ -417,6 +422,8 @@ async fn next(
     .await?;
     choices.shuffle(&mut rand::thread_rng());
 
+    let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
+
     Ok(Json(NextResponse {
         card: NextCardResponse {
             id: card.id,
@@ -426,7 +433,8 @@ async fn next(
             choices,
         },
         pool_count: candidates.len() as i64,
-        answered_count: count_answered(&state.pool, session.id).await?,
+        answered_count,
+        correct_count,
     }))
 }
 
