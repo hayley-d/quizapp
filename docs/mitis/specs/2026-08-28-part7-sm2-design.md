@@ -42,7 +42,14 @@ The master spec fixes it:
 | Auto-graded wrong | 2 |
 | Flashcard: again / hard / good / easy | 1 / 3 / 4 / 5 |
 
-`quality_for(correct, overridden, self_grade)` is **total**: a `self_grade` of `None` falls
+**There is no `overridden` parameter**, even though the spec's table lists "correct via
+override" as its own row. The override endpoint's whole effect is to set `reviews.correct` to
+1, so by the time the replay reads the row it is indistinguishable from an answer that was
+right first time — and it *should* be, because that is what the override asserts. Passing
+`overridden` separately would be a second way to say the same thing, free to disagree with the
+column. The row in the table is a statement about the outcome, not a demand for an argument.
+
+`quality_for(correct, self_grade)` is **total**: a `self_grade` of `None` falls
 to the auto-graded branch. That totality is the resolution of the constraint Part 5 recorded
 — "Part 7 must map mock flashcard reviews through `correct`, not through the grade table" —
 rather than a special case bolted on for it. In practice an SM-2 flashcard always carries a
@@ -64,7 +71,7 @@ pub const PASSING_QUALITY: u8 = 3;
 pub struct ScheduleState { pub interval_days: f64, pub ease: f64, pub reps: i64, pub lapses: i64 }
 
 pub fn initial_state() -> ScheduleState;
-pub fn quality_for(correct: bool, overridden: bool, self_grade: Option<SelfGrade>) -> u8;
+pub fn quality_for(correct: bool, self_grade: Option<SelfGrade>) -> u8;
 pub fn apply(state: &ScheduleState, quality: u8) -> ScheduleState;
 pub fn replay(qualities: &[u8]) -> ScheduleState;
 ```
