@@ -84,6 +84,10 @@ module. Creating a duplicate is rejected with a conflict rather than silently al
 two decks called "Test 1" in the same module would be indistinguishable while revising.
 
 Study sessions select one or more decks, or a whole module (which expands to its decks).
+The API has supported both since part 3. The frontend does not currently offer either: the
+deck page starts a session for the deck you are looking at and nothing else, so the
+multi-deck and whole-module paths are reachable only through the API. Part 5 decides
+whether a mock test brings a wider pool back to the UI.
 
 ### Card kinds
 
@@ -180,7 +184,10 @@ POST /api/cards                    create; choices/accepted nested, one transact
 PATCH /api/cards/:id               update; nested children replaced in one transaction
 POST /api/cards/:id/archive        archive
 POST /api/cards/:id/unarchive      restore; not in the original design, added so the
-                                    deck screen's show-archived toggle has something to undo
+                                    deck screen's show-archived toggle has something to
+                                    undo. That toggle was later removed, so this endpoint
+                                    currently has no caller in the frontend; it is kept
+                                    because archiving must stay reversible
 POST /api/images                   multipart upload -> data/images/, returns path;
                                     replaces the original card-scoped
                                     POST /api/cards/:id/image so the editor can upload
@@ -275,10 +282,9 @@ their own Rust modules with no database access. They form the bulk of the test s
 
 | Route              | Purpose                                     |
 | ------------------ | ------------------------------------------- |
-| `/study`           | Pick mode + decks, start a session          |
 | `/session/:id`     | The study runner                            |
 | `/decks`           | Deck and module management                  |
-| `/decks/:id`       | Cards in a deck                             |
+| `/decks/:id`       | Cards in a deck, and where a session starts |
 | `/cards/new`, `/cards/:id/edit` | Card editor                    |
 | `/stats`           | Accuracy overall, per deck, weakest cards   |
 

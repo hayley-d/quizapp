@@ -2,16 +2,18 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on branch `feat/part4-bibble-theme`, at commit `df3b138`
-(the Makka Pakka light-mode repalette). **Part 4 (the Bibble theme pass) is complete but
-unmerged, and light mode is now unverified** — the automated gate is green (`cargo test`,
-229 passing; `cargo clippy --all-targets -- -D warnings`; `SQLX_OFFLINE=true cargo build`;
-`python3 frontend/scripts/check-contrast.py`, 16 enforced pairs; `pnpm exec tsc -b
---noEmit`; `pnpm build`; `pnpm exec oxlint` — all exit 0), but light mode changed palette
-*after* the one human walkthrough this branch got, so that walkthrough no longer speaks to
-what light mode looks like today. See the Part 4 "verification status" subsection under
-Outstanding before assuming any visual or interaction behaviour works, especially in light
-mode. Part 2c's own walkthrough is also still outstanding (see Outstanding).
+**Last updated:** 2026-08-28, on `main`, at commit `e09e76d` (the styling pass that
+followed the Part 4 merge). **Part 4 (the Bibble theme pass) is done and merged** —
+`feat/part4-bibble-theme` landed as `60575c8`, and there is no feature branch outstanding.
+Both palettes have now been driven in a browser: Hayley looked at Makka Pakka light and
+Bibble dark and made `e09e76d` in response, which is a structural change as much as a
+styling one — it deleted the `/study` screen and moved session starting onto the deck
+page. Read "The `e09e76d` styling pass" under Where things stand before touching the
+frontend; it is the most recent thing that happened and the least like what its commit
+message says.
+
+Part 2c's nine-point walkthrough is still outstanding, and 375px phone width has never
+been rendered in any part (see Outstanding).
 
 ## What this is
 
@@ -55,7 +57,8 @@ other — do not assume a value carries over.
   answer is fetched per row on first flip via `GET /api/cards/:id`. Multiple-choice backs show a
   two-column grid whose options stay uniform until the eye button reveals the correct one. Rows
   drag to reorder by their grip (`@dnd-kit/sortable`, keyboard reorder included), and the order
-  persists. Archive/unarchive and the show-archived toggle are unchanged. Design:
+  persists. Archiving is unchanged; the show-archived toggle was later removed by
+  `e09e76d`. Design:
   [`mitis/specs/2026-08-27-deck-card-list-redesign-design.md`](mitis/specs/2026-08-27-deck-card-list-redesign-design.md)
 
   **Manual verification outstanding.** The nine-point browser walkthrough for this screen
@@ -103,16 +106,17 @@ other — do not assume a value carries over.
   - `POST /api/sessions/:id/finish` — idempotent, `accuracy` null when nothing was answered
   - `POST /api/reviews/:id/override` — the only write that mutates a `reviews` row
   - `/study` picks mode and decks; `/session/:id` is the keyboard-first runner, **unthemed**
-    pending Part 4
+    pending Part 4. `/study` was deleted by `e09e76d` and its job moved onto `/decks/:id`;
+    the runner is unaffected.
 - `migrations/0003_review_self_grade.sql`: `reviews.self_grade`, nullable, CHECK-constrained
   to the four flashcard grades, with `correct` derived (`again` → 0, the rest → 1)
 - `CLAUDE.md` rule 3, never use `any` in TypeScript. Prose-only —
   `typescript/no-explicit-any` is **not** in the oxlint config and `pnpm lint` is not in the
   gate, so nothing enforces it mechanically yet.
 
-- **Part 4, the Bibble theme pass** — on branch `feat/part4-bibble-theme`, **unmerged**. The
-  automated gate is green (see The verification gate); the browser walkthrough was not
-  performed in this session (see Outstanding).
+- **Part 4, the Bibble theme pass** — merged to `main` as `60575c8`. The automated gate is
+  green (see The verification gate), and both palettes have since been driven in a browser
+  (see The `e09e76d` styling pass below).
   - A Light/Dark/System theme toggle in the header, persisted to `localStorage`. The `.dark`
     class on `<html>` remains the single source of truth — `sonner.tsx` still observes it,
     unmodified. The inline script in `index.html` reads the stored preference before first
@@ -124,7 +128,7 @@ other — do not assume a value carries over.
     alpha let the pale page background show through. It was 4.88:1 in both themes at the time
     (the Makka Pakka repalette below later split light `--brand` to its own value). The
     `brand` variant is the app's primary action everywhere — "Start practising", "Check",
-    "Next card", "Study again", the deck edit button, every card-row icon button — so in
+    "Next card", the deck edit button, every card-row icon button — so in
     light mode the main call to action was close to illegible, and had been since Part 1. It
     went unnoticed because until Part 4 there was no way to switch themes without visiting
     macOS System Settings.
@@ -146,8 +150,8 @@ other — do not assume a value carries over.
     the card edge-on at 90° with no callback to finish the swap. `useFlip` is now also
     reactive to the setting, which it previously was not (it sampled `matchMedia` at flip
     time and never subscribed).
-  - Card surfaces (`rounded-xl border bg-card p-N shadow-sm`) across the runner, `/study`,
-    the `/decks` toolbar and the card editor form.
+  - Card surfaces (`rounded-xl border bg-card p-N shadow-sm`) across the runner, `/study`
+    (since deleted), the `/decks` toolbar and the card editor form.
   - `SessionPage.tsx` shed its summary and exhausted screens into `components/session/`
     (417 → 359 lines).
   - Two Part 2c defects fixed: markdown links inside a card no longer flip it (the mouse
@@ -181,30 +185,73 @@ other — do not assume a value carries over.
       deferred minor findings, and The verification gate). Light `--primary` is now
       `oklch(0.47 0.075 68)` at 5.90:1, so `check-contrast.py`'s RECORDED/KNOWN tier is
       correspondingly empty and the pair moved to ENFORCED.
-    - **Nobody has looked at this palette in a browser.** Every pair above is a computed
-      contrast ratio, not an observation — see the Part 4 verification status note under
-      Outstanding before assuming the light theme looks right, not just legible.
+    - **This palette has now been looked at.** Hayley drove both Makka Pakka light and
+      Bibble dark on 2026-08-28 and made `e09e76d` in response. The ratios above remain
+      the only *proof* of legibility — arithmetic is still not observation, and a passing
+      ratio says nothing about whether a palette looks good — but the palette is no longer
+      unseen, and the surface-separation worry that used to be recorded here was the thing
+      that pass went and checked.
   - `strict: true` and `typescript/no-explicit-any` are now enforced, both verified
     load-bearing with isolated probes, and `pnpm exec oxlint` was added to the gate — a lint
     rule the gate never runs would enforce nothing.
+
+- **The `e09e76d` styling pass** — Hayley's own commit, made after the Part 4 merge while
+  looking at the running app. Its message says "fix styling"; it is a structural change,
+  and this bullet exists because nothing else in the repository records it.
+  - **`/study` is gone.** `frontend/src/pages/StudyPage.tsx` was deleted, its route
+    removed from `App.tsx` and its link removed from the `AppShell` nav. Every "Back to
+    study" now reads "Back to decks" (`SessionPage.tsx`, `session/SessionExhausted.tsx`),
+    and `session/SessionSummary.tsx` lost its "Study again" button, leaving one action.
+    Any older note in this document or the spec that sends you to `/study` is stale.
+  - **Session starting moved onto the deck page.** `/decks/:id` now opens with a
+    three-button grid built from `TEST_TYPE_OPTIONS` in `frontend/src/pages/DeckPage.tsx`:
+    Practice (live), Mock test (disabled, "Arrives in part 5.") and Spaced repetition
+    (disabled, "Arrives in part 7."). `startSession` calls
+    `api.createSession({ mode, deck_ids: [deckId] })` and navigates to `/session/:id`.
+    Buttons disable when `deck.card_count === 0`, which is the right guard —
+    `card_count` already excludes archived cards (`backend/src/routes/decks.rs`).
+  - **This means Part 5's entry point already exists.** The Mock test button is built,
+    positioned and labelled; Part 5 enables it rather than inventing a screen. Same for
+    SM-2 in build step 7.
+  - **Multi-deck and module-wide sessions are no longer reachable from the UI.**
+    `startSession` always sends exactly one deck. The backend and the client types still
+    support both a list of decks and a whole module (`frontend/src/lib/api.ts`,
+    `backend/src/routes/sessions.rs`), and that path is still tested — it is intact and
+    unused, not removed. Whether Part 5 restores it is an open question, recorded under
+    Next up.
+  - **The "Show archived" switch was removed** and the list fetch is hardcoded to
+    `archived: 'false'`. Deliberate — see the entry under Known-and-accepted minors for
+    what it costs.
+  - **The theme toggle names the palettes.** Its options now read "Makka Pakka (light)"
+    and "Bibble (dark)", drawn with two hand-made SVGs in
+    `frontend/src/components/icons/` rather than lucide's `Sun` and `Moon`. `Monitor`
+    still marks System.
+  - Two manual layout offsets on the deck page, `pl-11` on the container and `-ml-7` on
+    the card list, aligning the card rows' drag grips outside the content column.
 
 `/stats` is still a placeholder page.
 
 ## Next up
 
-**Part 5: the mock test.** Part 4 (the Bibble theme pass) is done. It is complete but sits
-unmerged on `feat/part4-bibble-theme`, and light mode's Makka Pakka repalette has not been
-browser-verified — see the "Part 4 — verification status" subsection under Outstanding.
+**Part 5: the mock test.** Part 4 is done and merged, and its entry point is already
+built: the disabled "Mock test" button in the `/decks/:id` mode grid, labelled "Arrives in
+part 5." Part 5 enables that button rather than adding a screen.
 
 After Part 5: stats → SM-2 → embed the bundle and LAN binding.
 
-**Two things Part 5 (mock test) must resolve**, both recorded in the Part 3 design doc:
+**Three things Part 5 must resolve.** The first two are recorded in the Part 3 design doc;
+the third was created by the `e09e76d` styling pass.
 
 - `/next` re-rolls on reload. That is correct for practice, where an unanswered serve wrote
   no row and there is no ordered position to resume to. Under `target_count` each serve is
   consequential, so mock mode needs a stable serve.
 - What a flashcard means in a mock test, where there is no feedback during the run but
   self-grading structurally needs the answer.
+- **What a mock test is scoped to.** The deck-page entry point can only start a session for
+  the one deck you are looking at, but a mock test standing in for the COS781 test is more
+  plausibly the whole module. The backend already accepts both a deck list and a
+  `module_id`, so this is a UI decision, not an API one: either mock tests are per-deck and
+  match the button that starts them, or Part 5 brings back a way to pick a wider pool.
 
 ## Running it
 
@@ -399,39 +446,29 @@ frontend cannot parse.
 
 ### Part 4 — verification status
 
-**Hayley drove and checked Part 4 on 2026-08-28, and confirmed it working — but that
-checked the ORIGINAL Bibble light palette, not the one in the app now.** This was a human
-walkthrough, not an agent one — no Chrome browser was connected to the session that ran
-Part 4's gate task, so no agent drove the app or produced an itemised record. The
-confirmation given was general rather than a point-by-point report, so the individual
-walkthrough items (the theme toggle's three states and no-flash-on-load behaviour, the
-light-mode `brand` button's legibility, the sparkle burst, the streak badge and its
+**Both palettes have been driven, and light mode was adjusted as a result.** Hayley checked
+Part 4 in a browser on 2026-08-28, then checked it again after the Makka Pakka repalette
+(`df3b138`) and made `e09e76d` in response. Makka Pakka light and Bibble dark have both
+been seen in the running app.
+
+What that does *not* give you is an itemised record. Both passes were human, not agent —
+no Chrome browser was connected to the sessions that ran Part 4 — and the confirmations
+were general rather than point-by-point. So the individual items (the theme toggle's three
+states and its no-flash-on-load behaviour, the sparkle burst, the streak badge and its
 flutter, reduced motion suppressing both, the deck-card flip under reduced motion, KaTeX in
-both palettes, and the markdown-link-does-not-flip fix) are **attested by the user rather
-than itemised here** — nobody wrote down a per-item observation for any of them, and this
-document does not invent one after the fact.
+both palettes, and the markdown-link-does-not-flip fix) are **attested rather than
+itemised** — nobody wrote down a per-item observation, and this document does not invent
+one after the fact.
 
-**The Makka Pakka repalette (`df3b138`) landed after that walkthrough, and nobody has
-looked at it.** Hayley's 2026-08-28 confirmation was of light mode as a pale-aqua rendering
-of the Bibble tokens. Light mode is now a different palette entirely — warm stone and sand
-neutrals with ochre-brown and clay accents — and no one, human or agent, has viewed it. Every
-colour in it is backed by a computed contrast ratio (`frontend/scripts/check-contrast.py`,
-16 enforced pairs, all passing), but **arithmetic is not observation**: a contrast ratio says
-text is legible against its background, and says nothing about whether the palette looks
-good, whether surfaces read as visually distinct from one another, or whether the
-ochre-on-cream combination works as a whole.
-
-**Surface separation in light mode is subtle, and is the first thing to check.** The palette
-is a three-layer warm stack — page `#f5ebe0`, card `#e3d5ca`, recessed `#d5bdaf` — and each
-step is about a 1.2:1 luminance difference: card against page **1.22:1**, an unselected
-choice against the card it sits on **1.25:1**, the deck-card header band against the deck
-body **1.25:1**. That is enough to perceive but not much more; borders and shadows carry a
-large share of the work of showing where one surface ends and the next begins.
-
-An earlier revision was flatter still — the card was **1.00:1** against the page, identical
-in lightness and differing only in hue. The current stack was chosen specifically to fix
-that, so this is the better of the two arrangements, but it has still never been looked at.
-Check it first, in a browser, before trusting anything else about the palette.
+**Surface separation in light mode is the thing to look at first if you change the
+palette.** It is a three-layer warm stack — page `#f5ebe0`, card `#e3d5ca`, recessed
+`#d5bdaf` — and each step is only about a 1.2:1 luminance difference: card against page
+**1.22:1**, an unselected choice against the card it sits on **1.25:1**, the deck-card
+header band against the deck body **1.25:1**. Enough to perceive, but borders and shadows
+carry a large share of the work of showing where one surface ends and the next begins. An
+earlier revision was flatter still, with the card at **1.00:1** against the page —
+identical in lightness, differing only in hue — which is what the current stack was chosen
+to fix.
 
 **A collision worth knowing about, because it will recur.** `--secondary` is the unselected
 multiple-choice background and it previously shared `#e3d5ca` with what is now `--card`. When
@@ -442,13 +479,13 @@ layers either side of it; the contrast script covers text legibility, not surfac
 
 **What remains genuinely unverified**, because no one has looked:
 
-- **The entire Makka Pakka light palette** — see above. Nothing about it has been seen,
-  only computed.
 - **375px phone width**, now across Parts 1, 2b, 2c, 3 and 4. `resize_window` reports
   success in this environment but the viewport does not change. It belongs to build step
   8's phone layout pass and needs a human at a browser.
 - **Part 2c's nine-point walkthrough**, still outstanding — it was not performed here
-  either. See the list further down.
+  either. See the list further down. Note that `e09e76d` reworked the deck page around the
+  card list, so points 6–8 (drag reorder, keyboard reorder) are now unverified against
+  changed layout as well as never having been driven.
 
 **Part 4 deferred minor findings**, recorded during execution. One entry that used to be
 here — `--primary` + `--primary-foreground` failing AA at 3.24:1 in light mode, deferred
@@ -477,8 +514,10 @@ Findings still open:
   can also leak into the label.
 
 **Part 3's walkthrough was driven and passed.** Recorded here because it is the first part of
-this project to get one. Verified in a browser on 2026-08-28: the `/study` picker and its live
-card count; the multiple-choice loop by keyboard (`2`, Enter); the flashcard loop (Space to
+this project to get one. Verified in a browser on 2026-08-28, against the UI as it stood
+then — `/study` has since been deleted, so the first item below no longer describes a
+screen that exists, though the session it started is unchanged: the `/study` picker and its
+live card count; the multiple-choice loop by keyboard (`2`, Enter); the flashcard loop (Space to
 reveal via `/reveal`, `3` to grade); short-answer normalisation, where `  K-MEANS!  ` graded
 correct against accepted `k-means`; the override, where a wrong answer flipped to "Counted as
 correct" and the *same wording in different case and punctuation* then graded correct on the
@@ -543,8 +582,10 @@ nine points were driven** — this is not a partial pass, it is a complete gap):
 6. Drag a card by its grip to a new position; reload the page — the new order persists.
 7. Tab to a grip, press Space, press ArrowDown twice, press Space — the card moves, and reload
    confirms it persisted.
-8. Toggle "Show archived" on, drag a visible card past an archived one, reload — the archived
-   card is still where it was.
+8. ~~Toggle "Show archived" on, drag a visible card past an archived one, reload — the
+   archived card is still where it was.~~ **Struck**: `e09e76d` removed the toggle, so
+   there is no longer a way to put an archived card on screen. Do not re-add this point
+   unless the toggle comes back.
 9. In macOS System Settings → Accessibility → Display, turn on "Reduce motion", then flip a
    card — the face swaps with no rotation.
 
@@ -601,6 +642,14 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 **Known-and-accepted minors**
 
+- **Archived cards cannot be reached from the UI, deliberately.** `e09e76d` removed the
+  "Show archived" switch and pinned the deck list to `archived: 'false'`, so archiving is
+  one-way from the interface. Two knock-on facts, both left as they are: `unarchive(card)`
+  in `DeckPage.tsx` is unreachable, because `card.archived` can never be true in a list
+  fetched with that filter; and `POST /api/cards/:id/unarchive` now has no caller in the
+  frontend. Neither was deleted — the endpoint is tested, `GET /api/cards` still takes
+  `archived=all`, and "Archive, never delete" still holds at the data layer, so the
+  capability is intact behind the API whenever a screen wants it back.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
 - `AppError::tag_foreign_key_violation` takes `&str` while `AppError::validation` is generic
