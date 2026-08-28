@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        WITH pool AS (\n            SELECT id AS card_id FROM cards WHERE deck_id = ? AND archived = 0\n        ),\n        deck_reviews AS (\n            SELECT reviews.card_id     AS card_id,\n                   reviews.correct     AS correct,\n                   reviews.answered_at AS answered_at,\n                   sessions.mode       AS mode\n            FROM reviews\n            JOIN pool     ON pool.card_id = reviews.card_id\n            JOIN sessions ON sessions.id = reviews.session_id\n        ),\n        due AS (\n            SELECT cards.id AS card_id, schedule.due_at AS due_at\n            FROM cards\n            LEFT JOIN schedule ON schedule.card_id = cards.id\n            WHERE cards.deck_id = ? AND cards.archived = 0\n        )\n        SELECT\n          (SELECT COUNT(*) FROM pool)\n              AS \"card_count!: i64\",\n          (SELECT COUNT(*) FROM pool\n            WHERE card_id NOT IN (SELECT card_id FROM deck_reviews))\n              AS \"unseen_count!: i64\",\n          (SELECT COUNT(*) FROM deck_reviews WHERE mode = 'mock')\n              AS \"mock_review_count!: i64\",\n          (SELECT COALESCE(SUM(correct), 0) FROM deck_reviews WHERE mode = 'mock')\n              AS \"mock_correct_count!: i64\",\n          (SELECT COUNT(*) FROM deck_reviews WHERE mode = 'practice')\n              AS \"practice_review_count!: i64\",\n          (SELECT COALESCE(SUM(correct), 0) FROM deck_reviews WHERE mode = 'practice')\n              AS \"practice_correct_count!: i64\",\n          (SELECT COUNT(*) FROM deck_reviews WHERE mode = 'sm2')\n              AS \"sm2_review_count!: i64\",\n          (SELECT COALESCE(SUM(correct), 0) FROM deck_reviews WHERE mode = 'sm2')\n              AS \"sm2_correct_count!: i64\",\n          (SELECT COUNT(*) FROM due\n            WHERE due_at IS NULL\n               OR due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))\n              AS \"due_count!: i64\",\n          (SELECT MIN(due_at) FROM due)\n              AS \"next_due_at?: String\",\n          (SELECT MAX(answered_at) FROM deck_reviews)\n              AS \"last_answered_at?: String\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "unseen_count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mock_review_count!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mock_correct_count!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "practice_review_count!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "practice_correct_count!: i64",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sm2_review_count!: i64",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sm2_correct_count!: i64",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "due_count!: i64",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "next_due_at?: String",
+        "ordinal": 9,
+        "type_info": "Null"
+      },
+      {
+        "name": "last_answered_at?: String",
+        "ordinal": 10,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "07fbffdff03d054d52701e5cc5517d9fa6e53dd09bef1ba3f1cfc3c15c363f64"
+}

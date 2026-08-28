@@ -13,6 +13,10 @@ pub struct DeckStatsSummary {
     pub mock_review_count: i64,
     pub practice_accuracy: Option<f64>,
     pub practice_review_count: i64,
+    pub sm2_accuracy: Option<f64>,
+    pub sm2_review_count: i64,
+    pub due_count: i64,
+    pub next_due_at: Option<String>,
     pub last_answered_at: Option<String>,
 }
 
@@ -58,6 +62,12 @@ async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckSt
             FROM reviews
             JOIN pool     ON pool.card_id = reviews.card_id
             JOIN sessions ON sessions.id = reviews.session_id
+        ),
+        due AS (
+            SELECT cards.id AS card_id, schedule.due_at AS due_at
+            FROM cards
+            LEFT JOIN schedule ON schedule.card_id = cards.id
+            WHERE cards.deck_id = ? AND cards.archived = 0
         )
         SELECT
           (SELECT COUNT(*) FROM pool)
@@ -73,9 +83,20 @@ async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckSt
               AS "practice_review_count!: i64",
           (SELECT COALESCE(SUM(correct), 0) FROM deck_reviews WHERE mode = 'practice')
               AS "practice_correct_count!: i64",
+          (SELECT COUNT(*) FROM deck_reviews WHERE mode = 'sm2')
+              AS "sm2_review_count!: i64",
+          (SELECT COALESCE(SUM(correct), 0) FROM deck_reviews WHERE mode = 'sm2')
+              AS "sm2_correct_count!: i64",
+          (SELECT COUNT(*) FROM due
+            WHERE due_at IS NULL
+               OR due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+              AS "due_count!: i64",
+          (SELECT MIN(due_at) FROM due)
+              AS "next_due_at?: String",
           (SELECT MAX(answered_at) FROM deck_reviews)
               AS "last_answered_at?: String"
         "#,
+        deck_id,
         deck_id,
     )
     .fetch_one(pool)
@@ -88,6 +109,10 @@ async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckSt
         mock_review_count: row.mock_review_count,
         practice_accuracy: accuracy_of(row.practice_correct_count, row.practice_review_count),
         practice_review_count: row.practice_review_count,
+        sm2_accuracy: accuracy_of(row.sm2_correct_count, row.sm2_review_count),
+        sm2_review_count: row.sm2_review_count,
+        due_count: row.due_count,
+        next_due_at: row.next_due_at,
         last_answered_at: row.last_answered_at,
     })
 }

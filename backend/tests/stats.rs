@@ -41,6 +41,88 @@ async fn insert_session(app: &TestApp, mode: &str, deck_id: i64) -> i64 {
         .last_insert_rowid()
 }
 
+async fn create_flashcard(app: &TestApp, deck_id: i64, prompt: &str, answer: &str) -> i64 {
+    let (_, card) = app
+        .post(
+            "/api/cards",
+            json!({
+                "deck_id": deck_id,
+                "kind": "flashcard",
+                "prompt_md": prompt,
+                "answer_md": answer,
+            }),
+        )
+        .await;
+    card["id"].as_i64().unwrap()
+}
+
+async fn create_short_answer(app: &TestApp, deck_id: i64, prompt: &str) -> i64 {
+    let (_, card) = app
+        .post(
+            "/api/cards",
+            json!({
+                "deck_id": deck_id,
+                "kind": "short_answer",
+                "prompt_md": prompt,
+                "accepted": [
+                    { "text": "k-means", "is_primary": true },
+                    { "text": "lloyd's algorithm", "is_primary": false },
+                ],
+            }),
+        )
+        .await;
+    card["id"].as_i64().unwrap()
+}
+
+async fn create_deck(app: &TestApp, name: &str, module_id: Option<i64>) -> i64 {
+    let (_, deck) = app
+        .post(
+            "/api/decks",
+            json!({ "name": name, "module_id": module_id, "description": "" }),
+        )
+        .await;
+    deck["id"].as_i64().unwrap()
+}
+
+async fn start_sm2_session(app: &TestApp, deck_id: i64) -> i64 {
+    let (status, session) = app
+        .post("/api/sessions", json!({ "mode": "sm2", "deck_ids": [deck_id] }))
+        .await;
+    assert_eq!(status, 201, "could not start an sm2 session: {session}");
+    session["id"].as_i64().unwrap()
+}
+
+async fn set_due_at(app: &TestApp, card_id: i64, due_at: &str) {
+    sqlx::query("UPDATE schedule SET due_at = ? WHERE card_id = ?")
+        .bind(due_at)
+        .bind(card_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+}
+
+async fn answer_self_graded(app: &TestApp, session_id: i64, card_id: i64, self_grade: &str) -> Value {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": self_grade }),
+        )
+        .await;
+    assert_eq!(status, 200, "could not answer: {body}");
+    body
+}
+
+async fn answer_typed(app: &TestApp, session_id: i64, card_id: i64, given: &str) -> Value {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": given }),
+        )
+        .await;
+    assert_eq!(status, 200, "could not answer: {body}");
+    body
+}
+
 async fn insert_review(
     app: &TestApp,
     session_id: i64,
@@ -259,4 +341,98 @@ async fn only_the_ten_most_recent_reviews_feed_the_miss_rate() {
     let entry = card_stats_for(&body, card_id).unwrap();
     assert_eq!(entry["attempt_count"], 22);
     assert_eq!(entry["miss_rate"].as_f64().unwrap(), 1.0);
+}
+
+#[tokio::test]
+async fn sm2_accuracy_is_its_own_figure() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let first = create_flashcard(&app, deck_id, "one", "answer").await;
+    let second = create_flashcard(&app, deck_id, "two", "answer").await;
+    let third = create_flashcard(&app, deck_id, "three", "answer").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    answer_self_graded(&app, session_id, first, "good").await;
+    answer_self_graded(&app, session_id, second, "again").await;
+
+    let practice_session = insert_session(&app, "practice", deck_id).await;
+    insert_review(&app, practice_session, third, true, "2026-08-21T10:00:00Z").await;
+
+    let (_, stats) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let summary = &stats["summary"];
+
+    assert_eq!(summary["sm2_review_count"], 2, "practice reviews must not leak into sm2");
+    assert_eq!(summary["sm2_accuracy"], 0.5);
+    assert_eq!(summary["practice_accuracy"], 1.0, "sm2 must not leak into practice");
+    assert!(summary["mock_accuracy"].is_null(), "sm2 must not leak into mock");
+    assert_eq!(summary["practice_review_count"], 1);
+    assert_eq!(summary["mock_review_count"], 0);
+}
+
+#[tokio::test]
+async fn sm2_accuracy_is_null_and_not_zero_without_reviews() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    create_flashcard(&app, deck_id, "one", "answer").await;
+
+    let (_, stats) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+
+    assert!(stats["summary"]["sm2_accuracy"].is_null());
+    assert_eq!(stats["summary"]["sm2_review_count"], 0);
+}
+
+#[tokio::test]
+async fn an_overridden_sm2_review_counts_as_correct() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_short_answer(&app, deck_id, "short").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let answered = answer_typed(&app, session_id, card_id, "wrong").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+    app.post(&format!("/api/reviews/{review_id}/override"), json!({})).await;
+
+    let (_, stats) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    assert_eq!(stats["summary"]["sm2_accuracy"], 1.0);
+}
+
+#[tokio::test]
+async fn the_due_count_excludes_archived_cards_and_reports_the_next_due_date() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let due_card = create_flashcard(&app, deck_id, "due", "answer").await;
+    let later_card = create_flashcard(&app, deck_id, "later", "answer").await;
+    let archived_card = create_flashcard(&app, deck_id, "archived", "answer").await;
+    set_due_at(&app, due_card, "2020-01-01T00:00:00Z").await;
+    set_due_at(&app, later_card, "2099-01-01T00:00:00Z").await;
+    app.post(&format!("/api/cards/{archived_card}/archive"), json!({})).await;
+
+    let (_, stats) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let summary = &stats["summary"];
+
+    assert_eq!(summary["due_count"], 1, "only the overdue, non-archived card: {summary}");
+    assert_eq!(summary["next_due_at"], "2020-01-01T00:00:00Z");
+}
+
+#[tokio::test]
+async fn a_card_with_no_schedule_row_still_counts_as_due() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let scheduled_card = create_flashcard(&app, deck_id, "scheduled", "answer").await;
+    let unscheduled_card = create_flashcard(&app, deck_id, "unscheduled", "answer").await;
+    set_due_at(&app, scheduled_card, "2099-01-01T00:00:00Z").await;
+
+    sqlx::query("DELETE FROM schedule WHERE card_id = ?")
+        .bind(unscheduled_card)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (_, stats) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let summary = &stats["summary"];
+
+    assert_eq!(
+        summary["due_count"], 1,
+        "the card missing a schedule row must count as due, not the not-yet-due card: {summary}",
+    );
 }
