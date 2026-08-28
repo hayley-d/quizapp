@@ -18,16 +18,15 @@ it belongs in `docs/HANDOVER.md` by then.
 
 ## Where things stand
 
-**Tasks 1-3 are complete and reviewed clean. Task 4 is implemented and was in review when the
-session ended.** Nothing is merged; the branch is `feat/part7-sm2`, cut from `main` at
-`1b8e466` (the Part 6 merge).
+**Tasks 1-4 are complete and reviewed clean.** Nothing is merged; the branch is
+`feat/part7-sm2`, cut from `main` at `1b8e466` (the Part 6 merge).
 
 | Task | State | Commits |
 | --- | --- | --- |
 | 1 — the pure SM-2 module | complete, review clean (1 fix round) | `0d1b0a9..7b893df` |
 | 2 — sm2 session creation | complete, review clean | `7b893df..9f49a8e` |
 | 3 — due-ordered serving | complete, review clean, **zero findings** | `9f49a8e..ebbe936` |
-| 4 — the schedule write | **implemented, review outcome unknown** | `40e87e4` |
+| 4 — the schedule write | complete, review clean (1 minor deferred) | `40e87e4` |
 | 5 — override replay | not started | — |
 | 6 — stats bucket and due counts | not started | — |
 | 7 — frontend | not started | — |
@@ -38,17 +37,23 @@ is clean; clippy `--all-targets -D warnings` is clean.
 
 ### Your first action
 
-**Re-review Task 4 (`ebbe936..40e87e4`) before building on it.** A review was dispatched but
-its verdict never reached the ledger. Do not assume it passed. The two things to check hardest
-are the ones the task exists for:
+**Start at Task 5 (the override replay).** Tasks 1-4 are done and reviewed; the review verdict
+for Task 4 arrived after the handover was first written and is recorded in the ledger.
 
-- **Atomicity** — the `reviews` insert and the `schedule` write must share one transaction, and
-  a failed schedule write must leave no review row behind.
-- **`due_at` is midnight UTC of the due day**, computed from the review's own `answered_at`,
-  never from `now`.
+Two properties Task 4 established, which Task 5 builds directly on — verified rather than
+assumed, so you can rely on them:
 
-The review package is already generated at
-`.mitis/sdd/2026-08-28-part7-sm2/review-ebbe936..40e87e4.diff`.
+- **The answer write is atomic.** The `reviews` insert and the `schedule` write share one
+  transaction. `a_failed_schedule_write_rolls_back_the_review` drops the `schedule` table
+  before `/answer`, so the insert completes and the failure lands *after* it — a rollback is
+  genuinely exercised, and moving the commit earlier turns the test red.
+- **`due_at` is midnight UTC of the due day**, from the review's own `answered_at`, never
+  `now`. The `assert_eq!(due_at.len(), 20)` is what pins this: `date()` yields 20 characters
+  and the `datetime()` mutation yields 29.
+
+Note one incidental widening from Task 4, accepted at review: **all** modes now insert their
+`reviews` row inside a transaction, not only sm2. It was the minimal way to satisfy the
+requirement.
 
 ## The caveat that matters most
 
@@ -64,7 +69,8 @@ suspect:
    message text, so the acceptance criterion "with an sm2-specific message" was unpinned.
 3. **Task 4, an unfailable suffix check.** `assert!(due_at.ends_with("T00:00:00Z"))` could not
    fail, because the SQL appends that literal unconditionally — `datetime()` would produce
-   `...21:00:00T00:00:00Z` and still pass. Fixed with a length assertion.
+   `...21:00:00T00:00:00Z` and still pass. Fixed with a length assertion (20 versus 29
+   characters), which the reviewer confirmed does discriminate.
 
 **The standing rule, now recorded in the plan: where a constant IS the specification, assert
 the literal.** And run the mutations — one change at a time.
@@ -166,6 +172,12 @@ cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint
 
 `tsc -b --noEmit`, not `tsc --noEmit` — the bare form reads a solution file with `"files": []`,
 finds nothing and exits 0 whatever the code says.
+
+## Deferred minors, for the final whole-branch review to triage
+
+- **Task 4:** `load_schedule_state` and `write_schedule` sit after the `answer` handler
+  (`sessions.rs:1118+`) rather than beside `count_due` as the plan said. Purely organizational,
+  no functional effect.
 
 ## Still unresolved for Part 7
 
