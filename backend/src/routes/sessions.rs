@@ -9,9 +9,10 @@ use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
 use crate::normalise::normalise;
 use crate::grading::{
-    correctness_of_self_grade, grade_multiple_choice, grade_short_answer, parse_self_grade,
-    self_grade_as_text, GradableChoice,
+    correctness_of_self_grade, grade_flashcard_typed, grade_multiple_choice, grade_short_answer,
+    parse_self_grade, self_grade_as_text, GradableChoice,
 };
+use crate::mock::{first_unanswered, mock_order};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
 use crate::state::AppState;
@@ -50,8 +51,8 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
 
     if !MODES.contains(&body.mode.as_str()) {
         push_error("mode", "mode must be practice, mock or sm2");
-    } else if body.mode != "practice" {
-        push_error("mode", "Only practice mode is available yet");
+    } else if body.mode == "sm2" {
+        push_error("mode", "Only practice and mock modes are available yet");
     }
 
     match (&body.deck_ids, body.module_id) {
@@ -64,7 +65,14 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
     }
 
     if body.target_count.is_some() {
-        push_error("target_count", "Practice sessions have no target count");
+        if body.mode == "mock" {
+            push_error(
+                "target_count",
+                "A mock test is the whole deck, so its length is not yours to set",
+            );
+        } else {
+            push_error("target_count", "Practice sessions have no target count");
+        }
     }
 
     if errors.is_empty() {
@@ -203,14 +211,17 @@ async fn create(
         return Err(AppError::validation([(field, "Those decks have no cards to practise")]));
     }
 
+    let target_count = if body.mode == "mock" { Some(pool_count) } else { None };
+
     let session_id = sqlx::query_scalar!(
         r#"
         INSERT INTO sessions (mode, deck_ids, target_count)
-        VALUES (?, ?, NULL)
+        VALUES (?, ?, ?)
         RETURNING id AS "id!: i64"
         "#,
         body.mode,
         encoded,
+        target_count,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -236,11 +247,29 @@ pub struct NextCardResponse {
 }
 
 #[derive(Serialize)]
-pub struct NextResponse {
+pub struct PracticeNextResponse {
+    pub mode: &'static str,
     pub card: NextCardResponse,
     pub pool_count: i64,
     pub answered_count: i64,
     pub correct_count: i64,
+}
+
+#[derive(Serialize)]
+pub struct MockNextResponse {
+    pub mode: &'static str,
+    pub card: NextCardResponse,
+    pub target_count: Option<i64>,
+    pub started_at: String,
+    pub pool_count: i64,
+    pub answered_count: i64,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum NextResponse {
+    Practice(PracticeNextResponse),
+    Mock(MockNextResponse),
 }
 
 #[derive(Deserialize)]
@@ -256,8 +285,101 @@ pub struct RevealResponse {
     pub explanation_md: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct ResultQuestion {
+    pub review_id: i64,
+    pub card_id: i64,
+    pub kind: String,
+    pub prompt_md: String,
+    pub image_path: Option<String>,
+    pub given: Option<String>,
+    pub self_grade: Option<String>,
+    pub expected: Vec<String>,
+    pub explanation_md: Option<String>,
+    pub correct: bool,
+    pub overridden: bool,
+    pub can_override: bool,
+    pub ms: Option<i64>,
+    pub answered_at: String,
+}
+
+#[derive(Serialize)]
+pub struct ResultsResponse {
+    pub summary: SummaryResponse,
+    pub questions: Vec<ResultQuestion>,
+}
+
+pub struct ResultReviewRow {
+    pub review_id: i64,
+    pub card_id: i64,
+    pub kind: String,
+    pub prompt_md: String,
+    pub image_path: Option<String>,
+    pub given: Option<String>,
+    pub self_grade: Option<String>,
+    pub answer_md: Option<String>,
+    pub explanation_md: Option<String>,
+    pub correct: bool,
+    pub overridden: bool,
+    pub ms: Option<i64>,
+    pub answered_at: String,
+}
+
+pub fn expected_for_kind(
+    kind: &str,
+    answer_md: &Option<String>,
+    correct_choices: &[String],
+    accepted: &[String],
+) -> Vec<String> {
+    match kind {
+        "mc_single" => correct_choices.to_vec(),
+        "short_answer" => accepted.to_vec(),
+        _ => answer_md.clone().into_iter().collect(),
+    }
+}
+
+pub fn can_override_result(kind: &str, correct: bool) -> bool {
+    !correct && matches!(kind, "short_answer" | "flashcard")
+}
+
+pub fn assemble_results(
+    rows: Vec<ResultReviewRow>,
+    correct_choices_by_card: &std::collections::HashMap<i64, Vec<String>>,
+    accepted_by_card: &std::collections::HashMap<i64, Vec<String>>,
+) -> Vec<ResultQuestion> {
+    let empty: Vec<String> = Vec::new();
+    rows.into_iter()
+        .map(|row| {
+            let correct_choices =
+                correct_choices_by_card.get(&row.card_id).unwrap_or(&empty).as_slice();
+            let accepted = accepted_by_card.get(&row.card_id).unwrap_or(&empty).as_slice();
+            let expected =
+                expected_for_kind(&row.kind, &row.answer_md, correct_choices, accepted);
+            ResultQuestion {
+                review_id: row.review_id,
+                card_id: row.card_id,
+                can_override: can_override_result(&row.kind, row.correct),
+                kind: row.kind,
+                prompt_md: row.prompt_md,
+                image_path: row.image_path,
+                given: row.given,
+                self_grade: row.self_grade,
+                expected,
+                explanation_md: row.explanation_md,
+                correct: row.correct,
+                overridden: row.overridden,
+                ms: row.ms,
+                answered_at: row.answered_at,
+            }
+        })
+        .collect()
+}
+
 pub struct ActiveSession {
     pub id: i64,
+    pub mode: String,
+    pub target_count: Option<i64>,
+    pub started_at: String,
     pub deck_ids_json: String,
 }
 
@@ -273,7 +395,10 @@ pub async fn load_active_session(
     session_id: i64,
 ) -> AppResult<ActiveSession> {
     let row = sqlx::query!(
-        r#"SELECT id AS "id!: i64", deck_ids, ended_at FROM sessions WHERE id = ?"#,
+        r#"
+        SELECT id AS "id!: i64", mode, target_count, started_at, deck_ids, ended_at
+        FROM sessions WHERE id = ?
+        "#,
         session_id,
     )
     .fetch_optional(pool)
@@ -283,7 +408,13 @@ pub async fn load_active_session(
     if row.ended_at.is_some() {
         return Err(AppError::Conflict("This session has ended".to_string()));
     }
-    Ok(ActiveSession { id: row.id, deck_ids_json: row.deck_ids })
+    Ok(ActiveSession {
+        id: row.id,
+        mode: row.mode,
+        target_count: row.target_count,
+        started_at: row.started_at,
+        deck_ids_json: row.deck_ids,
+    })
 }
 
 pub async fn load_pool_card(
@@ -392,11 +523,113 @@ async fn count_progress(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<(
     Ok((row.answered_count, row.correct_count))
 }
 
+async fn load_unanswered_mock_card_ids(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+    session_id: i64,
+) -> AppResult<Vec<i64>> {
+    let rows = sqlx::query_scalar!(
+        r#"
+        SELECT cards.id AS "card_id!: i64"
+        FROM cards
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND NOT EXISTS (
+                SELECT 1 FROM reviews
+                WHERE reviews.card_id = cards.id AND reviews.session_id = ?
+              )
+        ORDER BY cards.id
+        "#,
+        deck_ids_json,
+        session_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+async fn count_pool(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i64> {
+    let count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "pool_count!: i64"
+        FROM cards
+        WHERE archived = 0 AND deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+        "#,
+        deck_ids_json,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(count)
+}
+
+async fn load_served_card(
+    pool: &sqlx::SqlitePool,
+    card_id: i64,
+    choice_order_seed: Option<u64>,
+) -> AppResult<NextCardResponse> {
+    let card = sqlx::query!(
+        r#"SELECT id AS "id!: i64", kind, prompt_md, image_path FROM cards WHERE id = ?"#,
+        card_id,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    let mut choices = sqlx::query_as!(
+        NextChoiceResponse,
+        r#"SELECT id AS "id!: i64", text_md FROM choices WHERE card_id = ? ORDER BY position"#,
+        card_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    match choice_order_seed {
+        Some(seed) => {
+            let choice_ids: Vec<i64> = choices.iter().map(|choice| choice.id).collect();
+            let ordered = mock_order(&choice_ids, seed);
+            choices.sort_by_key(|choice| {
+                ordered.iter().position(|id| *id == choice.id).unwrap_or(usize::MAX)
+            });
+        }
+        None => choices.shuffle(&mut rand::thread_rng()),
+    }
+
+    Ok(NextCardResponse {
+        id: card.id,
+        kind: card.kind,
+        prompt_md: card.prompt_md,
+        image_path: card.image_path,
+        choices,
+    })
+}
+
 async fn next(
     State(state): State<AppState>,
     Path(session_id): Path<i64>,
 ) -> AppResult<Json<NextResponse>> {
     let session = load_active_session(&state.pool, session_id).await?;
+
+    if session.mode == "mock" {
+        let unanswered =
+            load_unanswered_mock_card_ids(&state.pool, &session.deck_ids_json, session.id).await?;
+        let seed = session.id as u64;
+        let card_id = first_unanswered(&unanswered, seed).ok_or_else(|| {
+            AppError::Conflict("Every card in this mock test has been answered".to_string())
+        })?;
+
+        let card =
+            load_served_card(&state.pool, card_id, Some(seed ^ (card_id as u64))).await?;
+        let pool_count = count_pool(&state.pool, &session.deck_ids_json).await?;
+        let (answered_count, _) = count_progress(&state.pool, session.id).await?;
+
+        return Ok(Json(NextResponse::Mock(MockNextResponse {
+            mode: "mock",
+            card,
+            target_count: session.target_count,
+            started_at: session.started_at,
+            pool_count,
+            answered_count,
+        })));
+    }
 
     let candidates = fold_candidate_rows(load_candidates(&state.pool, &session.deck_ids_json).await?);
     let recent_review_card_ids = load_recent_review_card_ids(&state.pool, session.id).await?;
@@ -406,36 +639,16 @@ async fn next(
             AppError::Conflict("This session has no cards left to practise".to_string())
         })?;
 
-    let card = sqlx::query!(
-        r#"SELECT id AS "id!: i64", kind, prompt_md, image_path FROM cards WHERE id = ?"#,
-        card_id,
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    let mut choices = sqlx::query_as!(
-        NextChoiceResponse,
-        r#"SELECT id AS "id!: i64", text_md FROM choices WHERE card_id = ? ORDER BY position"#,
-        card_id,
-    )
-    .fetch_all(&state.pool)
-    .await?;
-    choices.shuffle(&mut rand::thread_rng());
-
+    let card = load_served_card(&state.pool, card_id, None).await?;
     let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
 
-    Ok(Json(NextResponse {
-        card: NextCardResponse {
-            id: card.id,
-            kind: card.kind,
-            prompt_md: card.prompt_md,
-            image_path: card.image_path,
-            choices,
-        },
+    Ok(Json(NextResponse::Practice(PracticeNextResponse {
+        mode: "practice",
+        card,
         pool_count: candidates.len() as i64,
         answered_count,
         correct_count,
-    }))
+    })))
 }
 
 async fn reveal(
@@ -444,6 +657,11 @@ async fn reveal(
     AppJson(body): AppJson<RevealRequest>,
 ) -> AppResult<Json<RevealResponse>> {
     let session = load_active_session(&state.pool, session_id).await?;
+
+    if session.mode == "mock" {
+        return Err(AppError::Conflict("A mock test does not reveal answers".to_string()));
+    }
+
     let card = load_pool_card(&state.pool, &session.deck_ids_json, body.card_id).await?;
 
     if card.kind != "flashcard" {
@@ -472,12 +690,27 @@ pub struct SubmitAnswer {
 }
 
 #[derive(Serialize)]
-pub struct AnswerResponse {
+pub struct PracticeAnswerResponse {
+    pub mode: &'static str,
     pub review_id: i64,
     pub correct: bool,
     pub expected: Vec<String>,
     pub explanation_md: Option<String>,
     pub can_override: bool,
+}
+
+#[derive(Serialize)]
+pub struct MockAnswerResponse {
+    pub mode: &'static str,
+    pub answered_count: i64,
+    pub pool_count: i64,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum AnswerResponse {
+    Practice(PracticeAnswerResponse),
+    Mock(MockAnswerResponse),
 }
 
 struct GradedAnswer {
@@ -491,12 +724,15 @@ fn reject_fields_for_other_kinds(
     errors: &mut Vec<FieldError>,
     body: &SubmitAnswer,
     allowed: &str,
+    mode: &str,
 ) {
     if allowed != "given" && body.given.is_some() {
-        errors.push(FieldError {
-            field: "given".to_string(),
-            message: "Only a short-answer card takes typed text".to_string(),
-        });
+        let message = if mode == "mock" {
+            "Only a short-answer or flashcard takes typed text"
+        } else {
+            "Only a short-answer card takes typed text"
+        };
+        errors.push(FieldError { field: "given".to_string(), message: message.to_string() });
     }
     if allowed != "choice_id" && body.choice_id.is_some() {
         errors.push(FieldError {
@@ -505,10 +741,12 @@ fn reject_fields_for_other_kinds(
         });
     }
     if allowed != "self_grade" && body.self_grade.is_some() {
-        errors.push(FieldError {
-            field: "self_grade".to_string(),
-            message: "Only a flashcard is self-graded".to_string(),
-        });
+        let message = if mode == "mock" {
+            "A mock test grades flashcards automatically"
+        } else {
+            "Only a flashcard is self-graded"
+        };
+        errors.push(FieldError { field: "self_grade".to_string(), message: message.to_string() });
     }
 }
 
@@ -516,6 +754,7 @@ async fn grade_answer(
     pool: &sqlx::SqlitePool,
     card: &PoolCard,
     body: &SubmitAnswer,
+    mode: &str,
 ) -> AppResult<GradedAnswer> {
     let mut errors: Vec<FieldError> = Vec::new();
 
@@ -528,7 +767,7 @@ async fn grade_answer(
 
     match card.kind.as_str() {
         "mc_single" => {
-            reject_fields_for_other_kinds(&mut errors, body, "choice_id");
+            reject_fields_for_other_kinds(&mut errors, body, "choice_id", mode);
             let Some(choice_id) = body.choice_id else {
                 errors.push(FieldError {
                     field: "choice_id".to_string(),
@@ -580,7 +819,7 @@ async fn grade_answer(
             })
         }
         "short_answer" => {
-            reject_fields_for_other_kinds(&mut errors, body, "given");
+            reject_fields_for_other_kinds(&mut errors, body, "given", mode);
             let trimmed = body.given.as_deref().map(str::trim).unwrap_or_default();
             if body.given.is_none() {
                 errors.push(FieldError {
@@ -618,8 +857,41 @@ async fn grade_answer(
                 stored_self_grade: None,
             })
         }
+        "flashcard" if mode == "mock" => {
+            reject_fields_for_other_kinds(&mut errors, body, "given", mode);
+
+            let trimmed = match body.given.as_deref().map(str::trim) {
+                None => {
+                    errors.push(FieldError {
+                        field: "given".to_string(),
+                        message: "This field is required".to_string(),
+                    });
+                    None
+                }
+                Some("") => {
+                    errors.push(FieldError {
+                        field: "given".to_string(),
+                        message: "Type an answer".to_string(),
+                    });
+                    None
+                }
+                Some(text) => Some(text),
+            };
+            if !errors.is_empty() {
+                return Err(AppError::Validation(errors));
+            }
+            let trimmed = trimmed.ok_or(AppError::Internal)?;
+            let answer_md = card.answer_md.as_deref().unwrap_or_default();
+
+            Ok(GradedAnswer {
+                correct: grade_flashcard_typed(trimmed, answer_md),
+                expected: card.answer_md.clone().into_iter().collect(),
+                stored_given: Some(trimmed.to_string()),
+                stored_self_grade: None,
+            })
+        }
         "flashcard" => {
-            reject_fields_for_other_kinds(&mut errors, body, "self_grade");
+            reject_fields_for_other_kinds(&mut errors, body, "self_grade", mode);
             let parsed = match body.self_grade.as_deref() {
                 None => {
                     errors.push(FieldError {
@@ -662,7 +934,27 @@ async fn answer(
 ) -> AppResult<Json<AnswerResponse>> {
     let session = load_active_session(&state.pool, session_id).await?;
     let card = load_pool_card(&state.pool, &session.deck_ids_json, body.card_id).await?;
-    let graded = grade_answer(&state.pool, &card, &body).await?;
+
+    if session.mode == "mock" {
+        let already_answered = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) AS "already_answered!: i64"
+            FROM reviews WHERE session_id = ? AND card_id = ?
+            "#,
+            session.id,
+            card.id,
+        )
+        .fetch_one(&state.pool)
+        .await?;
+
+        if already_answered > 0 {
+            return Err(AppError::Conflict(
+                "That card has already been answered in this mock test".to_string(),
+            ));
+        }
+    }
+
+    let graded = grade_answer(&state.pool, &card, &body, &session.mode).await?;
 
     let review_id = sqlx::query_scalar!(
         r#"
@@ -680,13 +972,24 @@ async fn answer(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(AnswerResponse {
+    if session.mode == "mock" {
+        let (answered_count, _) = count_progress(&state.pool, session.id).await?;
+        let pool_count = count_pool(&state.pool, &session.deck_ids_json).await?;
+        return Ok(Json(AnswerResponse::Mock(MockAnswerResponse {
+            mode: "mock",
+            answered_count,
+            pool_count,
+        })));
+    }
+
+    Ok(Json(AnswerResponse::Practice(PracticeAnswerResponse {
+        mode: "practice",
         review_id,
         correct: graded.correct,
         expected: graded.expected,
         explanation_md: card.explanation_md,
         can_override: card.kind == "short_answer" && !graded.correct,
-    }))
+    })))
 }
 
 #[derive(Serialize)]
@@ -722,9 +1025,13 @@ async fn override_review(
                reviews.card_id AS "card_id!: i64",
                reviews.given,
                reviews.correct AS "correct!: bool",
-               cards.kind
+               cards.kind,
+               cards.answer_md,
+               sessions.mode,
+               sessions.ended_at
         FROM reviews
         JOIN cards ON cards.id = reviews.card_id
+        JOIN sessions ON sessions.id = reviews.session_id
         WHERE reviews.id = ?
         "#,
         review_id,
@@ -733,9 +1040,20 @@ async fn override_review(
     .await?
     .ok_or(AppError::NotFound("review"))?;
 
-    if review.kind != "short_answer" {
+    if review.mode == "mock" && review.ended_at.is_none() {
         return Err(AppError::Conflict(
-            "Only a short-answer review can be overridden".to_string(),
+            "Submit the mock test before overriding an answer".to_string(),
+        ));
+    }
+
+    if review.kind == "mc_single" {
+        return Err(AppError::Conflict(
+            "A multiple-choice answer cannot be overridden".to_string(),
+        ));
+    }
+    if review.kind == "flashcard" && review.mode != "mock" {
+        return Err(AppError::Conflict(
+            "Grade the flashcard again instead of overriding it".to_string(),
         ));
     }
     if review.correct {
@@ -748,6 +1066,23 @@ async fn override_review(
     let comparison_key = normalise(&given);
     if comparison_key.is_empty() {
         return Err(AppError::Conflict("There is no answer to accept".to_string()));
+    }
+
+    if review.kind == "flashcard" {
+        sqlx::query!(
+            "UPDATE reviews SET correct = 1, overridden = 1 WHERE id = ?",
+            review_id,
+        )
+        .execute(&state.pool)
+        .await?;
+
+        return Ok(Json(OverrideResponse {
+            review_id,
+            correct: true,
+            overridden: true,
+            accepted_added: false,
+            expected: review.answer_md.into_iter().collect(),
+        }));
     }
 
     let mut transaction = state.pool.begin().await?;
@@ -822,11 +1157,15 @@ async fn finish(
     .execute(&state.pool)
     .await?;
 
+    Ok(Json(summarise(&state.pool, session_id).await?))
+}
+
+async fn summarise(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<SummaryResponse> {
     let session = sqlx::query!(
         r#"SELECT id AS "id!: i64", mode, started_at, ended_at FROM sessions WHERE id = ?"#,
         session_id,
     )
-    .fetch_one(&state.pool)
+    .fetch_one(pool)
     .await?;
 
     let statistics = sqlx::query!(
@@ -840,12 +1179,12 @@ async fn finish(
         "#,
         session_id,
     )
-    .fetch_one(&state.pool)
+    .fetch_one(pool)
     .await?;
 
     let accuracy = accuracy_for(statistics.correct_count, statistics.answered_count);
 
-    Ok(Json(SummaryResponse {
+    Ok(SummaryResponse {
         id: session.id,
         mode: session.mode,
         started_at: session.started_at,
@@ -856,7 +1195,95 @@ async fn finish(
         distinct_card_count: statistics.distinct_card_count,
         accuracy,
         total_ms: statistics.total_ms,
-    }))
+    })
+}
+
+
+async fn results(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+) -> AppResult<Json<ResultsResponse>> {
+    let session = sqlx::query!(
+        r#"SELECT id AS "id!: i64", ended_at FROM sessions WHERE id = ?"#,
+        session_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("session"))?;
+
+    if session.ended_at.is_none() {
+        return Err(AppError::Conflict(
+            "This session has not been submitted yet".to_string(),
+        ));
+    }
+
+    let rows = sqlx::query_as!(
+        ResultReviewRow,
+        r#"
+        SELECT reviews.id         AS "review_id!: i64",
+               reviews.card_id    AS "card_id!: i64",
+               reviews.answered_at,
+               reviews.given,
+               reviews.self_grade,
+               reviews.correct    AS "correct!: bool",
+               reviews.overridden AS "overridden!: bool",
+               reviews.ms,
+               cards.kind,
+               cards.prompt_md,
+               cards.image_path,
+               cards.answer_md,
+               cards.explanation_md
+        FROM reviews
+        JOIN cards ON cards.id = reviews.card_id
+        WHERE reviews.session_id = ?
+        ORDER BY reviews.answered_at, reviews.id
+        "#,
+        session_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let choice_rows = sqlx::query!(
+        r#"
+        SELECT choices.card_id AS "card_id!: i64", choices.text_md
+        FROM choices
+        WHERE choices.is_correct = 1
+          AND choices.card_id IN (SELECT card_id FROM reviews WHERE session_id = ?)
+        ORDER BY choices.card_id, choices.position
+        "#,
+        session_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let accepted_rows = sqlx::query!(
+        r#"
+        SELECT accepted.card_id AS "card_id!: i64", accepted.text
+        FROM accepted
+        WHERE accepted.card_id IN (SELECT card_id FROM reviews WHERE session_id = ?)
+        ORDER BY accepted.card_id, accepted.is_primary DESC, accepted.id
+        "#,
+        session_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut correct_choices_by_card: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in choice_rows {
+        correct_choices_by_card.entry(row.card_id).or_default().push(row.text_md);
+    }
+
+    let mut accepted_by_card: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in accepted_rows {
+        accepted_by_card.entry(row.card_id).or_default().push(row.text);
+    }
+
+    let questions = assemble_results(rows, &correct_choices_by_card, &accepted_by_card);
+    let summary = summarise(&state.pool, session_id).await?;
+
+    Ok(Json(ResultsResponse { summary, questions }))
 }
 
 pub fn router() -> Router<AppState> {
@@ -866,6 +1293,7 @@ pub fn router() -> Router<AppState> {
         .route("/sessions/{id}/reveal", post(reveal))
         .route("/sessions/{id}/answer", post(answer))
         .route("/sessions/{id}/finish", post(finish))
+        .route("/sessions/{id}/results", get(results))
         .route("/reviews/{id}/override", post(override_review))
 }
 

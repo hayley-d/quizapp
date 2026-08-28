@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", deck_ids, ended_at FROM sessions WHERE id = ?",
+  "query": "SELECT id AS \"id!: i64\", ended_at FROM sessions WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -9,13 +9,8 @@
         "type_info": "Integer"
       },
       {
-        "name": "deck_ids",
-        "ordinal": 1,
-        "type_info": "Text"
-      },
-      {
         "name": "ended_at",
-        "ordinal": 2,
+        "ordinal": 1,
         "type_info": "Text"
       }
     ],
@@ -24,9 +19,8 @@
     },
     "nullable": [
       false,
-      false,
       true
     ]
   },
-  "hash": "ac06094d225e6922c18266617fa9aa005cda668f18e19c3a6d7c732bd02a6143"
+  "hash": "d5fe1feb13bc219ded9d8a91848fadcb4dc15ed5cbcc243bd5a8f564abb6f49e"
 }

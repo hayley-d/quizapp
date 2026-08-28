@@ -42,8 +42,8 @@ const TEST_TYPE_OPTIONS: TestTypeOption[] = [
   {
     mode: 'mock',
     label: 'Mock test',
-    note: 'Arrives in part 5.',
-    available: false,
+    note: 'Every card in the deck, once, in a fixed order. No feedback until the end.',
+    available: true,
     Icon: FileText,
   },
   {
@@ -54,6 +54,12 @@ const TEST_TYPE_OPTIONS: TestTypeOption[] = [
     Icon: Repeat,
   },
 ]
+
+const SESSION_ROUTE_BY_MODE: Record<SessionMode, string> = {
+  practice: '/session',
+  mock: '/mock',
+  sm2: '/session',
+}
 
 export function DeckPage() {
   const { id } = useParams<{ id: string }>()
@@ -161,7 +167,7 @@ export function DeckPage() {
     setStartingMode(mode)
     try {
       const session = await api.createSession({ mode, deck_ids: [deckId] })
-      navigate(`/session/${session.id}`)
+      navigate(`${SESSION_ROUTE_BY_MODE[mode]}/${session.id}`)
     } catch (error: unknown) {
       if (error instanceof ApiError) {
         const messages = Object.values(error.byField())

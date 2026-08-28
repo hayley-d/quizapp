@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT reviews.id         AS \"review_id!: i64\",\n               reviews.card_id    AS \"card_id!: i64\",\n               reviews.answered_at,\n               reviews.given,\n               reviews.self_grade,\n               reviews.correct    AS \"correct!: bool\",\n               reviews.overridden AS \"overridden!: bool\",\n               reviews.ms,\n               cards.kind,\n               cards.prompt_md,\n               cards.image_path,\n               cards.answer_md,\n               cards.explanation_md\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        WHERE reviews.session_id = ?\n        ORDER BY reviews.answered_at, reviews.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "review_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "card_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "answered_at",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "given",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "self_grade",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "correct!: bool",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "overridden!: bool",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "ms",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "kind",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "prompt_md",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "image_path",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "answer_md",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "explanation_md",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "cfab9508e9466ece153b15d88ded3894a3120d19dad9cb4d9c0eec8d68d60a96"
+}

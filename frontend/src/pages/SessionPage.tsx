@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { AnswerVerdict } from '@/components/session/AnswerVerdict'
@@ -16,7 +16,7 @@ import {
   api,
   ApiError,
   type AnswerResult,
-  type NextResponse,
+  type PracticeNextResponse,
   type RevealedAnswer,
   type SelfGrade,
   type SessionSummary,
@@ -39,8 +39,9 @@ function elapsedSince(startedAt: number): number {
 export function SessionPage() {
   const { id } = useParams<{ id: string }>()
   const sessionId = id !== undefined && /^\d+$/.test(id) ? Number(id) : null
+  const navigate = useNavigate()
 
-  const [served, setServed] = useState<NextResponse | null>(null)
+  const [served, setServed] = useState<PracticeNextResponse | null>(null)
   const [verdict, setVerdict] = useState<AnswerResult | null>(null)
   const [revealed, setRevealed] = useState<RevealedAnswer | null>(null)
   const [summary, setSummary] = useState<SessionSummary | null>(null)
@@ -68,6 +69,10 @@ export function SessionPage() {
     try {
       const response = await api.nextCard(sessionId, controller.signal)
       if (inFlight.current !== controller) return
+      if (response.mode === 'mock') {
+        navigate(`/mock/${sessionId}`, { replace: true })
+        return
+      }
       setServed(response)
       setVerdict(null)
       setRevealed(null)
@@ -89,7 +94,7 @@ export function SessionPage() {
         setLoaded(true)
       }
     }
-  }, [sessionId])
+  }, [sessionId, navigate])
 
   useEffect(() => {
     void loadNext()

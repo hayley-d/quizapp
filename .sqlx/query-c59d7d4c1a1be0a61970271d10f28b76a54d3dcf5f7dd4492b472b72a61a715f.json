@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT COUNT(*) AS \"already_answered!: i64\"\n            FROM reviews WHERE session_id = ? AND card_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "already_answered!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c59d7d4c1a1be0a61970271d10f28b76a54d3dcf5f7dd4492b472b72a61a715f"
+}

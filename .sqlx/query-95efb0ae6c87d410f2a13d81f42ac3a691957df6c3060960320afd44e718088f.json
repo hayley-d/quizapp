@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT id AS \"id!: i64\", mode, target_count, started_at, deck_ids, ended_at\n        FROM sessions WHERE id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mode",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_count",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "started_at",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "deck_ids",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "ended_at",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "95efb0ae6c87d410f2a13d81f42ac3a691957df6c3060960320afd44e718088f"
+}

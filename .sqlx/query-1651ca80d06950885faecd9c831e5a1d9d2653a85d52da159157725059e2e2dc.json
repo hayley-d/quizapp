@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT choices.card_id AS \"card_id!: i64\", choices.text_md\n        FROM choices\n        WHERE choices.is_correct = 1\n          AND choices.card_id IN (SELECT card_id FROM reviews WHERE session_id = ?)\n        ORDER BY choices.card_id, choices.position\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "text_md",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1651ca80d06950885faecd9c831e5a1d9d2653a85d52da159157725059e2e2dc"
+}
