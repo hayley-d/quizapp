@@ -2,10 +2,10 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `feat/part7-sm2` at `8d995a2`.
-**Part 7 (SM-2) is implemented and reviewed, but not yet merged.** Tasks 1-8 of the plan are
-complete; the branch has not been merged to `main`, so `docs/PART-7-HANDOVER.md` — a temporary
-mid-execution handover, superseded by this document — has not yet been deleted. Part 7 reached
+**Last updated:** 2026-08-28, on `main`, at the merge of `feat/part7-sm2` (`85368ab`).
+**Part 7 (SM-2) is done and merged.** Tasks 1-8 of the plan are complete and the branch has
+landed on `main`; `docs/PART-7-HANDOVER.md` — a temporary mid-execution handover, superseded
+by this document — was deleted as part of that merge. Part 7 reached
 a green automated gate (below) with an **undriven** browser walkthrough — the Chrome
 extension is still not connected on this machine, so all nine points of the walkthrough at the
 brief's Step 5 are outstanding. See "Part 7 — verification status" under Outstanding for the
@@ -51,9 +51,9 @@ document is the record of what the app is meant to be, and it is kept current.
 ## Where things stand
 
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
-redesign that followed them ("Part 2c" below). Parts 3, 4, 5 and 6 are merged to `main`.
-Part 7 (SM-2) is implemented on `feat/part7-sm2` at `8d995a2`, reviewed and gated green, but
-**not yet merged**. Concretely, working today on that branch:
+redesign that followed them ("Part 2c" below). Parts 3, 4, 5, 6 and 7 are merged to `main`.
+Part 7 (SM-2) landed from `feat/part7-sm2` at `85368ab`, reviewed and gated green, on an
+**undriven** browser walkthrough. Concretely, working today:
 
 ### Part 7: SM-2 spaced repetition
 
@@ -293,7 +293,7 @@ other — do not assume a value carries over.
   complete order.
 - 317 backend tests as of the Part 6 merge (the count of all lib and integration test binaries
   combined; 229 before Part 5, and an earlier figure of 119 recorded here was stale twice
-  over). **On `feat/part7-sm2` at `8d995a2` the observed count is 364** — see "Part 7 —
+  over). **On `feat/part7-sm2` at `85368ab` the observed count is 364** — see "Part 7 —
   verification status" under Outstanding for the full per-suite breakdown; that count is what
   was actually run for this update, not carried forward from any other document. No frontend
   test framework — that is a deliberate spec decision, not an omission, and it is load-bearing
@@ -804,7 +804,7 @@ frontend cannot parse.
 **The automated gate is green and the browser walkthrough was never performed.** Same shape
 as Part 5's entry below, and the same caveat applies: a green gate is not the walkthrough.
 
-Verified, by running it on `feat/part7-sm2` at `8d995a2` on 2026-08-28:
+Verified, by running it on `feat/part7-sm2` at `85368ab` on 2026-08-28:
 
 - `cargo test` — **364 passed, 0 failed**, across twelve test binaries:
 
