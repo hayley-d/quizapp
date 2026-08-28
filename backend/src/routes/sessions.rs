@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
+use crate::grading::{
+    correctness_of_self_grade, grade_multiple_choice, grade_short_answer, parse_self_grade,
+    self_grade_as_text, GradableChoice,
+};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
 use crate::state::AppState;
@@ -444,9 +448,242 @@ async fn reveal(
     }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SubmitAnswer {
+    pub card_id: i64,
+    #[serde(default)]
+    pub given: Option<String>,
+    #[serde(default)]
+    pub choice_id: Option<i64>,
+    #[serde(default)]
+    pub self_grade: Option<String>,
+    #[serde(default)]
+    pub ms: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct AnswerResponse {
+    pub review_id: i64,
+    pub correct: bool,
+    pub expected: Vec<String>,
+    pub explanation_md: Option<String>,
+    pub can_override: bool,
+}
+
+struct GradedAnswer {
+    correct: bool,
+    expected: Vec<String>,
+    stored_given: Option<String>,
+    stored_self_grade: Option<&'static str>,
+}
+
+fn reject_fields_for_other_kinds(
+    errors: &mut Vec<FieldError>,
+    body: &SubmitAnswer,
+    allowed: &str,
+) {
+    if allowed != "given" && body.given.is_some() {
+        errors.push(FieldError {
+            field: "given".to_string(),
+            message: "Only a short-answer card takes typed text".to_string(),
+        });
+    }
+    if allowed != "choice_id" && body.choice_id.is_some() {
+        errors.push(FieldError {
+            field: "choice_id".to_string(),
+            message: "Only a multiple-choice card has options".to_string(),
+        });
+    }
+    if allowed != "self_grade" && body.self_grade.is_some() {
+        errors.push(FieldError {
+            field: "self_grade".to_string(),
+            message: "Only a flashcard is self-graded".to_string(),
+        });
+    }
+}
+
+async fn grade_answer(
+    pool: &sqlx::SqlitePool,
+    card: &PoolCard,
+    body: &SubmitAnswer,
+) -> AppResult<GradedAnswer> {
+    let mut errors: Vec<FieldError> = Vec::new();
+
+    if body.ms.is_some_and(|milliseconds| milliseconds < 0) {
+        errors.push(FieldError {
+            field: "ms".to_string(),
+            message: "ms must not be negative".to_string(),
+        });
+    }
+
+    match card.kind.as_str() {
+        "mc_single" => {
+            reject_fields_for_other_kinds(&mut errors, body, "choice_id");
+            let Some(choice_id) = body.choice_id else {
+                errors.push(FieldError {
+                    field: "choice_id".to_string(),
+                    message: "This field is required".to_string(),
+                });
+                return Err(AppError::Validation(errors));
+            };
+            if !errors.is_empty() {
+                return Err(AppError::Validation(errors));
+            }
+
+            let rows = sqlx::query!(
+                r#"
+                SELECT id AS "choice_id!: i64", text_md, is_correct AS "is_correct!: bool"
+                FROM choices WHERE card_id = ? ORDER BY position
+                "#,
+                card.id,
+            )
+            .fetch_all(pool)
+            .await?;
+
+            let gradable: Vec<GradableChoice> = rows
+                .iter()
+                .map(|row| GradableChoice {
+                    choice_id: row.choice_id,
+                    is_correct: row.is_correct,
+                })
+                .collect();
+
+            let correct = grade_multiple_choice(&gradable, choice_id).ok_or_else(|| {
+                AppError::validation([("choice_id", "That option is not on this card")])
+            })?;
+
+            let chosen_text = rows
+                .iter()
+                .find(|row| row.choice_id == choice_id)
+                .map(|row| row.text_md.clone());
+            let expected = rows
+                .iter()
+                .filter(|row| row.is_correct)
+                .map(|row| row.text_md.clone())
+                .collect();
+
+            Ok(GradedAnswer {
+                correct,
+                expected,
+                stored_given: chosen_text,
+                stored_self_grade: None,
+            })
+        }
+        "short_answer" => {
+            reject_fields_for_other_kinds(&mut errors, body, "given");
+            let trimmed = body.given.as_deref().map(str::trim).unwrap_or_default();
+            if body.given.is_none() {
+                errors.push(FieldError {
+                    field: "given".to_string(),
+                    message: "This field is required".to_string(),
+                });
+            } else if trimmed.is_empty() {
+                errors.push(FieldError {
+                    field: "given".to_string(),
+                    message: "Type an answer".to_string(),
+                });
+            }
+            if !errors.is_empty() {
+                return Err(AppError::Validation(errors));
+            }
+
+            let rows = sqlx::query!(
+                r#"
+                SELECT text, normalised, is_primary AS "is_primary!: bool"
+                FROM accepted WHERE card_id = ? ORDER BY is_primary DESC, id
+                "#,
+                card.id,
+            )
+            .fetch_all(pool)
+            .await?;
+
+            let keys: Vec<String> = rows.iter().map(|row| row.normalised.clone()).collect();
+            let correct = grade_short_answer(trimmed, &keys);
+            let expected = rows.iter().map(|row| row.text.clone()).collect();
+
+            Ok(GradedAnswer {
+                correct,
+                expected,
+                stored_given: Some(trimmed.to_string()),
+                stored_self_grade: None,
+            })
+        }
+        "flashcard" => {
+            reject_fields_for_other_kinds(&mut errors, body, "self_grade");
+            let parsed = match body.self_grade.as_deref() {
+                None => {
+                    errors.push(FieldError {
+                        field: "self_grade".to_string(),
+                        message: "This field is required".to_string(),
+                    });
+                    None
+                }
+                Some(raw) => {
+                    let parsed = parse_self_grade(raw);
+                    if parsed.is_none() {
+                        errors.push(FieldError {
+                            field: "self_grade".to_string(),
+                            message: "self_grade must be again, hard, good or easy".to_string(),
+                        });
+                    }
+                    parsed
+                }
+            };
+            if !errors.is_empty() {
+                return Err(AppError::Validation(errors));
+            }
+            let self_grade = parsed.ok_or(AppError::Internal)?;
+
+            Ok(GradedAnswer {
+                correct: correctness_of_self_grade(self_grade),
+                expected: card.answer_md.clone().into_iter().collect(),
+                stored_given: None,
+                stored_self_grade: Some(self_grade_as_text(self_grade)),
+            })
+        }
+        _ => Err(AppError::Internal),
+    }
+}
+
+async fn answer(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+    AppJson(body): AppJson<SubmitAnswer>,
+) -> AppResult<Json<AnswerResponse>> {
+    let session = load_active_session(&state.pool, session_id).await?;
+    let card = load_pool_card(&state.pool, &session.deck_ids_json, body.card_id).await?;
+    let graded = grade_answer(&state.pool, &card, &body).await?;
+
+    let review_id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO reviews (card_id, session_id, given, correct, self_grade, ms)
+        VALUES (?, ?, ?, ?, ?, ?)
+        RETURNING id AS "id!: i64"
+        "#,
+        card.id,
+        session.id,
+        graded.stored_given,
+        graded.correct,
+        graded.stored_self_grade,
+        body.ms,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(AnswerResponse {
+        review_id,
+        correct: graded.correct,
+        expected: graded.expected,
+        explanation_md: card.explanation_md,
+        can_override: card.kind == "short_answer" && !graded.correct,
+    }))
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/sessions", post(create))
         .route("/sessions/{id}/next", get(next))
         .route("/sessions/{id}/reveal", post(reveal))
+        .route("/sessions/{id}/answer", post(answer))
 }

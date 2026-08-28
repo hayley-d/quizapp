@@ -596,7 +596,7 @@ Shuffle per serve in the handler: `choices.shuffle(&mut rand::thread_rng())`. Sh
 
 ---
 
-## Task 8: `POST /api/sessions/{id}/answer`
+## Task 8: `POST /api/sessions/{id}/answer` — **COMPLETE**
 
 **Goal:** Grade server-side per kind and append exactly one `reviews` row, without touching `schedule`.
 
@@ -623,19 +623,23 @@ One `INSERT INTO reviews (card_id, session_id, given, correct, self_grade, ms) �
 
 **Response 200:** `{review_id, correct, expected, explanation_md, can_override}`. `expected` is a `Vec<String>` — one shape for all three kinds: the correct choice's text, every accepted wording primary-first, or `answer_md`. `can_override` is `kind == "short_answer" && !correct`, computed server-side so the button's precondition is testable in one place.
 
+**Outcome:** 22 new tests (54 in the file), 15 mutations killed. `can_override` survived dropping its correctness half — the tests only covered a *wrong* short answer, so the four-case test the plan asked for was added and now pins correct-short-answer to `false` too.
+
+Two layers guard the blank answer, and they are different things: an absent or whitespace-only `given` is a **422** (`"Type an answer"`), while a non-blank `given` that merely *normalises* to empty — `"!!!"` — is graded **incorrect**. Only the second needs the pure function's empty-key guard.
+
 **Integration tests:**
-- [ ] `grades_a_correct_multiple_choice_answer` / `…an_incorrect_one_and_returns_the_expected_choice`
-- [ ] **`grades_a_short_answer_by_normalised_match`** — `"K-Means!"` against accepted `"k means"` → correct. Mutation: compare raw text.
-- [ ] **`an_empty_short_answer_is_incorrect_even_when_an_accepted_row_normalises_to_empty`** — accepted `"---"`, given `"  "`. Mutation: drop the empty-key guard.
-- [ ] `a_flashcard_self_grade_of_again_is_incorrect` / `hard_good_and_easy_are_correct`, with `reviews.self_grade` persisted
-- [ ] `stores_the_submitted_wording_verbatim_for_a_short_answer` — mutation: store the normalised form, which would break the override's accepted text
-- [ ] `stores_the_chosen_choice_text_for_a_multiple_choice_answer`
-- [ ] **`rejects_a_card_from_another_deck`** (422 `card_id`) — the core trust-boundary guard
-- [ ] `rejects_an_archived_card` / `rejects_a_choice_id_from_another_card` / `rejects_the_wrong_answer_field_for_each_kind` (3 cases, exact field names) / `rejects_a_negative_ms`
-- [ ] **`answering_does_not_touch_the_schedule_table`** — assert `due_at`, `reps`, `lapses`, `interval_days`, `ease` all identical before and after. Locks the spec's "practice ignores schedule". Mutation: add a schedule update.
-- [ ] `answering_writes_exactly_one_review_row`
-- [ ] `can_override_is_true_only_for_an_incorrect_short_answer` — 4 cases
-- [ ] `answer_on_a_finished_session_is_409` / `on_an_unknown_session_is_404`
+- [x] `grades_a_correct_multiple_choice_answer` / `…an_incorrect_one_and_returns_the_expected_choice`
+- [x] **`grades_a_short_answer_by_normalised_match`** — `"K-Means!"` against accepted `"k means"` → correct. Mutation: compare raw text.
+- [x] **`an_empty_short_answer_is_incorrect_even_when_an_accepted_row_normalises_to_empty`** — accepted `"---"`, given `"  "`. Mutation: drop the empty-key guard.
+- [x] `a_flashcard_self_grade_of_again_is_incorrect` / `hard_good_and_easy_are_correct`, with `reviews.self_grade` persisted
+- [x] `stores_the_submitted_wording_verbatim_for_a_short_answer` — mutation: store the normalised form, which would break the override's accepted text
+- [x] `stores_the_chosen_choice_text_for_a_multiple_choice_answer`
+- [x] **`rejects_a_card_from_another_deck`** (422 `card_id`) — the core trust-boundary guard
+- [x] `rejects_an_archived_card` / `rejects_a_choice_id_from_another_card` / `rejects_the_wrong_answer_field_for_each_kind` (3 cases, exact field names) / `rejects_a_negative_ms`
+- [x] **`answering_does_not_touch_the_schedule_table`** — assert `due_at`, `reps`, `lapses`, `interval_days`, `ease` all identical before and after. Locks the spec's "practice ignores schedule". Mutation: add a schedule update.
+- [x] `answering_writes_exactly_one_review_row`
+- [x] `can_override_is_true_only_for_an_incorrect_short_answer` — 4 cases
+- [x] `answer_on_a_finished_session_is_409` / `on_an_unknown_session_is_404`
 
 **Verify:** `cargo test --test sessions`
 

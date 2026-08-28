@@ -749,3 +749,543 @@ async fn reveal_on_an_unknown_session_is_not_found() {
     assert_eq!(status, 404);
     assert_eq!(body["error"], "not_found");
 }
+
+async fn correct_choice_id(app: &common::TestApp, card_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM choices WHERE card_id = ? AND is_correct = 1")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+async fn wrong_choice_id(app: &common::TestApp, card_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM choices WHERE card_id = ? AND is_correct = 0 ORDER BY id")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn grades_a_correct_multiple_choice_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mc", None).await;
+    let card_id = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let session_id = start_session(&app, deck_id).await;
+    let choice_id = correct_choice_id(&app, card_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "choice_id": choice_id }),
+        )
+        .await;
+
+    assert_eq!(status, 200, "body was {body}");
+    assert_eq!(body["correct"], true);
+    assert_eq!(body["expected"], json!(["complete linkage"]));
+    assert_eq!(body["explanation_md"], "because the centroid moves");
+    assert_eq!(body["can_override"], false);
+    assert!(body["review_id"].as_i64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn grades_an_incorrect_multiple_choice_answer_and_returns_the_expected_choice() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mc", None).await;
+    let card_id = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let session_id = start_session(&app, deck_id).await;
+    let choice_id = wrong_choice_id(&app, card_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "choice_id": choice_id }),
+        )
+        .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(body["correct"], false);
+    assert_eq!(body["expected"], json!(["complete linkage"]));
+    assert_eq!(
+        body["can_override"], false,
+        "a multiple-choice miss is not an unfair miss",
+    );
+}
+
+#[tokio::test]
+async fn stores_the_chosen_choice_text_for_a_multiple_choice_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mc", None).await;
+    let card_id = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let session_id = start_session(&app, deck_id).await;
+    let choice_id = wrong_choice_id(&app, card_id).await;
+
+    app.post(
+        &format!("/api/sessions/{session_id}/answer"),
+        json!({ "card_id": card_id, "choice_id": choice_id }),
+    )
+    .await;
+
+    let stored: String = sqlx::query_scalar("SELECT given FROM reviews WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored, "single linkage",
+        "the chosen wording is stored, not its id, so it survives the card being edited",
+    );
+}
+
+#[tokio::test]
+async fn rejects_a_choice_id_from_another_card() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mc", None).await;
+    let first = create_multiple_choice(&app, deck_id, "first").await;
+    let second = create_multiple_choice(&app, deck_id, "second").await;
+    let session_id = start_session(&app, deck_id).await;
+    let foreign_choice = correct_choice_id(&app, second).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": first, "choice_id": foreign_choice }),
+        )
+        .await;
+
+    assert_eq!(status, 422, "a foreign option is a bad request, not a wrong answer");
+    assert!(has_field(&body, "choice_id"));
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn grades_a_short_answer_by_normalised_match() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": "  K-Means!  " }),
+        )
+        .await;
+
+    assert_eq!(status, 200, "body was {body}");
+    assert_eq!(body["correct"], true, "normalisation must fold case and punctuation");
+    assert_eq!(body["expected"], json!(["k-means", "lloyd's algorithm"]));
+}
+
+#[tokio::test]
+async fn a_wrong_short_answer_can_be_overridden() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": "centroid clustering" }),
+        )
+        .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(body["correct"], false);
+    assert_eq!(body["can_override"], true);
+}
+
+#[tokio::test]
+async fn stores_the_submitted_wording_verbatim_for_a_short_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    app.post(
+        &format!("/api/sessions/{session_id}/answer"),
+        json!({ "card_id": card_id, "given": "  Lloyd's Algorithm  " }),
+    )
+    .await;
+
+    let stored: String = sqlx::query_scalar("SELECT given FROM reviews WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored, "Lloyd's Algorithm",
+        "the raw wording is stored trimmed, never the normalised key -- the override needs it",
+    );
+}
+
+#[tokio::test]
+async fn a_punctuation_only_answer_is_incorrect_even_when_an_accepted_key_normalises_to_empty() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let (_, card) = app
+        .post(
+            "/api/cards",
+            json!({
+                "deck_id": deck_id,
+                "kind": "short_answer",
+                "prompt_md": "a dash card",
+                "accepted": [{ "text": "---", "is_primary": true }],
+            }),
+        )
+        .await;
+    let card_id = card["id"].as_i64().unwrap();
+    let session_id = start_session(&app, deck_id).await;
+
+    let empty_key: String =
+        sqlx::query_scalar("SELECT normalised FROM accepted WHERE card_id = ?")
+            .bind(card_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(empty_key, "", "this card's accepted answer must normalise to empty to be a test");
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": "!!!" }),
+        )
+        .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(
+        body["correct"], false,
+        "a punctuation-only answer must not match an accepted row that normalised to empty",
+    );
+}
+
+#[tokio::test]
+async fn rejects_a_blank_short_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": "   " }),
+        )
+        .await;
+
+    assert_eq!(status, 422);
+    assert!(field_errors(&body)
+        .contains(&("given".to_string(), "Type an answer".to_string())));
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn a_flashcard_self_grade_of_again_is_incorrect_and_the_rest_are_correct() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    for (grade, expected_correct) in
+        [("again", false), ("hard", true), ("good", true), ("easy", true)]
+    {
+        let (status, body) = app
+            .post(
+                &format!("/api/sessions/{session_id}/answer"),
+                json!({ "card_id": card_id, "self_grade": grade }),
+            )
+            .await;
+        assert_eq!(status, 200, "grade {grade} failed: {body}");
+        assert_eq!(body["correct"], expected_correct, "grade {grade} graded wrongly");
+        assert_eq!(body["expected"], json!(["an answer"]));
+        assert_eq!(body["can_override"], false, "a flashcard grader can simply grade again");
+    }
+}
+
+#[tokio::test]
+async fn a_flashcard_self_grade_is_persisted() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    app.post(
+        &format!("/api/sessions/{session_id}/answer"),
+        json!({ "card_id": card_id, "self_grade": "hard" }),
+    )
+    .await;
+
+    let stored: String = sqlx::query_scalar("SELECT self_grade FROM reviews WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, "hard", "the four-level grade must survive for SM-2 in part 7");
+
+    let given: Option<String> = sqlx::query_scalar("SELECT given FROM reviews WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(given, None, "a flashcard stores its signal in self_grade, not given");
+}
+
+#[tokio::test]
+async fn rejects_an_unknown_self_grade() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": "medium" }),
+        )
+        .await;
+
+    assert_eq!(status, 422);
+    assert!(has_field(&body, "self_grade"));
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn rejects_the_wrong_answer_field_for_each_kind() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "all kinds", None).await;
+    let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let short_answer = create_short_answer(&app, deck_id, "name it").await;
+    let flashcard = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+    let choice_id = correct_choice_id(&app, multiple_choice).await;
+
+    let cases = [
+        (multiple_choice, json!({ "card_id": multiple_choice, "given": "text" }), "given"),
+        (short_answer, json!({ "card_id": short_answer, "choice_id": choice_id }), "choice_id"),
+        (flashcard, json!({ "card_id": flashcard, "given": "text" }), "given"),
+        (
+            multiple_choice,
+            json!({ "card_id": multiple_choice, "choice_id": choice_id, "self_grade": "good" }),
+            "self_grade",
+        ),
+    ];
+
+    for (_, body_json, expected_field) in cases {
+        let (status, body) =
+            app.post(&format!("/api/sessions/{session_id}/answer"), body_json).await;
+        assert_eq!(status, 422, "expected a rejection, got {body}");
+        assert!(
+            has_field(&body, expected_field),
+            "expected an error on {expected_field}, got {body}",
+        );
+    }
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn rejects_a_negative_ms() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": "good", "ms": -1 }),
+        )
+        .await;
+
+    assert_eq!(status, 422);
+    assert!(has_field(&body, "ms"));
+}
+
+#[tokio::test]
+async fn stores_the_elapsed_milliseconds() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    app.post(
+        &format!("/api/sessions/{session_id}/answer"),
+        json!({ "card_id": card_id, "self_grade": "good", "ms": 4200 }),
+    )
+    .await;
+
+    let stored: i64 = sqlx::query_scalar("SELECT ms FROM reviews WHERE card_id = ?")
+        .bind(card_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, 4200);
+}
+
+#[tokio::test]
+async fn rejects_a_card_from_another_deck() {
+    let app = common::spawn_app().await;
+    let inside = create_deck(&app, "inside", None).await;
+    let outside = create_deck(&app, "outside", None).await;
+    create_flashcard(&app, inside, "in").await;
+    let foreign = create_flashcard(&app, outside, "out").await;
+    let session_id = start_session(&app, inside).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": foreign, "self_grade": "good" }),
+        )
+        .await;
+
+    assert_eq!(status, 422, "the card pool is the trust boundary");
+    assert!(has_field(&body, "card_id"));
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn rejects_an_archived_card() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mixed", None).await;
+    create_flashcard(&app, deck_id, "live").await;
+    let archived = create_flashcard(&app, deck_id, "archived").await;
+    let session_id = start_session(&app, deck_id).await;
+    app.post(&format!("/api/cards/{archived}/archive"), json!({})).await;
+
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": archived, "self_grade": "good" }),
+        )
+        .await;
+
+    assert_eq!(status, 422);
+    assert!(has_field(&body, "card_id"));
+}
+
+#[tokio::test]
+async fn answering_writes_exactly_one_review_row() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    app.post(
+        &format!("/api/sessions/{session_id}/answer"),
+        json!({ "card_id": card_id, "self_grade": "good" }),
+    )
+    .await;
+
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 1);
+}
+
+#[tokio::test]
+async fn answering_does_not_touch_the_schedule_table() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let before: (String, f64, f64, i64, i64) = sqlx::query_as(
+        "SELECT due_at, interval_days, ease, reps, lapses FROM schedule WHERE card_id = ?",
+    )
+    .bind(card_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    for grade in ["again", "good", "easy"] {
+        app.post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": grade }),
+        )
+        .await;
+    }
+
+    let after: (String, f64, f64, i64, i64) = sqlx::query_as(
+        "SELECT due_at, interval_days, ease, reps, lapses FROM schedule WHERE card_id = ?",
+    )
+    .bind(card_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(before, after, "practice mode must ignore the schedule table entirely");
+}
+
+#[tokio::test]
+async fn answering_on_a_finished_session_conflicts() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    sqlx::query("UPDATE sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
+        .bind(session_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (status, _) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": "good" }),
+        )
+        .await;
+    assert_eq!(status, 409);
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, 0);
+}
+
+#[tokio::test]
+async fn answering_on_an_unknown_session_is_not_found() {
+    let app = common::spawn_app().await;
+    let (status, _) = app
+        .post("/api/sessions/9999/answer", json!({ "card_id": 1, "self_grade": "good" }))
+        .await;
+    assert_eq!(status, 404);
+}
+
+#[tokio::test]
+async fn can_override_is_true_only_for_an_incorrect_short_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "all kinds", None).await;
+    let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let short_answer = create_short_answer(&app, deck_id, "name it").await;
+    let flashcard = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+    let wrong_choice = wrong_choice_id(&app, multiple_choice).await;
+
+    let cases = [
+        (
+            "a correct short answer",
+            json!({ "card_id": short_answer, "given": "k-means" }),
+            false,
+        ),
+        (
+            "an incorrect short answer",
+            json!({ "card_id": short_answer, "given": "something else" }),
+            true,
+        ),
+        (
+            "an incorrect multiple choice",
+            json!({ "card_id": multiple_choice, "choice_id": wrong_choice }),
+            false,
+        ),
+        (
+            "a flashcard graded again",
+            json!({ "card_id": flashcard, "self_grade": "again" }),
+            false,
+        ),
+    ];
+
+    for (description, request, expected) in cases {
+        let (status, body) =
+            app.post(&format!("/api/sessions/{session_id}/answer"), request).await;
+        assert_eq!(status, 200, "{description} failed: {body}");
+        assert_eq!(
+            body["can_override"], expected,
+            "{description} should report can_override = {expected}",
+        );
+    }
+}
