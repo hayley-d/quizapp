@@ -243,7 +243,9 @@ POST /api/reviews/:id/override     "I was right": insert accepted, flip review.
                                     live mock -- otherwise it is a per-card answer oracle
                                     usable mid-test
 
-GET  /api/stats?deck_ids=          accuracy overall, per deck, per card, over time
+GET  /api/decks/:id/stats          one deck: coverage, mock and practice accuracy,
+                                   and a recency-weighted miss rate per card.
+                                   Amended in Part 6 -- see the screen table below
 ```
 
 `GET /api/sessions/:id/next` shuffles `choices` per serve, so the student learns the answer
@@ -340,7 +342,11 @@ their own Rust modules with no database access. They form the bulk of the test s
 | `/decks`           | Deck and module management                  |
 | `/decks/:id`       | Cards in a deck, and where a session starts |
 | `/cards/new`, `/cards/:id/edit` | Card editor                    |
-| `/stats`           | Accuracy overall, per deck, weakest cards   |
+
+**Amended in Part 6:** there is no `/stats` screen. Deck statistics -- coverage, mock and
+practice accuracy, and a per-card miss rate badge -- live on `/decks/:id`, beside the card
+list they describe. See
+[`2026-08-28-part6-stats-design.md`](2026-08-28-part6-stats-design.md) §2.
 
 **Keyboard-first, both sides.** The card editor is the app's most-used screen — cards are
 written by hand — so authoring is type-prompt, tab through options, mark the correct one,

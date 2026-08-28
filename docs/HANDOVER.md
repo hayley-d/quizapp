@@ -2,9 +2,15 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `main`, at commit `f19da1b` (the Part 5 merge).
-**Part 5 (the mock test) is done and merged** — `feat/part5-mock-test` landed as `f19da1b`,
-and there is no feature branch outstanding.
+**Last updated:** 2026-08-28, on `feat/part6-stats`.
+**Part 6 (stats) is built and on a branch**, on a green automated gate and an undriven
+browser walkthrough — the Chrome extension is still not available on this machine, so the
+eight-point walkthrough at the end of
+[`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md) has not been
+performed. The numbers are proven by ten integration tests and two unit tests, each
+mutation-checked; what is *not* proven is that they look right on screen.
+
+**Part 5 (the mock test) is done and merged** — `feat/part5-mock-test` landed as `f19da1b`.
 
 **Part 5 was merged on a green automated gate and an unperformed browser walkthrough**, and
 that is the one thing to understand before you touch anything. Its plan's Task 17 — a
@@ -23,7 +29,7 @@ before Part 5 existed. Read "The `e09e76d` styling pass" under Where things stan
 touching the frontend.
 
 Part 2c's nine-point walkthrough is still outstanding, and 375px phone width has never
-been rendered in any part — now across Parts 1, 2b, 2c, 3, 4 **and 5** (see Outstanding).
+been rendered in any part — now across Parts 1, 2b, 2c, 3, 4, 5 **and 6** (see Outstanding).
 
 ## What this is
 
@@ -34,8 +40,47 @@ document is the record of what the app is meant to be, and it is kept current.
 ## Where things stand
 
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
-redesign that followed them ("Part 2c" below). All of it is merged to `main`; there is no
-feature branch outstanding. Concretely, working today:
+redesign that followed them ("Part 2c" below). Parts 3, 4 and 5 are merged to `main`; Part 6
+is built on `feat/part6-stats`. Concretely, working today:
+
+### Part 6: stats
+
+**Deck statistics live on the deck page, and `/stats` is gone** — route, nav entry and
+`frontend/src/pages/StubPage.tsx` all deleted. The deck page already lists every card, so a
+global weakest-cards table would have been a second rendering of a list a few pixels away,
+kept in sync by hand and free to disagree with it. The cost, accepted: with several decks you
+cannot see at a glance which is worst without opening each. A league table is a small addition
+on top of the endpoint if that becomes annoying.
+
+**One endpoint, `GET /api/decks/:id/stats`**, in `backend/src/stats.rs` with the handler on
+`routes/decks.rs`. It returns a `summary` (card count, unseen count, mock and practice accuracy
+with their review counts, last answered timestamp) and a `cards` array of `{card_id,
+attempt_count, miss_rate}`. `fetch_one` in `decks.rs` is what produces the 404, so the stats
+query never has to tell "deck missing" from "deck empty".
+
+**Mock and practice accuracy are two figures, deliberately.** Practice over-serves the cards
+you are weak on — that is what `MISS_RATE_WEIGHT` is for — so any aggregate over practice
+reviews is pessimistic by construction, while a mock test's is an unbiased sample. Pooling
+them gives a third number describing neither. The per-card miss rate *does* pool both modes: a
+card's own hit rate is not biased by how often it was served.
+
+**Weakness is `practice.rs`'s `weighted_miss_rate`, reused rather than redefined** — the last
+10 reviews, 0.7 recency decay. Two definitions of "weak" in one codebase would drift
+invisibly: the screen would rank one card worst while the practice run served another, with
+nothing to say which was wrong. `fold_candidate_rows` is reused with it. The *SQL* is not
+shared: `load_candidates` is session-scoped across a deck list and has no use for the mode
+split, and generalising it would couple card-serving to a read-only garnish.
+
+**Three payload rules, each tested:** archived cards are excluded entirely (they will never be
+served again, so counting them would put coverage permanently out of reach); `overridden`
+reviews count as correct, since `reviews.correct` is the column the override endpoint flips;
+and cards with no reviews are omitted from `cards` rather than sent at zero — absence *is* the
+unseen signal.
+
+Design record: [`mitis/specs/2026-08-28-part6-stats-design.md`](mitis/specs/2026-08-28-part6-stats-design.md).
+Its §10 leaves Part 7 one question: SM-2 is a third sampling rule landing in the same table,
+so does the strip grow a third figure or do SM-2 reviews fold into an existing one?
+
 
 **Light and dark are now two separate visual identities, not one palette rendered twice.**
 Dark mode is Bibble, unchanged. Light mode was repaletted from a pale-aqua rendering of the
@@ -354,15 +399,18 @@ other — do not assume a value carries over.
 action is not code: sit one mock test on a real COS781 deck with DevTools open, and work the
 twenty-one points in the plan's Task 17. The gate cannot see a leak, only a type error.
 
-**Then Part 6: stats.** `/stats` is still a placeholder page. Part 5 leaves it two gifts:
-`GET /api/sessions/:id/results` is gated on state rather than mode, so it already returns a
-per-question record for practice sessions, and `sessions.mode` is now meaningful as a filter.
-Part 6's own call is whether the stats screen separates the two — a mock test's accuracy is a
-fairer measure of knowledge than practice's, which is weighted towards your weaknesses by
-construction.
+**And walk the Part 6 stats screen**, whose eight-point walkthrough is also undriven — see
+the end of [`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md).
+Both walkthroughs want the same session, so sit one mock test on a real deck and check the
+strip and the badges before and after it.
 
-After Part 6: SM-2 → embed the bundle and LAN binding (which is also the phone layout pass,
-and the first time 375px gets rendered).
+**Then Part 7: SM-2.** Part 6 leaves it one open question, recorded in its design spec §10:
+SM-2 reviews land in the same `reviews` table under a third sampling rule, so the deck strip
+either grows a third figure or folds them into an existing one. Decide it there, not in the
+strip.
+
+After Part 7: embed the bundle and LAN binding (which is also the phone layout pass, and the
+first time 375px gets rendered).
 
 ### The three things Part 5 had to resolve — and how it did
 
@@ -548,6 +596,20 @@ satisfied, a `can_override` test missing the case that mattered, and an accuracy
 removal produced `Some(NaN)` — which serde serialises as `null`, making it byte-identical
 over HTTP. Run the mutation, one change at a time; roughly one test per task was hollow.
 
+**shadcn's `destructive` badge variant fails AA on `bg-card`.** It is a 10%-alpha tint of
+`--destructive` under `--destructive` text, which measures **3.64:1 in light and 3.60:1 in
+dark** against the card surface. Part 6's weakness badge therefore uses the solid pair,
+`bg-destructive` with `--destructive-foreground`, at 5.04:1 and 5.52:1 — already an ENFORCED
+row in `check-contrast.py` as "verdict destructive", so the badge added no new pairs at all.
+The tinted variant is vendored shadcn and stays as it is; do not "tidy" the badge back onto
+`variant="destructive"`.
+
+**Reverting a mutation with `mv` can leave cargo running the mutated binary.** Restoring a
+backup file preserves its *old* mtime, so cargo sees nothing newer than its artifacts and
+skips the rebuild — the next test run then reports the mutation's result against source that
+no longer contains it. This cost a confused minute in Part 6, where a reverted `accuracy_of`
+still returned `Some(NaN)`. `touch` the file after any restore, or copy rather than move.
+
 **One rendering path.** `<Markdown>` in `frontend/src/components/Markdown.tsx` is the only
 markdown renderer in the app, and it is why Part 2a shipped raw text everywhere. The card
 list, the editor preview and Part 3's session runner all go through it. If you need different
@@ -624,7 +686,9 @@ costs is specific rather than general:
 - **The one-card and zero-card decks** (point 20), **End test early** (point 19), and
   **reduced motion** (point 18).
 
-**375px phone width** is still unrendered, now across Parts 1, 2b, 2c, 3, 4 and 5.
+**375px phone width** is still unrendered, now across Parts 1, 2b, 2c, 3, 4, 5 and 6. Part
+6's stats strip is the newest thing never seen at that width; it is a wrapping flex row and
+is *expected* to wrap rather than overflow, but that is a prediction, not an observation.
 `resize_window` reports success in this environment but the viewport does not change. It
 belongs to build step 8.
 
@@ -933,10 +997,11 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 ## If you are an agent picking this up
 
-Work through `mitis:brainstorming` before designing Part 6, then `mitis:writing-plans`, then
-`mitis:subagent-driven-development`. The four existing plans are worth reading as a format
+Work through `mitis:brainstorming` before designing Part 7, then `mitis:writing-plans`, then
+`mitis:subagent-driven-development`. The five existing plans are worth reading as a format
 reference — particularly how each task carries complete code, an explicit verify command,
-and a `json:metadata` fence. Part 5's is the most developed of them.
+and a `json:metadata` fence. Part 5's is the most developed of them; Part 6's is the one
+that records a mutation table per task.
 
 **Part 5's task ledger is not trustworthy.** `docs/mitis/plans/2026-08-28-part5-mock-test.md.tasks.json`
 marks all seventeen tasks `pending` while the code for all of them is committed, and there is
