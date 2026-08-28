@@ -2,8 +2,9 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `feat/part6-stats`.
-**Part 6 (stats) is built and on a branch**, on a green automated gate and an undriven
+**Last updated:** 2026-08-28, on `main`, at the Part 6 merge.
+**Part 6 (stats) is done and merged** — `feat/part6-stats` landed on `main`, and there is no
+feature branch outstanding. It merged on a green automated gate and an undriven
 browser walkthrough — the Chrome extension is still not available on this machine, so the
 eight-point walkthrough at the end of
 [`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md) has not been
@@ -40,8 +41,8 @@ document is the record of what the app is meant to be, and it is kept current.
 ## Where things stand
 
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
-redesign that followed them ("Part 2c" below). Parts 3, 4 and 5 are merged to `main`; Part 6
-is built on `feat/part6-stats`. Concretely, working today:
+redesign that followed them ("Part 2c" below). Parts 3, 4, 5 and 6 are merged to `main`;
+there is no feature branch outstanding. Concretely, working today:
 
 ### Part 6: stats
 
