@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 
 export type Face = 'front' | 'back'
 
@@ -8,6 +9,7 @@ export function useFlip() {
   const [face, setFace] = useState<Face>('front')
   const [angle, setAngle] = useState(0)
   const [instant, setInstant] = useState(false)
+  const prefersReducedMotion = usePrefersReducedMotion()
 
   const busy = useRef(false)
   const cleanups = useRef<Array<() => void>>([])
@@ -39,7 +41,7 @@ export function useFlip() {
     (next: Face) => {
       if (busy.current || next === face) return
 
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (prefersReducedMotion) {
         setFace(next)
         return
       }
@@ -65,7 +67,7 @@ export function useFlip() {
         })
       }, HALF_FLIP_MS)
     },
-    [face, later, nextFrame],
+    [face, later, nextFrame, prefersReducedMotion],
   )
 
   useEffect(() => {
