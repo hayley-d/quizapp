@@ -8,6 +8,7 @@ pub mod mock;
 pub mod normalise;
 pub mod practice;
 pub mod routes;
+pub mod scheduler;
 pub mod state;
 pub mod stats;
 

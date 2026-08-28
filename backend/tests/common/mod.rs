@@ -126,4 +126,33 @@ impl TestApp {
                 .bind(card_id).fetch_one(&self.pool).await.unwrap();
         (row_count, due_at)
     }
+
+    pub async fn schedule_state_for(&self, card_id: i64) -> (String, f64, f64, i64, i64) {
+        sqlx::query_as(
+            "SELECT due_at, interval_days, ease, reps, lapses FROM schedule WHERE card_id = ?",
+        )
+        .bind(card_id)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    pub async fn answered_at_for_review(&self, review_id: i64) -> String {
+        sqlx::query_scalar("SELECT answered_at FROM reviews WHERE id = ?")
+            .bind(review_id)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn date_advanced_by_days(&self, date_time: &str, days: i64) -> String {
+        let advanced_date: String =
+            sqlx::query_scalar("SELECT date(?, '+' || CAST(? AS TEXT) || ' days')")
+                .bind(date_time)
+                .bind(days)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+        format!("{advanced_date}T00:00:00Z")
+    }
 }

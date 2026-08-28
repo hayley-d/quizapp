@@ -242,6 +242,15 @@ POST /api/reviews/:id/override     "I was right": insert accepted, flip review.
                                     and refused with 409 while the review's session is a
                                     live mock -- otherwise it is a per-card answer oracle
                                     usable mid-test
+                                    Amended in Part 7: when the overridden review's
+                                    session is sm2, the flip is followed by a replay of
+                                    every sm2 review for that card, in answered_at, id
+                                    order, recomputing `schedule` rather than leaving it
+                                    at the lapse the override just corrected. An sm2
+                                    flashcard override stays refused -- the existing
+                                    flashcard-outside-mock check already covers sm2 with
+                                    no edit, because in SM-2 a flashcard is self-graded
+                                    and overriding your own verdict is incoherent
 
 GET  /api/decks/:id/stats          one deck: coverage, mock and practice accuracy,
                                    and a recency-weighted miss rate per card.
@@ -255,8 +264,14 @@ same order — a re-randomised order would be a second reload tell, and remember
 would need the client-side store the architecture forbids.
 
 `POST /api/sessions/:id/answer` writes the `reviews` row and, in SM-2 mode, updates
-`schedule`. In practice mode its response carries the verdict, the primary expected answer,
-and the explanation if one exists.
+`schedule`. In SM-2 mode the two writes share one transaction — the master spec's own Error
+handling rule for "answer + schedule" — so a failed schedule write rolls back the review
+rather than leaving it recorded against a schedule that never advanced; `due_at` is computed
+from the new review's own `answered_at`, never from `now`, so the two writes cannot disagree
+about when the answer happened. This transaction was, incidentally, widened in Part 7 to cover
+**all three modes' `reviews` insert**, not only sm2's, as the minimal way to make the sm2 write
+atomic without a second code path. In practice mode its response carries the verdict, the
+primary expected answer, and the explanation if one exists.
 
 **In mock test mode it returns a different struct**, carrying only `mode` and the two progress
 counts. Amended in Part 5, which found the "withholds until `/finish`" phrasing above to be
@@ -323,6 +338,27 @@ not from `/finish`, and cover every question rather than only the missed ones.
 | Correct via override      | 4       |
 | Auto-graded wrong         | 2       |
 | Flashcard: again/hard/good/easy | 1 / 3 / 4 / 5 |
+
+Built in Part 7. An SM-2 session serves, from the session's decks, non-archived cards whose
+schedule is due, each exactly once, ordered **`due_at` ascending, then `card_id`** — most
+overdue first, the id tiebreak making the order total. The next card is the first card in that
+order with no `reviews` row for this session, so a reload re-serves the same card and "session
+state lives only in `reviews`" stays exactly true; no hash trick is needed, because `due_at`
+is already a per-card property and ordering by it is already a function of each card in
+isolation. Starting a session on a deck with nothing due is **refused at creation**, naming
+the next due date, matching this document's own Error handling rule that a session with no
+eligible cards fails clearly rather than producing an empty runner — practice mode remains the
+"study now regardless" option. `due_at` is written at **midnight UTC of the due day**
+(`date(<base>, '+N days')`), not a seconds-exact offset, so a card due "tomorrow" is due when
+the student sits down in the morning rather than at the exact hour it was last answered.
+
+**A lapse (quality below 3) leaves the ease factor unchanged.** `reps` resets to 0 and the
+interval resets to one day, but the ease factor is left exactly as it was. This is the
+original SuperMemo-2 behaviour, not an oversight: the ease factor is a property of the card's
+intrinsic difficulty, and a single failure is already punished by the interval reset — also
+dropping the ease would double-count one bad night. A majority of implementations in
+circulation take the other branch, so this reads as a bug to someone who knows that variant;
+it is deliberate and pinned by a unit test.
 
 Note on SM-2 with 16 days until the test: spaced repetition is built for long-horizon
 retention and its scheduling will barely get to prove itself before 11 September. It is

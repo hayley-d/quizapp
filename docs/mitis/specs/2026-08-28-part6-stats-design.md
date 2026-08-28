@@ -267,3 +267,29 @@ aggregates by mode on the argument that the *sampling* differs; SM-2 samples by 
 which is a third sampling rule again. Part 7 should decide whether the strip grows a third
 figure or whether SM-2 reviews fold into one of the existing two — and the answer should be
 recorded here, not discovered in the strip.
+
+### Answered, in Part 7
+
+**The strip grows a third figure, `SM-2 nn% (n)`.** This extends this section's own argument
+rather than contradicting it: the split above exists because the *sampling* differs — practice
+over-serves your weaknesses and is pessimistic by construction, a mock test is an unbiased
+sample — and due-date sampling is a third rule, biased a third way: it serves what the
+scheduler believes you are about to forget. Folding SM-2 into practice would produce a number
+describing neither sampling rule, which is precisely what §3 refused to do when it split mock
+from practice in the first place.
+
+`DeckStatsSummary` gained four fields, of which only the first two are strip figures:
+`sm2_accuracy` and `sm2_review_count` are the third figure, a third `mode = 'sm2'` bucket
+alongside the existing two in `load_summary`; `due_count` and `next_due_at` are **not** strip
+figures — they exist so the deck's Spaced-repetition tile can be enabled, disabled and
+labelled with the next due date, and belong to the tile rather than the strip. A mode with no
+reviews still reads `—`, never `0%`, exactly as for practice and mock.
+
+`load_card_stats`, the per-card miss rate, needed no change: it already pools all modes on
+this section's own argument that a card's own hit rate is not biased by how often it was
+served, so SM-2 reviews join that pool for free.
+
+The cost, accepted: the strip is now three accuracy figures plus coverage plus last-studied,
+on a wrapping flex row that has never been rendered at 375px in any part of this project. See
+Part 7's design record, [`2026-08-28-part7-sm2-design.md`](2026-08-28-part7-sm2-design.md) §9,
+for the full reasoning.

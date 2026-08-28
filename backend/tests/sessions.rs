@@ -135,7 +135,7 @@ async fn rejects_an_unknown_mode_value() {
 }
 
 #[tokio::test]
-async fn rejects_sm2_mode_for_now() {
+async fn accepts_sm2_mode_now_that_part_seven_has_landed() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
     create_flashcard(&app, deck_id, "a").await;
@@ -143,14 +143,9 @@ async fn rejects_sm2_mode_for_now() {
     let (status, body) = app
         .post("/api/sessions", json!({ "mode": "sm2", "deck_ids": [deck_id] }))
         .await;
-    assert_eq!(status, 422);
-    assert!(
-        field_errors(&body).contains(&(
-            "mode".to_string(),
-            "Only practice and mock modes are available yet".to_string()
-        )),
-        "sm2 must get the not-yet message, not the unknown-mode one: {body}",
-    );
+    assert_eq!(status, 201, "sm2 must be accepted: {body}");
+    assert_eq!(body["mode"], "sm2");
+    assert_eq!(body["target_count"], 1, "target_count is the due count: {body}");
 }
 
 #[tokio::test]

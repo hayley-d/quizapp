@@ -15,6 +15,7 @@ use crate::grading::{
 use crate::mock::{first_unanswered, mock_order};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
+use crate::scheduler::{apply, initial_state, quality_for, replay, ScheduleState};
 use crate::state::AppState;
 
 const MODES: [&str; 3] = ["practice", "mock", "sm2"];
@@ -51,8 +52,6 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
 
     if !MODES.contains(&body.mode.as_str()) {
         push_error("mode", "mode must be practice, mock or sm2");
-    } else if body.mode == "sm2" {
-        push_error("mode", "Only practice and mock modes are available yet");
     }
 
     match (&body.deck_ids, body.module_id) {
@@ -65,14 +64,12 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
     }
 
     if body.target_count.is_some() {
-        if body.mode == "mock" {
-            push_error(
-                "target_count",
-                "A mock test is the whole deck, so its length is not yours to set",
-            );
-        } else {
-            push_error("target_count", "Practice sessions have no target count");
-        }
+        let message = match body.mode.as_str() {
+            "mock" => "A mock test is the whole deck, so its length is not yours to set",
+            "sm2" => "A spaced repetition session is whatever is due, so its length is not yours to set",
+            _ => "Practice sessions have no target count",
+        };
+        push_error("target_count", message);
     }
 
     if errors.is_empty() {
@@ -211,7 +208,25 @@ async fn create(
         return Err(AppError::validation([(field, "Those decks have no cards to practise")]));
     }
 
-    let target_count = if body.mode == "mock" { Some(pool_count) } else { None };
+    let target_count = match body.mode.as_str() {
+        "mock" => Some(pool_count),
+        "sm2" => {
+            let due_count = count_due(&state.pool, &encoded).await?;
+            if due_count == 0 {
+                let field = if body.module_id.is_some() { "module_id" } else { "deck_ids" };
+                let message = match next_due_at(&state.pool, &encoded).await? {
+                    Some(next_due) => format!(
+                        "Nothing is due yet — the next card is due {}",
+                        next_due.get(..10).unwrap_or(&next_due),
+                    ),
+                    None => "Nothing is due yet".to_string(),
+                };
+                return Err(AppError::validation([(field, message)]));
+            }
+            Some(due_count)
+        }
+        _ => None,
+    };
 
     let session_id = sqlx::query_scalar!(
         r#"
@@ -266,10 +281,21 @@ pub struct MockNextResponse {
 }
 
 #[derive(Serialize)]
+pub struct Sm2NextResponse {
+    pub mode: &'static str,
+    pub card: NextCardResponse,
+    pub target_count: Option<i64>,
+    pub pool_count: i64,
+    pub answered_count: i64,
+    pub correct_count: i64,
+}
+
+#[derive(Serialize)]
 #[serde(untagged)]
 pub enum NextResponse {
     Practice(PracticeNextResponse),
     Mock(MockNextResponse),
+    Sm2(Sm2NextResponse),
 }
 
 #[derive(Deserialize)]
@@ -548,6 +574,32 @@ async fn load_unanswered_mock_card_ids(
     Ok(rows)
 }
 
+async fn load_next_due_card_id(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+    session_id: i64,
+) -> AppResult<Option<i64>> {
+    let card_id = sqlx::query_scalar!(
+        r#"
+        SELECT cards.id AS "card_id!: i64"
+        FROM cards
+        LEFT JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND (schedule.due_at IS NULL
+               OR schedule.due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+          AND cards.id NOT IN (SELECT card_id FROM reviews WHERE session_id = ?)
+        ORDER BY COALESCE(schedule.due_at, '') ASC, cards.id ASC
+        LIMIT 1
+        "#,
+        deck_ids_json,
+        session_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(card_id)
+}
+
 async fn count_pool(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i64> {
     let count = sqlx::query_scalar!(
         r#"
@@ -560,6 +612,43 @@ async fn count_pool(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i
     .fetch_one(pool)
     .await?;
     Ok(count)
+}
+
+async fn count_due(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i64> {
+    let due_count = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "due_count!: i64"
+        FROM cards
+        LEFT JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND (schedule.due_at IS NULL
+               OR schedule.due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        "#,
+        deck_ids_json,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(due_count)
+}
+
+async fn next_due_at(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+) -> AppResult<Option<String>> {
+    let next_due = sqlx::query_scalar!(
+        r#"
+        SELECT MIN(schedule.due_at) AS "next_due_at?: String"
+        FROM cards
+        JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+        "#,
+        deck_ids_json,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(next_due)
 }
 
 async fn load_served_card(
@@ -628,6 +717,27 @@ async fn next(
             started_at: session.started_at,
             pool_count,
             answered_count,
+        })));
+    }
+
+    if session.mode == "sm2" {
+        let card_id = load_next_due_card_id(&state.pool, &session.deck_ids_json, session.id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Conflict("Everything due in this session has been answered".to_string())
+            })?;
+
+        let card = load_served_card(&state.pool, card_id, None).await?;
+        let pool_count = count_due(&state.pool, &session.deck_ids_json).await?;
+        let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
+
+        return Ok(Json(NextResponse::Sm2(Sm2NextResponse {
+            mode: "sm2",
+            card,
+            target_count: session.target_count,
+            pool_count,
+            answered_count,
+            correct_count,
         })));
     }
 
@@ -956,11 +1066,13 @@ async fn answer(
 
     let graded = grade_answer(&state.pool, &card, &body, &session.mode).await?;
 
-    let review_id = sqlx::query_scalar!(
+    let mut transaction = state.pool.begin().await?;
+
+    let review = sqlx::query!(
         r#"
         INSERT INTO reviews (card_id, session_id, given, correct, self_grade, ms)
         VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING id AS "id!: i64"
+        RETURNING id AS "id!: i64", answered_at AS "answered_at!: String"
         "#,
         card.id,
         session.id,
@@ -969,8 +1081,19 @@ async fn answer(
         graded.stored_self_grade,
         body.ms,
     )
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
+    let review_id = review.id;
+
+    if session.mode == "sm2" {
+        let self_grade = graded.stored_self_grade.and_then(parse_self_grade);
+        let quality = quality_for(graded.correct, self_grade);
+        let current = load_schedule_state(&mut transaction, card.id).await?;
+        let updated = apply(&current, quality);
+        write_schedule(&mut transaction, card.id, &updated, &review.answered_at).await?;
+    }
+
+    transaction.commit().await?;
 
     if session.mode == "mock" {
         let (answered_count, _) = count_progress(&state.pool, session.id).await?;
@@ -983,13 +1106,111 @@ async fn answer(
     }
 
     Ok(Json(AnswerResponse::Practice(PracticeAnswerResponse {
-        mode: "practice",
+        mode: if session.mode == "sm2" { "sm2" } else { "practice" },
         review_id,
         correct: graded.correct,
         expected: graded.expected,
         explanation_md: card.explanation_md,
         can_override: card.kind == "short_answer" && !graded.correct,
     })))
+}
+
+async fn load_schedule_state(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+) -> AppResult<ScheduleState> {
+    let row = sqlx::query!(
+        r#"
+        SELECT interval_days AS "interval_days!: f64",
+               ease          AS "ease!: f64",
+               reps          AS "repetitions!: i64",
+               lapses        AS "lapses!: i64"
+        FROM schedule WHERE card_id = ?
+        "#,
+        card_id,
+    )
+    .fetch_optional(&mut **transaction)
+    .await?;
+
+    Ok(match row {
+        Some(row) => ScheduleState {
+            interval_days: row.interval_days,
+            ease: row.ease,
+            repetitions: row.repetitions,
+            lapses: row.lapses,
+        },
+        None => initial_state(),
+    })
+}
+
+async fn write_schedule(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+    state: &ScheduleState,
+    answered_at: &str,
+) -> AppResult<()> {
+    let interval_days = state.interval_days;
+    let whole_days = state.interval_days as i64;
+    sqlx::query!(
+        r#"
+        INSERT INTO schedule (card_id, due_at, interval_days, ease, reps, lapses)
+        VALUES (
+            ?,
+            date(?, '+' || CAST(? AS TEXT) || ' days') || 'T00:00:00Z',
+            ?, ?, ?, ?
+        )
+        ON CONFLICT (card_id) DO UPDATE SET
+            due_at        = excluded.due_at,
+            interval_days = excluded.interval_days,
+            ease          = excluded.ease,
+            reps          = excluded.reps,
+            lapses        = excluded.lapses
+        "#,
+        card_id,
+        answered_at,
+        whole_days,
+        interval_days,
+        state.ease,
+        state.repetitions,
+        state.lapses,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
+}
+
+async fn recompute_schedule_from_history(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+) -> AppResult<()> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT reviews.correct    AS "correct!: bool",
+               reviews.self_grade AS "self_grade?: String",
+               reviews.answered_at AS "answered_at!: String"
+        FROM reviews
+        JOIN sessions ON sessions.id = reviews.session_id
+        WHERE reviews.card_id = ? AND sessions.mode = 'sm2'
+        ORDER BY reviews.answered_at ASC, reviews.id ASC
+        "#,
+        card_id,
+    )
+    .fetch_all(&mut **transaction)
+    .await?;
+
+    let Some(last_answered_at) = rows.last().map(|row| row.answered_at.clone()) else {
+        return Ok(());
+    };
+
+    let qualities: Vec<u8> = rows
+        .iter()
+        .map(|row| {
+            quality_for(row.correct, row.self_grade.as_deref().and_then(parse_self_grade))
+        })
+        .collect();
+
+    let state = replay(&qualities);
+    write_schedule(transaction, card_id, &state, &last_answered_at).await
 }
 
 #[derive(Serialize)]
@@ -1109,6 +1330,11 @@ async fn override_review(
     )
     .execute(&mut *transaction)
     .await?;
+
+    if review.mode == "sm2" {
+        recompute_schedule_from_history(&mut transaction, review.card_id).await?;
+    }
+
     transaction.commit().await?;
 
     let expected = sqlx::query_scalar!(

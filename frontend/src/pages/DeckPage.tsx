@@ -57,8 +57,8 @@ const TEST_TYPE_OPTIONS: TestTypeOption[] = [
   {
     mode: 'sm2',
     label: 'Spaced repetition',
-    note: 'Arrives in part 7.',
-    available: false,
+    note: 'Only the cards the scheduler says are due today.',
+    available: true,
     Icon: Repeat,
   },
 ]
@@ -265,6 +265,22 @@ export function DeckPage() {
     return null
   }
 
+  const dueCount = deckStats?.summary.due_count ?? null
+  const nextDueAt = deckStats?.summary.next_due_at ?? null
+
+  function noteFor(option: TestTypeOption): string {
+    if (option.mode !== 'sm2') return option.note
+    if (dueCount === null) return option.note
+    if (dueCount > 0) return `${dueCount} card${dueCount === 1 ? '' : 's'} due now.`
+    if (nextDueAt !== null) return `Nothing due — next on ${nextDueAt.slice(0, 10)}.`
+    return 'Nothing due yet.'
+  }
+
+  function isDisabled(option: TestTypeOption): boolean {
+    if (option.mode === 'sm2' && (dueCount === null || dueCount === 0)) return true
+    return !option.available || deck?.card_count === 0 || startingMode !== null
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -311,13 +327,11 @@ export function DeckPage() {
               key={option.mode}
               variant="secondary"
               className="h-16 w-full gap-3 rounded-2xl text-base [&_svg:not([class*='size-'])]:size-5"
-              disabled={
-                !option.available || deck.card_count === 0 || startingMode !== null
-              }
+              disabled={isDisabled(option)}
               title={
                 option.available && deck.card_count === 0
                   ? 'Add a card to this deck first'
-                  : option.note
+                  : noteFor(option)
               }
               onClick={() => void startSession(option.mode)}
             >

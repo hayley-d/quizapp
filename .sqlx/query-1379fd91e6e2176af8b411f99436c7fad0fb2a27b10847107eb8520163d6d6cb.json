@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT cards.id AS \"card_id!: i64\"\n        FROM cards\n        LEFT JOIN schedule ON schedule.card_id = cards.id\n        WHERE cards.archived = 0\n          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n          AND (schedule.due_at IS NULL\n               OR schedule.due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))\n          AND cards.id NOT IN (SELECT card_id FROM reviews WHERE session_id = ?)\n        ORDER BY COALESCE(schedule.due_at, '') ASC, cards.id ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1379fd91e6e2176af8b411f99436c7fad0fb2a27b10847107eb8520163d6d6cb"
+}

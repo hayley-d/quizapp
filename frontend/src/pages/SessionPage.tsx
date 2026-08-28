@@ -20,6 +20,7 @@ import {
   type RevealedAnswer,
   type SelfGrade,
   type SessionSummary,
+  type Sm2NextResponse,
   type SubmitAnswerInput,
 } from '@/lib/api'
 
@@ -41,7 +42,7 @@ export function SessionPage() {
   const sessionId = id !== undefined && /^\d+$/.test(id) ? Number(id) : null
   const navigate = useNavigate()
 
-  const [served, setServed] = useState<PracticeNextResponse | null>(null)
+  const [served, setServed] = useState<PracticeNextResponse | Sm2NextResponse | null>(null)
   const [verdict, setVerdict] = useState<AnswerResult | null>(null)
   const [revealed, setRevealed] = useState<RevealedAnswer | null>(null)
   const [summary, setSummary] = useState<SessionSummary | null>(null)
@@ -283,7 +284,9 @@ export function SessionPage() {
           {answeredCount} answered · {correctCount} correct
           {answeredCount > 0 && ` · ${Math.round((correctCount / answeredCount) * 100)}%`}
           {' · '}
-          {served?.pool_count ?? 0} in the pool
+          {served?.mode === 'sm2'
+            ? `${served.answered_count} of ${served.target_count ?? served.pool_count} due`
+            : `${served?.pool_count ?? 0} in the pool`}
         </p>
         {consecutiveCorrect >= STREAK_THRESHOLD && (
           <StreakBadge streak={consecutiveCorrect} />

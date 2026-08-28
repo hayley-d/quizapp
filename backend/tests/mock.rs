@@ -889,9 +889,9 @@ async fn answering_a_mock_card_does_not_touch_the_schedule_table() {
     let card_id = create_flashcard(&app, deck_id, "one", "an answer").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
-    let before = app.schedule_for(card_id).await;
+    let before = app.schedule_state_for(card_id).await;
     answer_typed(&app, session_id, card_id, "an answer").await;
-    let after = app.schedule_for(card_id).await;
+    let after = app.schedule_state_for(card_id).await;
 
     assert_eq!(before, after, "mock mode must leave the sm-2 schedule alone");
 }
