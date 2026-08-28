@@ -1,11 +1,14 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
+use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
+    RECENT_REVIEW_LIMIT};
 use crate::state::AppState;
 
 const MODES: [&str; 3] = ["practice", "mock", "sm2"];
@@ -211,6 +214,239 @@ async fn create(
     Ok((StatusCode::CREATED, Json(session)))
 }
 
+
+#[derive(Serialize)]
+pub struct NextChoiceResponse {
+    pub id: i64,
+    pub text_md: String,
+}
+
+#[derive(Serialize)]
+pub struct NextCardResponse {
+    pub id: i64,
+    pub kind: String,
+    pub prompt_md: String,
+    pub image_path: Option<String>,
+    pub choices: Vec<NextChoiceResponse>,
+}
+
+#[derive(Serialize)]
+pub struct NextResponse {
+    pub card: NextCardResponse,
+    pub pool_count: i64,
+    pub answered_count: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RevealRequest {
+    pub card_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct RevealResponse {
+    pub card_id: i64,
+    pub answer_md: Option<String>,
+    pub explanation_md: Option<String>,
+}
+
+pub struct ActiveSession {
+    pub id: i64,
+    pub deck_ids_json: String,
+}
+
+pub struct PoolCard {
+    pub id: i64,
+    pub kind: String,
+    pub answer_md: Option<String>,
+    pub explanation_md: Option<String>,
+}
+
+pub async fn load_active_session(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+) -> AppResult<ActiveSession> {
+    let row = sqlx::query!(
+        r#"SELECT id AS "id!: i64", deck_ids, ended_at FROM sessions WHERE id = ?"#,
+        session_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("session"))?;
+
+    if row.ended_at.is_some() {
+        return Err(AppError::Conflict("This session has ended".to_string()));
+    }
+    Ok(ActiveSession { id: row.id, deck_ids_json: row.deck_ids })
+}
+
+pub async fn load_pool_card(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+    card_id: i64,
+) -> AppResult<PoolCard> {
+    sqlx::query_as!(
+        PoolCard,
+        r#"
+        SELECT id AS "id!: i64", kind, answer_md, explanation_md
+        FROM cards
+        WHERE id = ?
+          AND archived = 0
+          AND deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+        "#,
+        card_id,
+        deck_ids_json,
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::validation([("card_id", "That card is not in this session")]))
+}
+
+async fn load_candidates(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+) -> AppResult<Vec<CandidateRow>> {
+    let rows = sqlx::query_as!(
+        CandidateRow,
+        r#"
+        WITH pool AS (
+            SELECT cards.id AS card_id
+            FROM cards
+            WHERE cards.archived = 0
+              AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+        ),
+        recent AS (
+            SELECT reviews.card_id AS card_id,
+                   reviews.correct AS correct,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY reviews.card_id
+                       ORDER BY reviews.answered_at DESC, reviews.id DESC
+                   ) AS recency_rank,
+                   CAST(strftime('%s','now') AS INTEGER)
+                     - CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS age_seconds
+            FROM reviews
+            JOIN pool ON pool.card_id = reviews.card_id
+        ),
+        counts AS (
+            SELECT reviews.card_id AS card_id, COUNT(*) AS review_count
+            FROM reviews
+            JOIN pool ON pool.card_id = reviews.card_id
+            GROUP BY reviews.card_id
+        )
+        SELECT pool.card_id                     AS "card_id!: i64",
+               COALESCE(counts.review_count, 0) AS "review_count!: i64",
+               recent.correct                   AS "correct?: bool",
+               recent.recency_rank              AS "recency_rank?: i64",
+               recent.age_seconds               AS "age_seconds?: i64"
+        FROM pool
+        LEFT JOIN counts ON counts.card_id = pool.card_id
+        LEFT JOIN recent ON recent.card_id = pool.card_id AND recent.recency_rank <= ?
+        ORDER BY pool.card_id, recent.recency_rank
+        "#,
+        deck_ids_json,
+        RECENT_REVIEW_LIMIT,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+async fn load_recent_review_card_ids(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+) -> AppResult<Vec<i64>> {
+    let window = NO_REPEAT_WINDOW as i64;
+    let card_ids = sqlx::query_scalar!(
+        r#"
+        SELECT card_id AS "card_id!: i64"
+        FROM reviews
+        WHERE session_id = ?
+        ORDER BY answered_at DESC, id DESC
+        LIMIT ?
+        "#,
+        session_id,
+        window,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(card_ids)
+}
+
+async fn count_answered(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<i64> {
+    let answered = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "answered_count!: i64" FROM reviews WHERE session_id = ?"#,
+        session_id,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(answered)
+}
+
+async fn next(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+) -> AppResult<Json<NextResponse>> {
+    let session = load_active_session(&state.pool, session_id).await?;
+
+    let candidates = fold_candidate_rows(load_candidates(&state.pool, &session.deck_ids_json).await?);
+    let recent_review_card_ids = load_recent_review_card_ids(&state.pool, session.id).await?;
+
+    let card_id = select_card(&candidates, &recent_review_card_ids, rand::random::<f64>())
+        .ok_or_else(|| {
+            AppError::Conflict("This session has no cards left to practise".to_string())
+        })?;
+
+    let card = sqlx::query!(
+        r#"SELECT id AS "id!: i64", kind, prompt_md, image_path FROM cards WHERE id = ?"#,
+        card_id,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let mut choices = sqlx::query_as!(
+        NextChoiceResponse,
+        r#"SELECT id AS "id!: i64", text_md FROM choices WHERE card_id = ? ORDER BY position"#,
+        card_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    choices.shuffle(&mut rand::thread_rng());
+
+    Ok(Json(NextResponse {
+        card: NextCardResponse {
+            id: card.id,
+            kind: card.kind,
+            prompt_md: card.prompt_md,
+            image_path: card.image_path,
+            choices,
+        },
+        pool_count: candidates.len() as i64,
+        answered_count: count_answered(&state.pool, session.id).await?,
+    }))
+}
+
+async fn reveal(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+    AppJson(body): AppJson<RevealRequest>,
+) -> AppResult<Json<RevealResponse>> {
+    let session = load_active_session(&state.pool, session_id).await?;
+    let card = load_pool_card(&state.pool, &session.deck_ids_json, body.card_id).await?;
+
+    if card.kind != "flashcard" {
+        return Err(AppError::Conflict("Only a flashcard can be revealed".to_string()));
+    }
+
+    Ok(Json(RevealResponse {
+        card_id: card.id,
+        answer_md: card.answer_md,
+        explanation_md: card.explanation_md,
+    }))
+}
+
 pub fn router() -> Router<AppState> {
-    Router::new().route("/sessions", post(create))
+    Router::new()
+        .route("/sessions", post(create))
+        .route("/sessions/{id}/next", get(next))
+        .route("/sessions/{id}/reveal", post(reveal))
 }

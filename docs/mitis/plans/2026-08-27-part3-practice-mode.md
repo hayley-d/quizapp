@@ -524,7 +524,7 @@ Validation splits deliberately: the three pure checks (mode, deck-or-module sele
 
 ---
 
-## Task 7: `GET /next` and `POST /reveal` — the leakage pair
+## Task 7: `GET /next` and `POST /reveal` — the leakage pair — **COMPLETE**
 
 **Goal:** Serve a weighted-sampled card that structurally cannot carry an answer key, and give flashcards their own reveal.
 
@@ -567,19 +567,26 @@ Shuffle per serve in the handler: `choices.shuffle(&mut rand::thread_rng())`. Sh
 
 **`POST /api/sessions/{id}/reveal`** — request `{card_id}`, response `{card_id, answer_md, explanation_md}`. Flashcard only; any other kind is 409 "Only a flashcard can be revealed". Card must be in the pool (422 `card_id` "That card is not in this session"). Ended session 409. **Writes nothing.**
 
+**Outcome:** 16 new tests (32 in the file), 12 mutations killed. Two tests needed strengthening:
+
+- **`next_does_not_repeat_a_card_inside_the_window` could pass without the window.** With 12 cards where every unserved card is never-seen, the never-seen weight alone almost always avoids a repeat, so the test measured the weighting rather than the window. Rewritten to pre-seed all nine cards with identical review history in a *separate* session, making every weight equal so the window is the only thing preventing a repeat — and with nine cards the ninth serve is forced, since the window excludes the other eight.
+- The never-seen mutation initially survived because it was a bad mutation, not a weak test: replacing selection with `max()` on card id happened to return the unseen card, which was created last and so had the highest id. Re-proved with `min()` and with `first()`.
+
+`AppError::Conflict` now has production call sites, which retires a known-and-accepted minor from the handover.
+
 **Integration tests:**
-- [ ] **`next_never_returns_answer_data_for_any_kind`** — one deck with all three kinds, 30 serves; assert the `card` object's key set is **exactly** `{id, kind, prompt_md, image_path, choices}`, each choice's exactly `{id, text_md}`, and the serialised body contains none of `is_correct`, `answer_md`, `explanation_md`, `accepted`, `expected`, nor any actual answer text. Mutation: add any answer field to either struct, or reuse `cards::ChoiceResponse`.
-- [ ] **`next_shuffles_the_choices`** — a 4-choice card, 30 serves, ≥2 distinct id orders **and** a constant id set. False-failure probability `(1/24)^29`.
-- [ ] `next_serves_an_unseen_card_before_a_known_one` — 1 never-seen against 5 with 3 correct reviews each; the unseen card appears within 20 serves
-- [ ] **`next_does_not_repeat_a_card_inside_the_window`** — 12-card deck, 9 answered in a row, no card twice
-- [ ] **`the_no_repeat_window_survives_a_reload`** — answer 3, then 15 bare `/next` calls; none of the 3 appears. Mutation: derive the window from in-process memory rather than `reviews`.
-- [ ] `a_three_card_deck_still_serves_a_card` — 40 consecutive serve+answer cycles, all 200
-- [ ] `a_one_card_deck_serves_the_same_card_repeatedly`
-- [ ] `next_conflicts_when_every_pool_card_is_archived_mid_session` — 409, not 500
-- [ ] `next_on_a_finished_session_is_409` / `next_on_an_unknown_session_is_404`
-- [ ] `next_reports_the_progress_counts_from_reviews`
-- [ ] **`refuses_to_reveal_a_graded_card`** — `mc_single` and `short_answer` → 409, and the body leaks neither `is_correct` nor accepted text. The gate that stops reveal becoming a universal key oracle.
-- [ ] `revealing_a_flashcard_returns_its_answer` / `refuses_to_reveal_a_card_outside_the_session` / `revealing_writes_nothing`
+- [x] **`next_never_returns_answer_data_for_any_kind`** — one deck with all three kinds, 30 serves; assert the `card` object's key set is **exactly** `{id, kind, prompt_md, image_path, choices}`, each choice's exactly `{id, text_md}`, and the serialised body contains none of `is_correct`, `answer_md`, `explanation_md`, `accepted`, `expected`, nor any actual answer text. Mutation: add any answer field to either struct, or reuse `cards::ChoiceResponse`.
+- [x] **`next_shuffles_the_choices`** — a 4-choice card, 30 serves, ≥2 distinct id orders **and** a constant id set. False-failure probability `(1/24)^29`.
+- [x] `next_serves_an_unseen_card_before_a_known_one` — 1 never-seen against 5 with 3 correct reviews each; the unseen card appears within 20 serves
+- [x] **`next_does_not_repeat_a_card_inside_the_window`** — 12-card deck, 9 answered in a row, no card twice
+- [x] **`the_no_repeat_window_survives_a_reload`** — answer 3, then 15 bare `/next` calls; none of the 3 appears. Mutation: derive the window from in-process memory rather than `reviews`.
+- [x] `a_three_card_deck_still_serves_a_card` — 40 consecutive serve+answer cycles, all 200
+- [x] `a_one_card_deck_serves_the_same_card_repeatedly`
+- [x] `next_conflicts_when_every_pool_card_is_archived_mid_session` — 409, not 500
+- [x] `next_on_a_finished_session_is_409` / `next_on_an_unknown_session_is_404`
+- [x] `next_reports_the_progress_counts_from_reviews`
+- [x] **`refuses_to_reveal_a_graded_card`** — `mc_single` and `short_answer` → 409, and the body leaks neither `is_correct` nor accepted text. The gate that stops reveal becoming a universal key oracle.
+- [x] `revealing_a_flashcard_returns_its_answer` / `refuses_to_reveal_a_card_outside_the_session` / `revealing_writes_nothing`
 
 **Verify:** `cargo test --test sessions`
 
