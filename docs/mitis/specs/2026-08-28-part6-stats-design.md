@@ -120,13 +120,17 @@ GET /api/decks/:id/stats  →
     "last_answered_at": "2026-08-28T09:14:02Z"
   },
   "cards": [
-    { "card_id": 7, "attempt_count": 6, "miss_rate": 0.42,
-      "last_answered_at": "2026-08-28T09:14:02Z" }
+    { "card_id": 7, "attempt_count": 6, "miss_rate": 0.42 }
   ]
 }
 ```
 
-Both accuracies and `last_answered_at` are nullable; `cards` may be empty.
+Both accuracies and the summary's `last_answered_at` are nullable; `cards` may be empty.
+
+A per-card `last_answered_at` was drafted and dropped. The badge does not render it, and it is
+the one field the candidate query cannot supply — `fold_candidate_rows` returns
+`seconds_since_last_review`, not a timestamp — so carrying it would mean a second query for a
+value nothing displays.
 
 **Rejected: folding the per-card figures into `GET /api/decks/:id/cards`.** One fewer request,
 but it pushes review aggregation into a query the card editor and every card list also pay for,
@@ -203,10 +207,20 @@ end up disagreeing. The badges make weak cards findable without taking the order
 strip and the badges. No toast: a red toast over a working deck page would be the loudest
 thing on screen for the least important reason.
 
-**The badge's emphasised variant is a new fixed foreground/background pair**, so it joins
-`frontend/scripts/check-contrast.py` in the ENFORCED tier for both themes and must clear
-4.5:1 in each. That is a task in the plan, not an afterthought — the handover records that a
-2.14:1 failure survived three parts unnoticed before the script existed.
+**The badge adds no new contrast pairs, and that is a finding rather than a convenience.**
+The obvious choice for the emphasised state was shadcn's `destructive` badge variant, which
+is a 10%-alpha tint of `--destructive` under `--destructive` text. Measured against the row's
+`bg-card` backdrop it comes to **3.64:1 in light and 3.60:1 in dark — both below AA**. The
+variant is vendored shadcn and stays untouched per the CLAUDE.md carve-out, so the emphasised
+badge instead uses the solid pair, `bg-destructive` under `--destructive-foreground`: 5.04:1
+light, 5.52:1 dark, and already an ENFORCED row in `check-contrast.py` as "verdict
+destructive". The muted state uses the `secondary` variant, also already ENFORCED at 7.65:1
+and 10.0:1 as "choice unselected".
+
+So `check-contrast.py` gains nothing and the gate already covers both states. The tinted
+variant's failure is recorded here so it is not reintroduced later as a cosmetic tweak — the
+handover notes a 2.14:1 failure that survived three parts unnoticed, and this is the same
+shape of defect caught before it shipped rather than after.
 
 ---
 

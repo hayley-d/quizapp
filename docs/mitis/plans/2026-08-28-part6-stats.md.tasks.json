@@ -1,0 +1,75 @@
+{
+  "planPath": "docs/mitis/plans/2026-08-28-part6-stats.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Stats endpoint summary figures",
+      "status": "pending",
+      "description": "**Goal:** GET /api/decks/:id/stats returns a summary object with card count, unseen count, mock and practice accuracy with their review counts, and the deck's last answered timestamp.\n\n**Files:**\n- Create: `backend/src/stats.rs`\n- Create: `backend/tests/stats.rs`\n- Modify: `backend/src/lib.rs` (module list)\n- Modify: `backend/src/routes/decks.rs` (router at lines 66-70, plus the new handler)\n\n**Acceptance Criteria:**\n- [ ] GET /api/decks/:id/stats returns 200 with a summary object and a cards array (empty until Task 2)\n- [ ] card_count and unseen_count count only non-archived cards\n- [ ] mock_accuracy and practice_accuracy are computed from their own mode's reviews only\n- [ ] Both accuracies are null - not 0 - when that mode has no reviews\n- [ ] An overridden review counts as correct\n- [ ] last_answered_at is null for a deck with no reviews\n- [ ] An unknown deck id returns 404 with the standard error envelope\n- [ ] accuracy_of has a Rust unit test proving the zero-review case returns None and not Some(NaN)\n\n**Verify:** `cargo test --test stats && cargo test --lib stats` -> all green\n\n```json:metadata\n{\"files\": [\"backend/src/stats.rs\", \"backend/src/lib.rs\", \"backend/src/routes/decks.rs\", \"backend/tests/stats.rs\"], \"verifyCommand\": \"cargo test --test stats && cargo test --lib stats\", \"acceptanceCriteria\": [\"summary endpoint returns 200\", \"archived cards excluded from counts\", \"mode-separated accuracy\", \"null not zero for absent modes\", \"overridden counts as correct\", \"404 on unknown deck\", \"accuracy_of unit-tested for None vs NaN\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Per-card miss rates",
+      "status": "pending",
+      "description": "**Goal:** The cards array carries one entry per answered card - card_id, attempt_count, and a recency-weighted miss_rate computed by practice.rs's existing weighted_miss_rate.\n\n**Files:**\n- Modify: `backend/src/stats.rs` (add load_card_stats, fill in deck_stats)\n- Modify: `backend/tests/stats.rs` (add four tests)\n\n**Acceptance Criteria:**\n- [ ] Each answered, non-archived card appears once in cards with its attempt count\n- [ ] Cards with no reviews are omitted from cards entirely\n- [ ] Archived cards are omitted from cards even when they have reviews\n- [ ] miss_rate is recency-weighted: of two cards with identical raw accuracy, the one whose misses are more recent ranks higher\n- [ ] Only the last RECENT_REVIEW_LIMIT (10) reviews of a card feed its miss rate\n\n**Verify:** `cargo test --test stats` -> all green\n\n```json:metadata\n{\"files\": [\"backend/src/stats.rs\", \"backend/tests/stats.rs\"], \"verifyCommand\": \"cargo test --test stats\", \"acceptanceCriteria\": [\"answered cards appear once with attempt count\", \"unreviewed cards omitted\", \"archived cards omitted\", \"miss rate is recency-weighted\", \"only last 10 reviews feed the miss rate\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: API client types and method",
+      "status": "pending",
+      "description": "**Goal:** api.getDeckStats(deckId, signal) exists and is typed to match the endpoint exactly.\n\n**Files:**\n- Modify: `frontend/src/lib/api.ts` (types near the other response types; method in the api object at line 271)\n\n**Acceptance Criteria:**\n- [ ] DeckStatsSummary, CardStats and DeckStats are exported and mirror the Rust structs field for field\n- [ ] api.getDeckStats takes an AbortSignal like the other deck calls\n- [ ] No any anywhere in the addition\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/lib/api.ts\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm exec oxlint\", \"acceptanceCriteria\": [\"types mirror the Rust structs\", \"getDeckStats accepts an AbortSignal\", \"no any in the addition\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: The formatters",
+      "status": "pending",
+      "description": "**Goal:** formatPercentage and formatRelativeTime exist in frontend/src/lib/format.ts, with formatRelativeTime correctly parsing the app's Z-suffixed ISO timestamps.\n\n**Files:**\n- Modify: `frontend/src/lib/format.ts`\n- Create: `frontend/src/lib/format.test.ts` - only if a test runner is already configured; check frontend/package.json for a test script first\n\n**Acceptance Criteria:**\n- [ ] formatPercentage(0.714) -> '71%'; formatPercentage(null) -> em dash\n- [ ] formatRelativeTime returns 'just now', 'N minutes ago', 'N hours ago', 'N days ago', and falls back to a date beyond 30 days\n- [ ] formatRelativeTime takes the reference time as a parameter, defaulting to Date.now(), so it is testable without mocking the clock\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/lib/format.ts\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm exec oxlint\", \"acceptanceCriteria\": [\"formatPercentage rounds and renders an em dash for null\", \"formatRelativeTime covers all bands plus a date fallback\", \"reference time is a parameter\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: The summary strip",
+      "status": "pending",
+      "description": "**Goal:** /decks/:id renders a stats strip under the three mode buttons, and fails quietly.\n\n**Files:**\n- Create: `frontend/src/components/deck/DeckStatsStrip.tsx`\n- Modify: `frontend/src/pages/DeckPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] The strip renders coverage, mock accuracy, practice accuracy and last-studied, separated by middots\n- [ ] A mode with no reviews renders an em dash, never 0%\n- [ ] A deck with no reviews at all renders the single line 'No sessions yet.' instead of a strip of dashes\n- [ ] A failed stats request leaves the page rendering exactly as before, with no toast\n- [ ] The fetch is aborted on unmount and re-runs when the deck id changes\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`, then load a deck in the browser\n\n```json:metadata\n{\"files\": [\"frontend/src/components/deck/DeckStatsStrip.tsx\", \"frontend/src/pages/DeckPage.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"strip renders all four figures\", \"em dash not 0% for an absent mode\", \"'No sessions yet.' for an unstudied deck\", \"failure produces no toast and no strip\", \"fetch aborts on unmount\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: The per-card weakness badge",
+      "status": "pending",
+      "description": "**Goal:** Each CardRow carries a badge showing either its recency-weighted miss rate or that the card is unseen.\n\n**Files:**\n- Create: `frontend/src/components/deck/CardStatBadge.tsx`\n- Modify: `frontend/src/components/deck/CardRow.tsx`\n- Modify: `frontend/src/pages/DeckPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] A card with reviews shows '42% missed - 6'\n- [ ] At or above a 40% miss rate the badge is the solid destructive pair; below it, secondary\n- [ ] A card absent from cards shows an Unseen badge\n- [ ] An archived card shows no stats badge in either state\n- [ ] When stats have not loaded (or failed) no badge renders at all\n- [ ] frontend/scripts/check-contrast.py still passes - the badge introduces no new colour pair\n\n**Verify:** `cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint && cd .. && python3 frontend/scripts/check-contrast.py`\n\n```json:metadata\n{\"files\": [\"frontend/src/components/deck/CardStatBadge.tsx\", \"frontend/src/components/deck/CardRow.tsx\", \"frontend/src/pages/DeckPage.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint && cd .. && python3 frontend/scripts/check-contrast.py\", \"acceptanceCriteria\": [\"miss-rate badge text\", \"solid destructive above the 40% threshold\", \"Unseen badge for unreviewed cards\", \"no badge on archived rows\", \"no badge when stats absent\", \"contrast script still passes\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        5
+      ]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Delete the /stats screen",
+      "status": "pending",
+      "description": "**Goal:** The /stats route, its nav entry and StubPage.tsx are gone, and nothing references them.\n\n**Files:**\n- Modify: `frontend/src/App.tsx`\n- Modify: `frontend/src/components/AppShell.tsx`\n- Delete: `frontend/src/pages/StubPage.tsx`\n\n**Acceptance Criteria:**\n- [ ] grep -r StubPage frontend/src returns nothing\n- [ ] grep -r '/stats' frontend/src returns nothing\n- [ ] The nav shows only Decks\n- [ ] The build and lint pass with no unused-import warnings\n\n**Verify:** `grep -r 'StubPage\\|/stats' frontend/src; cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`\n\n```json:metadata\n{\"files\": [\"frontend/src/App.tsx\", \"frontend/src/components/AppShell.tsx\", \"frontend/src/pages/StubPage.tsx\"], \"verifyCommand\": \"grep -r 'StubPage\\\\|/stats' frontend/src; cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"no StubPage references\", \"no /stats references\", \"nav shows only Decks\", \"build and lint clean\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        6
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Amend the spec, handover, full gate",
+      "status": "pending",
+      "description": "**Goal:** The master spec no longer describes a screen and an endpoint that do not exist, the handover records Part 6, and the whole gate is green.\n\n**Files:**\n- Modify: `docs/mitis/specs/2026-08-26-quiz-study-app-design.md` (endpoint table near line 246; screen table near line 343)\n- Modify: `docs/HANDOVER.md`\n\n**Acceptance Criteria:**\n- [ ] The master spec's endpoint table reads GET /api/decks/:id/stats, with the per-deck description\n- [ ] The master spec's screen table no longer has a /stats row, and records where deck statistics went\n- [ ] docs/HANDOVER.md states that Part 6 is done, what it built, and what remains outstanding\n- [ ] The full verification gate passes end to end\n\n**Verify:** the full six-command gate, all green\n\n```json:metadata\n{\"files\": [\"docs/mitis/specs/2026-08-26-quiz-study-app-design.md\", \"docs/HANDOVER.md\"], \"verifyCommand\": \"cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"endpoint table amended\", \"screen table amended\", \"handover records Part 6\", \"full gate passes\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        7
+      ]
+    }
+  ],
+  "lastUpdated": "2026-08-28T00:00:00Z"
+}
