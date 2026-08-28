@@ -2,11 +2,19 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `main`, at the Part 6 merge.
+**Last updated:** 2026-08-28, on `feat/part7-sm2` at `8d995a2`.
+**Part 7 (SM-2) is implemented and reviewed, but not yet merged.** Tasks 1-8 of the plan are
+complete; the branch has not been merged to `main`, so `docs/PART-7-HANDOVER.md` — a temporary
+mid-execution handover, superseded by this document — has not yet been deleted. Part 7 merged
+on a green automated gate (below) and an **undriven** browser walkthrough — the Chrome
+extension is still not connected on this machine, so all nine points of the walkthrough at the
+brief's Step 5 are outstanding. See "Part 7 — verification status" under Outstanding for the
+itemised list.
+
 **Part 6 (stats) is done and merged** — `feat/part6-stats` landed on `main`, and there is no
-feature branch outstanding. It merged on a green automated gate and an undriven
-browser walkthrough — the Chrome extension is still not available on this machine, so the
-eight-point walkthrough at the end of
+other feature branch outstanding besides `feat/part7-sm2` above. It merged on a green automated
+gate and an undriven browser walkthrough — the Chrome extension is still not available on this
+machine, so the eight-point walkthrough at the end of
 [`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md) has not been
 performed. The numbers are proven by ten integration tests and two unit tests, each
 mutation-checked; what is *not* proven is that they look right on screen.
@@ -30,7 +38,9 @@ before Part 5 existed. Read "The `e09e76d` styling pass" under Where things stan
 touching the frontend.
 
 Part 2c's nine-point walkthrough is still outstanding, and 375px phone width has never
-been rendered in any part — now across Parts 1, 2b, 2c, 3, 4, 5 **and 6** (see Outstanding).
+been rendered in any part — now across Parts 1, 2b, 2c, 3, 4, 5, 6 **and 7** (see
+Outstanding). Part 7 adds a third figure to a stats strip that has never been seen at phone
+width, which is a specific, outstanding risk rather than a hypothetical one.
 
 ## What this is
 
@@ -41,8 +51,123 @@ document is the record of what the app is meant to be, and it is kept current.
 ## Where things stand
 
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
-redesign that followed them ("Part 2c" below). Parts 3, 4, 5 and 6 are merged to `main`;
-there is no feature branch outstanding. Concretely, working today:
+redesign that followed them ("Part 2c" below). Parts 3, 4, 5 and 6 are merged to `main`.
+Part 7 (SM-2) is implemented on `feat/part7-sm2` at `8d995a2`, reviewed and gated green, but
+**not yet merged**. Concretely, working today on that branch:
+
+### Part 7: SM-2 spaced repetition
+
+**A third session mode, drawing from `schedule`, the table every card has had a row in since
+Part 1 and that no code had touched until now.** `backend/src/scheduler.rs` is a new pure
+module (no database access, alongside `practice.rs`, `mock.rs` and `grading.rs`) implementing
+standard SuperMemo-2: `initial_state`, `quality_for(correct, self_grade)`, `apply(state,
+quality)` and `replay(qualities)`. Design:
+[`mitis/specs/2026-08-28-part7-sm2-design.md`](mitis/specs/2026-08-28-part7-sm2-design.md);
+plan: [`mitis/plans/2026-08-28-part7-sm2.md`](mitis/plans/2026-08-28-part7-sm2.md). **No
+migration, no new table, no new column, no new dependency, and no new colour token** — every
+prerequisite (the `schedule` table, `sessions.mode` already permitting `'sm2'`,
+`reviews.self_grade`, the frontend's disabled tile) was seeded by earlier parts specifically
+so this one would need none of that.
+
+- **Due-ordered serving, most overdue first.** An SM-2 session serves, from the session's
+  decks, non-archived cards whose schedule is due, each exactly once, ordered by `due_at`
+  ascending then `card_id` — the id tiebreak makes the order total, the same reasoning as
+  `mock.rs`'s `(hash, card_id)` tuple. The next card is the first card in that order with no
+  `reviews` row for this session, so a reload re-serves the same card and "session state lives
+  only in `reviews`" stays exactly true. Unlike mock, this needed no hash trick: `due_at` is
+  already a per-card property, so ordering by it is already a function of each card, and has
+  the reload-stability property natively. A missing `schedule` row (which should be
+  unreachable, since every card gets one at creation) counts as due via a `LEFT JOIN`, rather
+  than being hidden by an `INNER JOIN`.
+- **Nothing due refuses at creation**, naming the next due date, on this document's existing
+  Error handling rule that a session with no eligible cards fails clearly rather than serving
+  an empty runner. Serving the soonest-due cards anyway was considered and rejected — it would
+  defeat the scheduler completely, turning every session into "review everything" and making
+  the intervals purely advisory. Practice mode already exists for "study now regardless."
+- **Day-granular `due_at`.** Written at midnight UTC of the due day (`date(<base>, '+N
+  days')`), not a seconds-exact offset, so a card answered at 21:00 with a one-day interval is
+  due at 08:00 the next morning, not at 21:00 the next day.
+- **A lapse leaves the ease factor unchanged — deliberately, and it is a known minor rather
+  than a bug.** On `quality < 3`, `repetitions` resets to 0, `interval_days` resets to one day,
+  `lapses` increments, and **the ease factor is left exactly as it was.** This is the original
+  SuperMemo-2 behaviour: the ease factor is a property of the card's intrinsic difficulty, and
+  a single failure is already punished by the interval reset — also dropping the ease would
+  double-count one bad night and drive easy-but-forgotten cards toward the 1.3 floor they do
+  not belong at. **A majority of the SM-2 implementations in circulation take the other
+  branch**, so this will read as a bug to a future maintainer who knows that variant. It is
+  invisible in the code — an absence, a line not written — pinned by a unit test
+  (`a_lapse_resets_the_repetitions_and_counts_itself` and the ease-unchanged assertion beside
+  it in `scheduler.rs`), and it must not be "fixed."
+- **`repetitions` in Rust and TypeScript, `reps` in the SQL column.** Part 7 ships no migration
+  deliberately (see above), so the `schedule.reps` column — named before this project's
+  never-abbreviate rule existed — keeps its name rather than forcing a migration over
+  hand-written cards, which is exactly what "schedule exists from day one" was sequenced to
+  avoid. Every Rust and TypeScript identifier is `repetitions`; the SQL query aliases at the
+  boundary, `reps AS "repetitions!: i64"` (`backend/src/routes/sessions.rs:1126`). **Recorded
+  as a known minor split so a later reader does not "fix" one half of it** — renaming the
+  column now would be the very migration Part 7 was sequenced to avoid, and renaming only the
+  Rust/TypeScript side back to `reps` would violate the project's own naming rule.
+- **The answer write is one transaction**, in SM-2 mode: the `reviews` insert and the
+  `schedule` update share a transaction, so a failed schedule write rolls back the review
+  rather than leaving it recorded against a schedule that never advanced (pinned by
+  `a_failed_schedule_write_rolls_back_the_review`, which drops the `schedule` table mid-write).
+  `due_at` is computed from the new review's own `answered_at`, never `now`. **This transaction
+  was incidentally widened to cover all three modes' `reviews` insert, not only sm2's** — the
+  minimal way to make the sm2 write atomic without a second code path for it alone, accepted
+  at review.
+- **The override replays the schedule.** `POST /api/reviews/:id/override`, when the
+  overridden review's session is `sm2`, follows the flip with a replay of every sm2 review for
+  that card, in `answered_at, id` order, through `scheduler::replay` — recomputing `schedule`
+  rather than leaving it at the lapse the override just corrected. `apply` and `replay` are
+  tested to agree (a fold of `apply` from `initial_state` must equal one call to `replay`), so
+  the answer path and the override path cannot silently diverge. `due_at` is based on the
+  *last replayed review's* `answered_at`, not `now`, so an override performed the next day does
+  not push the card a further day out.
+- **An sm2 flashcard override stays refused, on the existing check, unedited.** The `answer`
+  handler's inline `can_override` predicate (not `can_override_result`, which remains correct
+  for `/results`) already refuses to override a flashcard outside mock mode, and its condition
+  already covers `sm2` with no edit — `can_override_result` returns `true` for an incorrect
+  flashcard and would break the pinned test at `backend/tests/sessions.rs:1023` if the handler
+  used it instead. In SM-2 a flashcard is self-graded, so the student's own verdict *is* the
+  grade, and overriding your own verdict is incoherent — you re-grade a flashcard, you do not
+  override it. The refusal message ("Grade the flashcard again instead of overriding it")
+  becomes slightly misleading under SM-2, since the card will not come back later in the same
+  session; left as a known minor rather than reworded.
+- **`schedule_for` was not replaced.** The plan's own text said to widen this test helper; doing
+  so would have silently gutted `backend/tests/cards.rs:267`, which destructures its 2-tuple
+  and asserts the row count. A separate `schedule_state_for` was added alongside it instead,
+  and Part 5's mock canary (`backend/tests/mock.rs`, "mock mode must leave the sm-2 schedule
+  alone") was pointed at the wider helper, so it now also proves `interval_days`, `ease`,
+  `repetitions` and `lapses` are untouched in mock mode, not only that a row exists.
+- **The stats strip grows a third figure — the answer to Part 6 §10, recorded there in
+  place.** `DeckStatsSummary` gains `sm2_accuracy` / `sm2_review_count` (the third strip
+  figure, a third `mode = 'sm2'` bucket alongside practice and mock) plus `due_count` /
+  `next_due_at` (tile data, not strip figures — they enable, disable and label the
+  Spaced-repetition tile). `load_card_stats`, the per-card miss rate, needed no change: it
+  already pools all modes. A mode with no reviews still reads `—`, never `0%`.
+- **`SessionPage.tsx` is reused, not forked, unlike mock.** Mock got its own page because a
+  mock run must never enter five pieces of practice's state (verdict, revealed answer, two
+  override flags, streak); SM-2 needs all five — same verdict, same reveal, same four
+  self-grades, same override, same streak, just a different pool. `served` widens to
+  `PracticeNextResponse | Sm2NextResponse`; the header becomes mode-aware (`n of m due` for
+  SM-2 against `n in the pool` for practice). Part 5's mode-mismatch redirects already handle
+  `sm2` falling through them with no edit — this is the slot Part 5 said it was leaving.
+- **A decision made during execution, worth recording so it is not reverted:** the plan's own
+  Task 7 code left the Spaced-repetition deck tile enabled while `due_count` was still loading,
+  because `deck` and `deckStats` load in parallel and the tile's guard originally checked only
+  `deck`. That contradicted the task's own acceptance criterion. Escalated, and the ruling was
+  that the criterion governs: `DeckPage.tsx`'s `isDisabled` now treats the tile as disabled
+  while `dueCount` is `null` (still loading) as well as when it is `0`.
+- **A fragility worth naming, not yet a bug:** `NextResponse` (`backend/src/routes/sessions.rs`)
+  is `#[serde(untagged)]` and derives only `Serialize`, so there is no ambiguity today. If
+  `Deserialize` is ever added, the three variants still discriminate by required-field presence
+  (Practice has no `target_count`; Mock requires `started_at`; Sm2 requires `correct_count`) —
+  but untagged deserialization becomes a real hazard worth a second look at that point.
+- **No new colour token.** `check-contrast.py` still reports 16 ENFORCED rows with an empty
+  RECORDED tier — an unchanged count is the evidence that Part 7 introduced no new colour pair.
+
+**The browser walkthrough is undriven** — see "Part 7 — verification status" under
+Outstanding for the full itemised list; do not read the green gate below as covering it.
 
 ### Part 6: stats
 
@@ -143,11 +268,14 @@ other — do not assume a value carries over.
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 317 backend tests (the count of all lib and integration test binaries combined; 229
-  before Part 5, and an earlier figure of 119 recorded here was stale twice over). No
-  frontend test framework — that is a deliberate spec decision, not an omission, and it is
-  load-bearing in Part 5's design: it is *why* mock mode got its own page rather than a
-  mode branch inside the practice runner.
+- 317 backend tests as of the Part 6 merge (the count of all lib and integration test binaries
+  combined; 229 before Part 5, and an earlier figure of 119 recorded here was stale twice
+  over). **On `feat/part7-sm2` at `8d995a2` the observed count is 364** — see "Part 7 —
+  verification status" under Outstanding for the full per-suite breakdown; that count is what
+  was actually run for this update, not carried forward from any other document. No frontend
+  test framework — that is a deliberate spec decision, not an omission, and it is load-bearing
+  in Part 5's design: it is *why* mock mode got its own page rather than a mode branch inside
+  the practice runner.
 
 - **Part 3, practice mode** — `grading.rs` and `practice.rs` (two pure modules, no database
   access, randomness injected as a `roll: f64`), `routes/sessions.rs` with six endpoints, and
@@ -396,22 +524,32 @@ other — do not assume a value carries over.
 
 ## Next up
 
-**Drive a mock test.** Part 5 is merged but has never been used, so the highest-value next
-action is not code: sit one mock test on a real COS781 deck with DevTools open, and work the
-twenty-one points in the plan's Task 17. The gate cannot see a leak, only a type error.
+**Merge `feat/part7-sm2`, then drive all three undriven walkthroughs in one sitting.** Part
+7's code is done, reviewed and gated green, but the branch is not merged and none of Parts 5,
+6 or 7 has ever been touched by a real browser on this machine. All three walkthroughs want
+overlapping screens (the deck page, a session, the results/summary screen), so the
+highest-value next action is not code: with DevTools open, sit one mock test, one practice
+run and one SM-2 session on a real COS781 deck, and work through:
 
-**And walk the Part 6 stats screen**, whose eight-point walkthrough is also undriven — see
-the end of [`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md).
-Both walkthroughs want the same session, so sit one mock test on a real deck and check the
-strip and the badges before and after it.
+- Part 5's twenty-one-point walkthrough (`mitis/plans/2026-08-28-part5-mock-test.md`), the
+  answer-leak checks (points 3, 7, 9, 21) above all — only the Network tab proves the client
+  never asks for `/results` mid-run.
+- Part 6's eight-point walkthrough
+  ([`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md)) — the
+  strip and the badges, before and after a session.
+- Part 7's nine-point walkthrough (the task-8 brief's Step 5) — see "Part 7 — verification
+  status" under Outstanding for the itemised list, including the due-date refusal, the
+  lapse-leaves-ease-unchanged check in DBeaver, and the strip's new third figure.
 
-**Then Part 7: SM-2.** Part 6 leaves it one open question, recorded in its design spec §10:
-SM-2 reviews land in the same `reviews` table under a third sampling rule, so the deck strip
-either grows a third figure or folds them into an existing one. Decide it there, not in the
-strip.
+The gate cannot see a leak, and it cannot see a layout, only a type error.
 
-After Part 7: embed the bundle and LAN binding (which is also the phone layout pass, and the
-first time 375px gets rendered).
+**Part 6's one open question is now answered**, in its design spec §10 in place: the strip
+grows a third figure for SM-2, on the same sampling-differs argument that split mock from
+practice.
+
+**After the merge and the walkthroughs: build step 8** — embed the bundle and LAN binding,
+which is also the phone layout pass and the first time 375px gets rendered anywhere in this
+project, including the stats strip's new third figure.
 
 ### The three things Part 5 had to resolve — and how it did
 
@@ -637,6 +775,99 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+### Part 7 — verification status
+
+**The automated gate is green and the browser walkthrough was never performed.** Same shape
+as Part 5's entry below, and the same caveat applies: a green gate is not the walkthrough.
+
+Verified, by running it on `feat/part7-sm2` at `8d995a2` on 2026-08-28:
+
+- `cargo test` — **364 passed, 0 failed**, across twelve test binaries:
+
+  | Binary | Passed |
+  | --- | --- |
+  | `unittests src/lib.rs` | 107 |
+  | `unittests src/main.rs` | 0 |
+  | `tests/cards.rs` | 49 |
+  | `tests/decks.rs` | 23 |
+  | `tests/health.rs` | 2 |
+  | `tests/images.rs` | 11 |
+  | `tests/mock.rs` | 57 |
+  | `tests/modules.rs` | 11 |
+  | `tests/sessions.rs` | 70 |
+  | `tests/sm2.rs` (new in Part 7) | 19 |
+  | `tests/stats.rs` | 15 |
+  | Doc-tests | 0 |
+
+  This is the count **actually observed for this update**, not carried forward from
+  `docs/PART-7-HANDOVER.md`'s mid-execution figure of 355 (recorded after Task 4 of 8, before
+  Tasks 5-8 added more), and not carried forward from this document's own pre-Part-7 figure of
+  317. This document's test count has been stale twice before; this one is the number this
+  session watched `cargo test` print.
+- `cargo clippy --all-targets -- -D warnings` — clean
+- `SQLX_OFFLINE=true cargo build` — clean
+- `python3 frontend/scripts/check-contrast.py` — **16 rows, all `ok`, no RECORDED section**,
+  the same 16 as before Part 7 — the evidence that no new colour pair crept in
+- `pnpm exec tsc -b --noEmit` — clean, no output
+- `pnpm build` — builds; the JS bundle is 906.95 kB (276.80 kB gzipped), still tripping Vite's
+  500 kB chunk warning, unchanged in shape from Part 5's note about it
+- `pnpm exec oxlint` — exit 0, 12 warnings, the same 12 pre-existing warnings as recorded under
+  Part 5's minor findings, none of them `no-explicit-any` and none new
+
+**Not verified, because no browser was available.** The Chrome extension is not connected on
+this machine — checked directly for this update, not assumed. The task-8 brief's Step 5 lists
+nine points; **none were driven.** This is a complete gap, itemised rather than folded into
+"Part 7 complete":
+
+1. A fresh deck: the tile is enabled and reads the due count.
+2. Starting an SM-2 session: the header reads `0 of N due`.
+3. A correct multiple-choice answer: `schedule` shows `repetitions 1`, `interval_days 1`,
+   `due_at` tomorrow at midnight — checked in DBeaver, where foreign keys are per-connection
+   and off.
+4. Revealing a flashcard and grading `again`: `repetitions 0`, `lapses 1`, and **`ease`
+   unchanged** — the one point that most needs a human eye, since the ease-unchanged behaviour
+   is exactly the thing a future reader is likeliest to "fix" on sight.
+5. A mid-session reload: the same card, counts intact.
+6. Emptying the due pool: the summary screen; starting another SM-2 session is refused, naming
+   the next due date; the tile is disabled with the same date.
+7. A short-answer miss, then an override: the schedule is recomputed, not left at the lapse.
+8. The strip shows three figures; a mode with no reviews reads `—`, not `0%`.
+9. Both palettes; hand-editing `/mock/:id` to an sm2 session id and confirming the redirect.
+
+None of the unit and integration tests substitute for this list — they prove the numbers the
+server computes, not that a human looking at the screen sees the right thing, in the right
+place, in both palettes, at whatever width the browser happens to be. The gate cannot see a
+layout and it cannot see an information leak.
+
+**375px phone width remains completely unrendered**, now across Parts 1, 2b, 2c, 3, 4, 5, 6
+and 7. Part 7 is the sharpest instance of this risk so far, not just another entry in the
+list: it adds a *third* figure to a stats strip that was already unverified at phone width
+after Part 6, on a wrapping flex row that has never been seen collapse. `resize_window`
+reports success in this environment but the viewport does not actually change. This belongs
+to build step 8's phone layout pass.
+
+**Facts recorded here so they are not later "fixed":**
+
+- **`repetitions` in Rust and TypeScript, `reps` in SQL** — see the Part 7 bullet under Where
+  things stand for the full reasoning. The split is deliberate; Part 7 ships no migration.
+- **A lapse leaves the ease factor unchanged** — original SM-2, pinned by a unit test in
+  `backend/src/scheduler.rs`, and a majority of implementations elsewhere do the opposite.
+- **`schedule_for` was not replaced**; `schedule_state_for` was added alongside it, and Part
+  5's mock canary now proves through it that mock mode leaves `interval_days`, `ease`,
+  `repetitions` and `lapses` untouched, not only that a schedule row exists.
+- **The `answer` handler's inline `can_override` predicate was kept**, not swapped for
+  `can_override_result`, which would have broken the pinned flashcard-regrade test at
+  `backend/tests/sessions.rs:1023`.
+- **All modes now insert their `reviews` row inside a transaction**, not only sm2 — an
+  incidental widening from Task 4, accepted at review as the minimal way to make the sm2
+  answer write atomic.
+- **`NextResponse` is `#[serde(untagged)]` with no `Deserialize`, so there is no ambiguity
+  today** — but if `Deserialize` is ever added, the three variants still discriminate only by
+  required-field presence, which becomes a real hazard at that point.
+- **The Spaced-repetition tile is disabled while `due_count` is still loading**, not only when
+  it is `0` — a ruling made during Task 7 execution against the plan's own code, because the
+  task's acceptance criterion said so and `deck`/`deckStats` load in parallel.
 
 ### Part 5 — verification status
 
@@ -977,6 +1208,13 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   the implementation legitimately diverged (e.g. deck-name uniqueness per module).
 - **Plans** — `mitis/plans/*.md` plus their `.tasks.json`. These carry the full per-task
   code, acceptance criteria and verification commands. All are marked complete.
+- **Part 7's design decisions** — [`mitis/specs/2026-08-28-part7-sm2-design.md`](mitis/specs/2026-08-28-part7-sm2-design.md).
+  Records why no migration is needed, the quality mapping's `overridden`-is-not-a-parameter
+  reasoning, the pure `scheduler.rs` core and the ease-unchanged-on-lapse rule (§3a), the
+  due-ordered serve and why it needs no hash trick, the refuse-when-nothing-due ruling, the
+  day-granular `due_at`, the transactional answer write, the override replay, the answer to
+  Part 6 §10, and why `SessionPage.tsx` is reused rather than forked for sm2 the way mock was.
+  Plan: [`mitis/plans/2026-08-28-part7-sm2.md`](mitis/plans/2026-08-28-part7-sm2.md).
 - **Part 5's design decisions** — [`mitis/specs/2026-08-28-part5-mock-test-design.md`](mitis/specs/2026-08-28-part5-mock-test-design.md).
   Records the one-deck/whole-deck ruling, why the stable serve needs no storage, rank-by-hash
   over Fisher–Yates, the typed-flashcard decision and its caveat, the tolerance rule and its
@@ -998,11 +1236,16 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 ## If you are an agent picking this up
 
-Work through `mitis:brainstorming` before designing Part 7, then `mitis:writing-plans`, then
-`mitis:subagent-driven-development`. The five existing plans are worth reading as a format
-reference — particularly how each task carries complete code, an explicit verify command,
-and a `json:metadata` fence. Part 5's is the most developed of them; Part 6's is the one
-that records a mutation table per task.
+Work through `mitis:brainstorming` before designing build step 8, then `mitis:writing-plans`,
+then `mitis:subagent-driven-development`. The six existing plans (Part 3 onward) are worth
+reading as a format reference — particularly how each task carries complete code, an explicit
+verify command, and a `json:metadata` fence. Part 5's is the most developed of them; Part 6's
+and Part 7's each record a mutation table per task.
+
+**Before touching build step 8, merge `feat/part7-sm2` and drive the three outstanding
+walkthroughs (Parts 5, 6, 7) — see Next up.** The gate has been green through three merges in
+a row with the walkthrough undriven each time; that pattern is itself worth noticing rather
+than repeating a fourth time by default.
 
 **Part 5's task ledger is not trustworthy.** `docs/mitis/plans/2026-08-28-part5-mock-test.md.tasks.json`
 marks all seventeen tasks `pending` while the code for all of them is committed, and there is
