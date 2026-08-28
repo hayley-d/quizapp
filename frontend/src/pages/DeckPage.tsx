@@ -221,7 +221,7 @@ export function DeckPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-xl border bg-card p-3 shadow-sm">
         <Switch
           id="show-archived"
           checked={showArchived}

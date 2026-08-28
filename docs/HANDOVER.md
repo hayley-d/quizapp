@@ -223,6 +223,15 @@ script proves the `brand` button clears WCAG AA in both themes; it caught a 2.14
 white-on-orchid failure in light mode that had survived three parts unnoticed, because
 until Part 4 there was no way to switch themes without visiting System Settings.
 
+**`frontend/scripts/check-contrast.py` mirrors the token values in
+`frontend/src/styles/globals.css`.** When a token changes there, change it here too — this
+file is the only place the ratios are actually proven, and a screenshot cannot tell 4.4
+from 4.6. It now covers every fixed foreground/background pair in the app, in both themes,
+split into two tiers: ENFORCED rows fail the gate below 4.5:1, and a RECORDED/KNOWN row
+(`--primary` + `--primary-foreground`, see the newly discovered defect under Part 4
+deferred minor findings) prints its ratio without affecting the exit code, so a
+deliberately deferred failure stays visible instead of silently passing.
+
 **`tsc --noEmit` alone checks nothing — use `tsc -b --noEmit`.** `frontend/tsconfig.json` is a
 solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it,
 finds zero files, and exits 0 whatever the code says. Verified: a deliberate
@@ -383,6 +392,14 @@ only Part 4 claim a future reader can re-verify without a browser.
 - `CardEditorPage.tsx`'s new surface `div` sits at the same indentation as the ternary
   containing it, with roughly 130 lines of children not re-indented. JSX unaffected; the
   file's indentation is now misleading.
+- **`--primary` + `--primary-foreground` fails AA at 3.24:1 in light mode.** Found by the
+  final whole-branch review. It affects small text on primary: the selected multiple-choice
+  option in the runner and the active nav link in the header. The deck card title is 30px
+  (large text, floor 3:1), so it passes there and is fine. Fixing it means darkening light
+  `--primary`, which is also `--deck-card`, so every deck card body would change colour — a
+  palette decision that needs a human, deliberately not made unilaterally here.
+  `frontend/scripts/check-contrast.py` now reports this pair as `KNOWN` with its ratio so it
+  stays visible rather than silently passing.
 - `promptLabel` in `CardRow.tsx` strips hyphens, so "k-means" becomes "k means". Judged
   non-blocking because screen readers do not vocalise a mid-word hyphen. Markdown link URLs
   can also leak into the label.

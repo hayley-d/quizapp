@@ -14,7 +14,7 @@ export function ThemeToggle() {
 
   return (
     <div
-      role="radiogroup"
+      role="group"
       aria-label="Colour theme"
       className="ml-auto flex items-center gap-0.5 rounded-lg bg-muted p-0.5"
     >
@@ -22,8 +22,7 @@ export function ThemeToggle() {
         <button
           key={option.value}
           type="button"
-          role="radio"
-          aria-checked={preference === option.value}
+          aria-pressed={preference === option.value}
           aria-label={option.label}
           title={option.label}
           onClick={() => setPreference(option.value)}

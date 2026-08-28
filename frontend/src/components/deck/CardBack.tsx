@@ -10,7 +10,7 @@ type CardBackProps = {
 const LETTERS = 'ABCDEFGHIJ'
 
 function choiceClass(isCorrect: boolean, revealed: boolean): string {
-  if (!revealed) return 'bg-accent/85 text-accent-foreground [&_strong]:font-normal'
+  if (!revealed) return 'bg-secondary text-secondary-foreground [&_strong]:font-normal'
   return isCorrect
     ? 'bg-primary text-primary-foreground font-medium'
     : 'bg-muted text-muted-foreground'
