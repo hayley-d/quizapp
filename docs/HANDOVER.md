@@ -165,9 +165,13 @@ other — do not assume a value carries over.
       unchanged at 4.88:1.
     - `--deck-card` was decoupled from `--primary` in light mode. It used to be
       `--deck-card: var(--primary)`; the repalette made that combination
-      cream-text-on-tan-card at **1.22:1, invisible**, so light mode now has its own tan
-      `--deck-card` with a cream header band. Two new tokens, `--deck-card-foreground` and
-      `--deck-card-chip-foreground`, carry the per-theme text colours.
+      cream-text-on-tan-card at **1.22:1, invisible**, so light mode now has its own
+      `--deck-card` values: a cream `#f5ebe0` body with a tan `#e3d5ca` header band, matching
+      `--card` so deck cards are no longer the app's one tan surface. Two new tokens,
+      `--deck-card-foreground` and `--deck-card-chip-foreground`, carry the per-theme text
+      colours. The body and band were swapped from their first arrangement (tan body, cream
+      band) on 2026-08-28; the swap raised the deck-card title from 9.86:1 to **12.02:1** and
+      left every other measured pair passing.
       `frontend/src/components/DeckCard.tsx` changed for the first time in this whole branch
       — exactly two swaps, `text-primary-foreground*` and `text-white` to those two new
       tokens. Nothing else in that file moved.

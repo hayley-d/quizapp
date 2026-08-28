@@ -33,8 +33,8 @@
   --ring: var(--primary);
   --brand: oklch(0.47 0.075 68);             /* deep ochre-brown, same as primary in light */
   --brand-foreground: #f5ebe0;                /* cream */
-  --deck-card: #e3d5ca;                       /* tan */
-  --deck-card-header: #f5ebe0;                /* cream */
+  --deck-card: #f5ebe0;                       /* cream */
+  --deck-card-header: #e3d5ca;                /* tan */
   --deck-card-chip: oklch(0.47 0.075 68);    /* deep ochre-brown */
   --deck-card-foreground: oklch(0.29 0.020 70);
   --deck-card-chip-foreground: #f5ebe0;       /* cream */

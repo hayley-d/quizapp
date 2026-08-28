@@ -98,8 +98,8 @@ LIGHT_TOKENS_HEX = {
     "muted": "#e3d5ca",
     "destructive-foreground": "#f5ebe0",
     "brand-foreground": "#f5ebe0",
-    "deck-card": "#e3d5ca",
-    "deck-card-header": "#f5ebe0",
+    "deck-card": "#f5ebe0",
+    "deck-card-header": "#e3d5ca",
     "deck-card-chip-foreground": "#f5ebe0",
 }
 
