@@ -2,13 +2,16 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on branch `feat/part4-bibble-theme`. **Part 4 (the Bibble
-theme pass) is complete but unmerged and not browser-verified** — the automated gate is
-green, but no agent in this session could drive a browser, so nothing in Part 4 has
-actually been clicked except the one claim the contrast script proves arithmetically. See
-the Part 4 "NOT VERIFIED" subsection under Outstanding before assuming any visual or
-interaction behaviour works. Part 2c's own walkthrough is also still outstanding (see
-Outstanding).
+**Last updated:** 2026-08-28, on branch `feat/part4-bibble-theme`, at commit `df3b138`
+(the Makka Pakka light-mode repalette). **Part 4 (the Bibble theme pass) is complete but
+unmerged, and light mode is now unverified** — the automated gate is green (`cargo test`,
+229 passing; `cargo clippy --all-targets -- -D warnings`; `SQLX_OFFLINE=true cargo build`;
+`python3 frontend/scripts/check-contrast.py`, 16 enforced pairs; `pnpm exec tsc -b
+--noEmit`; `pnpm build`; `pnpm exec oxlint` — all exit 0), but light mode changed palette
+*after* the one human walkthrough this branch got, so that walkthrough no longer speaks to
+what light mode looks like today. See the Part 4 "verification status" subsection under
+Outstanding before assuming any visual or interaction behaviour works, especially in light
+mode. Part 2c's own walkthrough is also still outstanding (see Outstanding).
 
 ## What this is
 
@@ -21,6 +24,15 @@ document is the record of what the app is meant to be, and it is kept current.
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
 redesign that followed them ("Part 2c" below). All of it is merged to `main`; there is no
 feature branch outstanding. Concretely, working today:
+
+**Light and dark are now two separate visual identities, not one palette rendered twice.**
+Dark mode is Bibble, unchanged. Light mode was repaletted from a pale-aqua rendering of the
+same tokens into "Makka Pakka" — warm stone and sand neutrals with ochre-brown and clay
+accents. Design record:
+[`.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md`](../.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md).
+The practical consequence: a new colour now needs a value in *both* identities, not one
+shared value. A token that reads correctly in one theme may be meaningless or wrong in the
+other — do not assume a value carries over.
 
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
@@ -109,7 +121,8 @@ feature branch outstanding. Concretely, working today:
   - An opaque `--brand` token replaces the 70%-alpha `--deck-card-header` on the `brand`
     button variant. **This fixed a real WCAG failure**: white text on the button measured
     **2.14:1 in light mode** (AA needs 4.5:1, and 3:1 even for large text), because the
-    alpha let the pale page background show through. It is now 4.88:1 in both themes. The
+    alpha let the pale page background show through. It was 4.88:1 in both themes at the time
+    (the Makka Pakka repalette below later split light `--brand` to its own value). The
     `brand` variant is the app's primary action everywhere — "Start practising", "Check",
     "Next card", "Study again", the deck edit button, every card-row icon button — so in
     light mode the main call to action was close to illegible, and had been since Part 1. It
@@ -141,6 +154,31 @@ feature branch outstanding. Concretely, working today:
     path had no target check while the keyboard path did), and the card row's accessible
     names now carry the prompt instead of announcing only "Show answer" or reading raw
     markdown syntax aloud.
+  - **The Makka Pakka repalette** (commit `df3b138`, after Part 4's own gate had already gone
+    green): light mode stopped being a pale-aqua rendering of the Bibble tokens and became its
+    own warm stone/sand/ochre identity. Dark mode did not change. Design record:
+    [`.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md`](../.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md).
+    - `--brand` is now per-theme rather than one opaque value shared by both. This is not a
+      reversal of the reasoning above — an opaque colour's contrast still does not depend on
+      its backdrop, so one value still serves both themes *within an identity*. Two identities
+      now means two values: light `--brand` is `oklch(0.47 0.075 68)` at 5.90:1, dark is
+      unchanged at 4.88:1.
+    - `--deck-card` was decoupled from `--primary` in light mode. It used to be
+      `--deck-card: var(--primary)`; the repalette made that combination
+      cream-text-on-tan-card at **1.22:1, invisible**, so light mode now has its own tan
+      `--deck-card` with a cream header band. Two new tokens, `--deck-card-foreground` and
+      `--deck-card-chip-foreground`, carry the per-theme text colours.
+      `frontend/src/components/DeckCard.tsx` changed for the first time in this whole branch
+      — exactly two swaps, `text-primary-foreground*` and `text-white` to those two new
+      tokens. Nothing else in that file moved.
+    - This also resolved a Part 4 finding rather than leaving it deferred: light
+      `--primary` + `--primary-foreground` was 3.24:1 (see the removed entry under Part 4
+      deferred minor findings, and The verification gate). Light `--primary` is now
+      `oklch(0.47 0.075 68)` at 5.90:1, so `check-contrast.py`'s RECORDED/KNOWN tier is
+      correspondingly empty and the pair moved to ENFORCED.
+    - **Nobody has looked at this palette in a browser.** Every pair above is a computed
+      contrast ratio, not an observation — see the Part 4 verification status note under
+      Outstanding before assuming the light theme looks right, not just legible.
   - `strict: true` and `typescript/no-explicit-any` are now enforced, both verified
     load-bearing with isolated probes, and `pnpm exec oxlint` was added to the gate — a lint
     rule the gate never runs would enforce nothing.
@@ -150,8 +188,8 @@ feature branch outstanding. Concretely, working today:
 ## Next up
 
 **Part 5: the mock test.** Part 4 (the Bibble theme pass) is done. It is complete but sits
-unmerged on `feat/part4-bibble-theme` and has not been browser-verified — see the Part 4
-"NOT VERIFIED" subsection under Outstanding.
+unmerged on `feat/part4-bibble-theme`, and light mode's Makka Pakka repalette has not been
+browser-verified — see the "Part 4 — verification status" subsection under Outstanding.
 
 After Part 5: stats → SM-2 → embed the bundle and LAN binding.
 
@@ -227,10 +265,12 @@ until Part 4 there was no way to switch themes without visiting System Settings.
 `frontend/src/styles/globals.css`.** When a token changes there, change it here too — this
 file is the only place the ratios are actually proven, and a screenshot cannot tell 4.4
 from 4.6. It now covers every fixed foreground/background pair in the app, in both themes,
-split into two tiers: ENFORCED rows fail the gate below 4.5:1, and a RECORDED/KNOWN row
-(`--primary` + `--primary-foreground`, see the newly discovered defect under Part 4
-deferred minor findings) prints its ratio without affecting the exit code, so a
-deliberately deferred failure stays visible instead of silently passing.
+split into two tiers: ENFORCED rows fail the gate below 4.5:1, and a RECORDED/KNOWN tier for
+a deliberately deferred failure, so it stays visible instead of silently passing. As of the
+Makka Pakka repalette (`df3b138`) there are 16 ENFORCED pairs and the RECORDED tier is
+**empty** — the one entry it ever held, light `--primary` + `--primary-foreground` at
+3.24:1, was resolved by the repalette (light `--primary` is now 5.90:1) and moved into
+ENFORCED. See the Makka Pakka repalette bullet under Part 4 in Where things stand.
 
 **`tsc --noEmit` alone checks nothing — use `tsc -b --noEmit`.** `frontend/tsconfig.json` is a
 solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it,
@@ -354,9 +394,10 @@ frontend cannot parse.
 
 ### Part 4 — verification status
 
-**Part 4 was driven and checked by Hayley on 2026-08-28, who confirmed it working.** This
-was a human walkthrough, not an agent one — no Chrome browser was connected to the session
-that ran Part 4's gate task, so no agent drove the app or produced an itemised record. The
+**Hayley drove and checked Part 4 on 2026-08-28, and confirmed it working — but that
+checked the ORIGINAL Bibble light palette, not the one in the app now.** This was a human
+walkthrough, not an agent one — no Chrome browser was connected to the session that ran
+Part 4's gate task, so no agent drove the app or produced an itemised record. The
 confirmation given was general rather than a point-by-point report, so the individual
 walkthrough items (the theme toggle's three states and no-flash-on-load behaviour, the
 light-mode `brand` button's legibility, the sparkle burst, the streak badge and its
@@ -365,20 +406,45 @@ both palettes, and the markdown-link-does-not-flip fix) are **attested by the us
 than itemised here** — nobody wrote down a per-item observation for any of them, and this
 document does not invent one after the fact.
 
-**The one Part 4 visual claim backed by arithmetic rather than observation is the contrast
-fix** — computed from the token values and checked in the gate by
-`frontend/scripts/check-contrast.py`. That distinction is worth keeping because it is the
-only Part 4 claim a future reader can re-verify without a browser.
+**The Makka Pakka repalette (`df3b138`) landed after that walkthrough, and nobody has
+looked at it.** Hayley's 2026-08-28 confirmation was of light mode as a pale-aqua rendering
+of the Bibble tokens. Light mode is now a different palette entirely — warm stone and sand
+neutrals with ochre-brown and clay accents — and no one, human or agent, has viewed it. Every
+colour in it is backed by a computed contrast ratio (`frontend/scripts/check-contrast.py`,
+16 enforced pairs, all passing), but **arithmetic is not observation**: a contrast ratio says
+text is legible against its background, and says nothing about whether the palette looks
+good, whether surfaces read as visually distinct from one another, or whether the
+ochre-on-stone combination works as a whole.
 
-**What remains genuinely unverified**, because the user did not say they checked these:
+**Surface separation in light mode is deliberately very subtle, and is the first thing to
+check.** The card is **1.00:1** against the page (stone `#edede9` vs cream `#f5ebe0` carry
+no ambient-contrast readout worth the name), and the deck-card header band is **1.22:1**
+against the card body. Borders and shadows do the entire job of showing where one surface
+ends and the next begins — there is close to no colour difference to do it instead. This
+was a deliberate choice (the palette was picked as "stone page, cream cards, tan recessed"
+with these exact numbers already known), not an oversight, but it is the single most likely
+thing to look wrong in practice, and it is unverified. Check it first, in a browser, before
+trusting anything else about the new palette.
 
+**What remains genuinely unverified**, because no one has looked:
+
+- **The entire Makka Pakka light palette** — see above. Nothing about it has been seen,
+  only computed.
 - **375px phone width**, now across Parts 1, 2b, 2c, 3 and 4. `resize_window` reports
   success in this environment but the viewport does not change. It belongs to build step
   8's phone layout pass and needs a human at a browser.
 - **Part 2c's nine-point walkthrough**, still outstanding — it was not performed here
   either. See the list further down.
 
-**Part 4 deferred minor findings**, recorded during execution:
+**Part 4 deferred minor findings**, recorded during execution. One entry that used to be
+here — `--primary` + `--primary-foreground` failing AA at 3.24:1 in light mode, deferred
+because fixing it meant a palette decision — is **removed**: the Makka Pakka repalette
+(`df3b138`) made that decision. Light `--primary` is now `oklch(0.47 0.075 68)` at 5.90:1,
+the pair passes, and `check-contrast.py`'s RECORDED/KNOWN tier is empty. See the Makka
+Pakka repalette bullet under Part 4 in Where things stand for the full change, and the
+verification note above this one for what is unverified about the new palette itself.
+
+Findings still open:
 
 - `button.tsx`'s pre-existing `brand` comment still says the variant takes "the orchid band
   colour from the deck card", which is no longer true now that it uses `--brand`.
@@ -392,14 +458,6 @@ only Part 4 claim a future reader can re-verify without a browser.
 - `CardEditorPage.tsx`'s new surface `div` sits at the same indentation as the ternary
   containing it, with roughly 130 lines of children not re-indented. JSX unaffected; the
   file's indentation is now misleading.
-- **`--primary` + `--primary-foreground` fails AA at 3.24:1 in light mode.** Found by the
-  final whole-branch review. It affects small text on primary: the selected multiple-choice
-  option in the runner and the active nav link in the header. The deck card title is 30px
-  (large text, floor 3:1), so it passes there and is fine. Fixing it means darkening light
-  `--primary`, which is also `--deck-card`, so every deck card body would change colour — a
-  palette decision that needs a human, deliberately not made unilaterally here.
-  `frontend/scripts/check-contrast.py` now reports this pair as `KNOWN` with its ratio so it
-  stays visible rather than silently passing.
 - `promptLabel` in `CardRow.tsx` strips hyphens, so "k-means" becomes "k means". Judged
   non-blocking because screen readers do not vocalise a mid-word hyphen. Markdown link URLs
   can also leak into the label.
