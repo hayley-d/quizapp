@@ -20,6 +20,8 @@
   --secondary-foreground: oklch(0.30 0.06 285);
   --accent: oklch(0.68 0.19 335);            /* magenta */
   --accent-foreground: oklch(0.99 0.01 330);
+  --brand: rgb(158 84 170);                  /* orchid — every create/add action */
+  --brand-foreground: oklch(1 0 0);
   --muted: oklch(0.95 0.02 220);
   --muted-foreground: oklch(0.50 0.03 255);
   --success: oklch(0.80 0.14 88);            /* gold — correct answers */
@@ -74,6 +76,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-success: var(--success);
