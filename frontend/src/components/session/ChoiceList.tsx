@@ -34,7 +34,7 @@ export function ChoiceList({
                 'disabled:cursor-not-allowed',
                 selected
                   ? 'bg-primary text-primary-foreground font-medium'
-                  : 'bg-accent/85 text-accent-foreground hover:bg-accent',
+                  : 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
               )}
             >
               <span className="font-semibold tabular-nums">

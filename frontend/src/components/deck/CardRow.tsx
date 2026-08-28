@@ -79,6 +79,12 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: CardRowProp
 
   const showingAnswer = face === 'back'
 
+  const promptLabel = card.prompt_md
+    .replace(/[#*_`~>$\\[\]()!-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+
   return (
     <li
       ref={setNodeRef}
@@ -90,7 +96,7 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: CardRowProp
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
-        aria-label={`Reorder ${card.prompt_md.slice(0, 40)}`}
+        aria-label={`Reorder ${promptLabel}`}
         title="Drag to reorder"
         className={cn(
           'mt-4 shrink-0 cursor-grab touch-none rounded-md p-1 text-muted-foreground',
@@ -152,8 +158,11 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: CardRowProp
           <div
             role="button"
             tabIndex={0}
-            aria-label={showingAnswer ? 'Show question' : 'Show answer'}
-            onClick={flip}
+            aria-label={`${showingAnswer ? 'Show question' : 'Show answer'}: ${promptLabel}`}
+            onClick={(clickEvent) => {
+              if ((clickEvent.target as HTMLElement).closest('a,button')) return
+              flip()
+            }}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return
               if (event.key === 'Enter' || event.key === ' ') {

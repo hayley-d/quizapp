@@ -7,16 +7,26 @@
     <title>quizapp</title>
     <script>
       (function () {
+        var STORAGE_KEY = 'quizapp-theme'
         var media = window.matchMedia('(prefers-color-scheme: light)')
-        function applyTheme(isLight) {
-          document.documentElement.classList.toggle('dark', !isLight)
+        function resolve() {
+          var stored = null
+          try {
+            stored = window.localStorage.getItem(STORAGE_KEY)
+          } catch (error) {
+            stored = null
+          }
+          if (stored === 'light') return true
+          if (stored === 'dark') return false
+          return media.matches
         }
-        applyTheme(media.matches)
+        function applyTheme() {
+          document.documentElement.classList.toggle('dark', !resolve())
+        }
+        applyTheme()
         // No `addListener`/`removeListener` fallback: this app only targets
         // browsers new enough to already need `import.meta.dirname` (vite.config.ts).
-        media.addEventListener('change', function (e) {
-          applyTheme(e.matches)
-        })
+        media.addEventListener('change', applyTheme)
       })()
     </script>
   </head>

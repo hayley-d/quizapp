@@ -13,7 +13,7 @@ const buttonVariants = cva(
         // The orchid band colour from the deck card, shared by every
         // "create/add" affordance so /decks and /decks/:id agree.
         brand:
-          "bg-[var(--deck-card-header)] text-white hover:brightness-110",
+          "bg-brand text-brand-foreground hover:brightness-110",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

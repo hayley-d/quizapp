@@ -4,6 +4,10 @@ import { toast } from 'sonner'
 
 import { AnswerVerdict } from '@/components/session/AnswerVerdict'
 import { ChoiceList } from '@/components/session/ChoiceList'
+import { SessionExhausted } from '@/components/session/SessionExhausted'
+import { SessionSummary as SessionSummaryScreen } from '@/components/session/SessionSummary'
+import { SparkleBurst } from '@/components/session/SparkleBurst'
+import { StreakBadge } from '@/components/session/StreakBadge'
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { Button } from '@/components/ui/button'
@@ -26,15 +30,10 @@ const SELF_GRADES: { grade: SelfGrade; label: string }[] = [
   { grade: 'easy', label: 'Easy' },
 ]
 
+const STREAK_THRESHOLD = 3
+
 function elapsedSince(startedAt: number): number {
   return Math.max(0, Date.now() - startedAt)
-}
-
-function formatDuration(totalMilliseconds: number): string {
-  const totalSeconds = Math.round(totalMilliseconds / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return minutes === 0 ? `${seconds}s` : `${minutes}m ${seconds}s`
 }
 
 export function SessionPage() {
@@ -48,6 +47,7 @@ export function SessionPage() {
   const [selectedChoiceId, setSelectedChoiceId] = useState<number | null>(null)
   const [typedAnswer, setTypedAnswer] = useState('')
   const [overridden, setOverridden] = useState(false)
+  const [consecutiveCorrect, setConsecutiveCorrect] = useState(0)
   const [overriding, setOverriding] = useState(false)
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -121,6 +121,7 @@ export function SessionPage() {
     try {
       const result = await api.submitAnswer(sessionId, input)
       setVerdict(result)
+      setConsecutiveCorrect((current) => (result.correct ? current + 1 : 0))
       setServed((current) =>
         current === null
           ? current
@@ -175,6 +176,7 @@ export function SessionPage() {
     try {
       await api.overrideReview(verdict.review_id)
       setOverridden(true)
+      setConsecutiveCorrect((current) => current + 1)
       setServed((current) =>
         current === null ? current : { ...current, correct_count: current.correct_count + 1 },
       )
@@ -255,63 +257,10 @@ export function SessionPage() {
 
   if (!loaded) return null
 
-  if (summary) {
-    return (
-      <div className="max-w-xl space-y-6">
-        <h1 className="font-display text-2xl font-bold">Session finished</h1>
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div>
-            <dt className="text-sm text-muted-foreground">Answered</dt>
-            <dd className="font-display text-2xl font-bold">{summary.answered_count}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">Correct</dt>
-            <dd className="font-display text-2xl font-bold">{summary.correct_count}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">Accuracy</dt>
-            <dd className="font-display text-2xl font-bold">
-              {summary.accuracy === null
-                ? '—'
-                : `${Math.round(summary.accuracy * 100)}%`}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted-foreground">Time</dt>
-            <dd className="font-display text-2xl font-bold">
-              {formatDuration(summary.total_ms)}
-            </dd>
-          </div>
-        </dl>
-        {summary.overridden_count > 0 && (
-          <p className="text-sm text-muted-foreground">
-            {summary.overridden_count} counted correct by override.
-          </p>
-        )}
-        <div className="flex gap-3">
-          <Button variant="brand" asChild className="h-10 px-6">
-            <Link to="/study">Study again</Link>
-          </Button>
-          <Button variant="secondary" asChild className="h-10 px-6">
-            <Link to="/decks">Back to decks</Link>
-          </Button>
-        </div>
-      </div>
-    )
-  }
+  if (summary) return <SessionSummaryScreen summary={summary} />
 
   if (exhausted !== null || !card) {
-    return (
-      <div className="max-w-xl space-y-4">
-        <h1 className="font-display text-2xl font-bold">Nothing left to practise</h1>
-        <p className="text-muted-foreground">{exhausted ?? 'This session has no cards.'}</p>
-        <div className="flex gap-3">
-          <Button variant="brand" asChild className="h-10 px-6">
-            <Link to="/study">Back to study</Link>
-          </Button>
-        </div>
-      </div>
-    )
+    return <SessionExhausted message={exhausted ?? 'This session has no cards.'} />
   }
 
   const answeredCount = served?.answered_count ?? 0
@@ -324,19 +273,22 @@ export function SessionPage() {
       onKeyDown={handleKeyDown}
       className="max-w-2xl space-y-6 outline-none"
     >
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
         <p className="text-sm text-muted-foreground">
           {answeredCount} answered · {correctCount} correct
           {answeredCount > 0 && ` · ${Math.round((correctCount / answeredCount) * 100)}%`}
           {' · '}
           {served?.pool_count ?? 0} in the pool
         </p>
+        {consecutiveCorrect >= STREAK_THRESHOLD && (
+          <StreakBadge streak={consecutiveCorrect} />
+        )}
         <Button variant="ghost" size="sm" onClick={() => void endSession()}>
           End session
         </Button>
       </header>
 
-      <div className="space-y-4">
+      <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
         <Markdown className="text-lg">{card.prompt_md}</Markdown>
         {card.image_path && <CardImage path={card.image_path} altText="Card image" />}
       </div>
@@ -364,7 +316,7 @@ export function SessionPage() {
       {card.kind === 'flashcard' && (
         <div className="space-y-4">
           {revealed ? (
-            <Markdown className="rounded-lg bg-muted px-4 py-3">
+            <Markdown className="rounded-xl border bg-card px-4 py-3 shadow-sm">
               {revealed.answer_md ?? ''}
             </Markdown>
           ) : (
@@ -378,6 +330,7 @@ export function SessionPage() {
                 <Button
                   key={option.grade}
                   variant="secondary"
+                  className="min-w-24"
                   onClick={() => submitSelfGrade(option.grade)}
                 >
                   {option.label}
@@ -390,14 +343,17 @@ export function SessionPage() {
       )}
 
       {graded ? (
-        <AnswerVerdict
-          verdict={verdict}
-          overridden={overridden}
-          overriding={overriding}
-          onOverride={() => void override()}
-          onNext={() => void loadNext()}
-          nextButtonRef={nextButton}
-        />
+        <div className="relative">
+          {verdict.correct && <SparkleBurst />}
+          <AnswerVerdict
+            verdict={verdict}
+            overridden={overridden}
+            overriding={overriding}
+            onOverride={() => void override()}
+            onNext={() => void loadNext()}
+            nextButtonRef={nextButton}
+          />
+        </div>
       ) : (
         card.kind !== 'flashcard' && (
           <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { Toaster } from '@/components/ui/sonner'
 
 const navigationLinks = [
@@ -28,6 +29,7 @@ export function AppShell() {
               {navigationLink.label}
             </NavLink>
           ))}
+          <ThemeToggle />
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">

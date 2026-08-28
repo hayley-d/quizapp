@@ -91,7 +91,7 @@ export function DecksPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 rounded-xl border bg-card p-3 shadow-sm sm:flex-row sm:items-center">
         <Input
           className="h-10 min-w-0 flex-1"
           placeholder="Search deck names…"
