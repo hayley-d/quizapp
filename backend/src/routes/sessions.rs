@@ -217,7 +217,7 @@ async fn create(
                 let message = match next_due_at(&state.pool, &encoded).await? {
                     Some(next_due) => format!(
                         "Nothing is due yet — the next card is due {}",
-                        &next_due[..10],
+                        next_due.get(..10).unwrap_or(&next_due),
                     ),
                     None => "Nothing is due yet".to_string(),
                 };

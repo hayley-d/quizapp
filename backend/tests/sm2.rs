@@ -320,7 +320,8 @@ async fn a_correct_answer_schedules_the_card_a_day_out() {
     let card_id = create_flashcard(&app, deck_id, "one", "answer").await;
 
     let session_id = start_sm2_session(&app, deck_id).await;
-    answer_self_graded(&app, session_id, card_id, "good").await;
+    let answered = answer_self_graded(&app, session_id, card_id, "good").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
 
     let (due_at, interval_days, ease, repetitions, lapses) = app.schedule_state_for(card_id).await;
     assert_eq!(repetitions, 1);
@@ -332,6 +333,57 @@ async fn a_correct_answer_schedules_the_card_a_day_out() {
         due_at.len(),
         20,
         "due_at must be exactly YYYY-MM-DDT00:00:00Z with no leftover time-of-day: {due_at}",
+    );
+
+    let answered_at = app.answered_at_for_review(review_id).await;
+    let expected_due_at = app.date_advanced_by_days(&answered_at, 1).await;
+    assert_eq!(
+        due_at, expected_due_at,
+        "due_at must be exactly one day after the review's own answered_at: \
+         answered_at={answered_at}",
+    );
+}
+
+#[tokio::test]
+async fn a_correct_multiple_choice_answer_schedules_the_card_a_day_out() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_multiple_choice(&app, deck_id, "which linkage merges the closest pair")
+        .await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (_, served) = next_card(&app, session_id).await;
+    let card = &served["card"];
+    let correct_choice_id = card["choices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|choice| choice["text_md"].as_str().unwrap() == "complete linkage")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    let (status, answered) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "choice_id": correct_choice_id }),
+        )
+        .await;
+    assert_eq!(status, 200, "{answered}");
+    assert_eq!(answered["correct"], json!(true), "{answered}");
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    let (due_at, interval_days, _, repetitions, lapses) = app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions, 1);
+    assert_eq!(lapses, 0);
+    assert_eq!(interval_days, 1.0);
+
+    let answered_at = app.answered_at_for_review(review_id).await;
+    let expected_due_at = app.date_advanced_by_days(&answered_at, 1).await;
+    assert_eq!(
+        due_at, expected_due_at,
+        "due_at must be exactly one day after the review's own answered_at: \
+         answered_at={answered_at}",
     );
 }
 

@@ -165,6 +165,29 @@ so this one would need none of that.
   but untagged deserialization becomes a real hazard worth a second look at that point.
 - **No new colour token.** `check-contrast.py` still reports 16 ENFORCED rows with an empty
   RECORDED tier — an unchanged count is the evidence that Part 7 introduced no new colour pair.
+- **`pool_count` means something different in sm2.** `sessions.rs:731` sets it from
+  `count_due(...)`, which counts cards due *right now*, so in sm2 it shrinks as the session
+  progresses, unlike practice and mock where it is a fixed denominator. Nothing is broken —
+  the frontend only reads it as a dead fallback, since `target_count` is always present for
+  sm2 — but the field invites a future reader to treat it as a denominator that counts down
+  toward zero.
+- **A long-lived sm2 session can exceed its promised `target_count`.** `load_next_due_card_id`
+  re-evaluates "due now" on every serve, so a session created one day with `target_count = 3`
+  and resumed the next after a fourth card matured will serve that fourth card and read "4 of 3
+  due". Low probability, since the deck page always creates a fresh session. Bounding the serve
+  to the cards due at creation is a bigger change than it is worth now.
+- **"Next due" has two definitions.** `sessions::next_due_at` uses an INNER JOIN with no due
+  filter; the stats query uses `MIN(due_at)` over a LEFT-JOINed CTE that includes
+  already-overdue cards. Both actually compute "earliest `due_at`", not "next *future* due".
+  They agree only because both are read exclusively when nothing is due.
+- **An open question for the browser walkthrough, which has not been driven.**
+  `SessionPage.tsx:284-289` renders the sm2 header as `{answeredCount} answered · … ·
+  {served.answered_count} of {target} due`, and `served.answered_count` moves in lockstep with
+  `answeredCount` — so it reads "3 answered · 2 correct · 67% · 3 of 5 due", printing the same
+  number twice. The mock page instead shows `Math.min(served.answered_count + 1,
+  totalQuestions)`, the card you are *looking at*. The behaviour has been left unchanged — the
+  UI has never been rendered and changing it blind risks making it wrong in the other
+  direction — but it is worth a look when someone finally drives the walkthrough.
 
 **The browser walkthrough is undriven** — see "Part 7 — verification status" under
 Outstanding for the full itemised list; do not read the green gate below as covering it.
@@ -787,7 +810,7 @@ Verified, by running it on `feat/part7-sm2` at `8d995a2` on 2026-08-28:
 
   | Binary | Passed |
   | --- | --- |
-  | `unittests src/lib.rs` | 107 |
+  | `unittests src/lib.rs` | 106 |
   | `unittests src/main.rs` | 0 |
   | `tests/cards.rs` | 49 |
   | `tests/decks.rs` | 23 |
@@ -796,7 +819,7 @@ Verified, by running it on `feat/part7-sm2` at `8d995a2` on 2026-08-28:
   | `tests/mock.rs` | 57 |
   | `tests/modules.rs` | 11 |
   | `tests/sessions.rs` | 70 |
-  | `tests/sm2.rs` (new in Part 7) | 19 |
+  | `tests/sm2.rs` (new in Part 7) | 20 |
   | `tests/stats.rs` | 15 |
   | Doc-tests | 0 |
 
@@ -804,7 +827,11 @@ Verified, by running it on `feat/part7-sm2` at `8d995a2` on 2026-08-28:
   `docs/PART-7-HANDOVER.md`'s mid-execution figure of 355 (recorded after Task 4 of 8, before
   Tasks 5-8 added more), and not carried forward from this document's own pre-Part-7 figure of
   317. This document's test count has been stale twice before; this one is the number this
-  session watched `cargo test` print.
+  session watched `cargo test` print. The final review wave that closed Part 7 removed one
+  redundant unit test in `scheduler.rs` (Finding 3, a strict subset of
+  `quality_follows_the_specified_table`) and added one integration test in `sm2.rs` (Finding 1,
+  a multiple-choice case for the `due_at` offset assertion), leaving the total at 364 by
+  coincidence rather than by an unchanged suite.
 - `cargo clippy --all-targets -- -D warnings` — clean
 - `SQLX_OFFLINE=true cargo build` — clean
 - `python3 frontend/scripts/check-contrast.py` — **16 rows, all `ok`, no RECORDED section**,

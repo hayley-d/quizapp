@@ -136,4 +136,23 @@ impl TestApp {
         .await
         .unwrap()
     }
+
+    pub async fn answered_at_for_review(&self, review_id: i64) -> String {
+        sqlx::query_scalar("SELECT answered_at FROM reviews WHERE id = ?")
+            .bind(review_id)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap()
+    }
+
+    pub async fn date_advanced_by_days(&self, date_time: &str, days: i64) -> String {
+        let advanced_date: String =
+            sqlx::query_scalar("SELECT date(?, '+' || CAST(? AS TEXT) || ' days')")
+                .bind(date_time)
+                .bind(days)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+        format!("{advanced_date}T00:00:00Z")
+    }
 }

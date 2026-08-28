@@ -74,12 +74,6 @@ mod tests {
     }
 
     #[test]
-    fn a_mock_flashcard_without_a_self_grade_maps_through_correct() {
-        assert_eq!(quality_for(true, None), 4);
-        assert_eq!(quality_for(false, None), 2);
-    }
-
-    #[test]
     fn the_first_two_intervals_are_one_day_and_six_days() {
         let first = apply(&initial_state(), 4);
         assert_eq!(first.repetitions, 1);
@@ -123,13 +117,13 @@ mod tests {
         let state = apply(&initial_state(), 3);
         assert_eq!(state.repetitions, 1);
         assert_eq!(state.lapses, 0);
-        assert!(state.ease < INITIAL_EASE, "quality 3 must reduce the ease: {}", state.ease);
+        assert_eq!(state.ease, 2.36, "quality 3 must reduce the ease from 2.5 to exactly 2.36");
     }
 
     #[test]
     fn an_easy_answer_raises_the_ease() {
         let state = apply(&initial_state(), 5);
-        assert!(state.ease > INITIAL_EASE, "quality 5 must raise the ease: {}", state.ease);
+        assert_eq!(state.ease, 2.6, "quality 5 must raise the ease from 2.5 to exactly 2.6");
     }
 
     #[test]

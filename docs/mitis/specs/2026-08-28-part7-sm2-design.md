@@ -163,7 +163,11 @@ when the next card is due**, rather than offering a button whose only outcome is
 `due_at` is written at **midnight UTC of the due day** — `date(<base>, '+N days')` — not at
 `<base> + N * 86400` seconds. A card answered at 21:00 with a one-day interval must be due when
 you sit down at 08:00 the next morning; a seconds-exact interval would make it due at 21:00,
-and a morning study session would find an empty deck for reasons no student would guess.
+and a morning study session would find an empty deck for reasons no student would guess. The
+flip side of the same rounding: a card answered late at night gets a near-zero effective
+interval — `date(answered_at, '+1 days')` for a card answered at 23:50 is due ten minutes
+later. That is the unavoidable cost of rounding to the day rather than the second, and the
+right call stands; it is simply worth naming alongside the upside above.
 
 `interval_days` stays `REAL`, as the DDL has it — the intervals SM-2 produces here are whole
 days, but the column does not need narrowing to say so.
@@ -283,6 +287,21 @@ RECORDED tier**; an unchanged count is the evidence that no pair crept in.
   itself — the master spec says so directly. A 1/6/16-day interval sequence gets through
   roughly two steps before the test. It is built because it makes the app worth keeping for the
   rest of the module, and it is sequenced last so it never blocks studying.
+- `pool_count` means something different in sm2 than in the other two modes. It is set from
+  `count_due(...)`, which counts cards due *right now*, so in sm2 it shrinks as the session
+  progresses rather than staying a fixed denominator. Nothing reads it that way today —
+  `target_count` is always present for sm2, so the frontend only reaches for `pool_count` as a
+  dead fallback — but the field invites a future reader to use it as a denominator that counts
+  down toward zero.
+- A long-lived sm2 session can, in principle, exceed its promised `target_count`: the serve
+  query re-evaluates "due now" on every call, so a session resumed after a card matures mid-way
+  through can serve a card beyond the count it announced at creation. Low probability, since
+  the deck page always creates a fresh session, and bounding the serve to the cards due at
+  creation is a bigger change than it is worth now.
+- "Next due" has two definitions in this codebase that happen to agree only because both are
+  read exclusively when nothing is due: `sessions::next_due_at` uses an INNER JOIN with no due
+  filter, while the stats query uses `MIN(due_at)` over a LEFT-JOINed CTE that includes
+  already-overdue cards. Both actually compute "earliest `due_at`", not "next *future* due".
 
 ## 12. Explicitly out of scope
 
