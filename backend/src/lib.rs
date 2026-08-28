@@ -2,6 +2,7 @@ pub mod configuration;
 pub mod database;
 pub mod error;
 pub mod extract;
+pub mod grading;
 pub mod images;
 pub mod normalise;
 pub mod routes;

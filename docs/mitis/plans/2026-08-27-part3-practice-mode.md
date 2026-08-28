@@ -143,7 +143,7 @@ The throwaway module, its test and its cache entry were all removed; `.sqlx` is 
 
 ---
 
-## Task 4: `backend/src/grading.rs` — pure per-kind grading
+## Task 4: `backend/src/grading.rs` — pure per-kind grading — **COMPLETE**
 
 **Goal:** One module that decides correctness for all three kinds, with no database access, and closes the empty-normalisation hole.
 
@@ -228,13 +228,17 @@ The empty-key guard is the load-bearing line. An accepted answer of `"---"` pass
 | `short_answer_matching_is_equality_not_substring` — `"k"` must not match `"k means"` | `.contains` instead of `==` |
 | `any_accepted_key_matches_not_just_the_first` | checking only `accepted_normalised[0]` |
 
+**Outcome:** 10 tests green, and **every one proved capable of failing** by isolated mutation — the empty-key guard removed, raw-text comparison, substring instead of equality, only-the-first-key checked, an unknown choice id graded `false` instead of `None`, `Hard` grouped with `Again`, and a parser arm dropped. All seven killed.
+
+Clippy required `accepted_normalised.contains(&comparison_key)` in place of `iter().any(...)` — identical element-equality semantics, and the three mutations touching that line were re-proved after the rewrite.
+
 **Acceptance Criteria:**
-- [ ] `grading.rs` imports nothing from `sqlx`, `axum` or `routes`
-- [ ] `grade_multiple_choice` returns `None` for a choice id not on the card, so the caller can 422 rather than grade it wrong
-- [ ] `grade_short_answer` normalises via the existing `normalise()`, never its own copy
-- [ ] An empty normalised answer is incorrect **without consulting** `accepted`
-- [ ] Matching is equality on the normalised key, never substring
-- [ ] All nine unit tests pass
+- [x] `grading.rs` imports nothing from `sqlx`, `axum` or `routes`
+- [x] `grade_multiple_choice` returns `None` for a choice id not on the card, so the caller can 422 rather than grade it wrong
+- [x] `grade_short_answer` normalises via the existing `normalise()`, never its own copy
+- [x] An empty normalised answer is incorrect **without consulting** `accepted`
+- [x] Matching is equality on the normalised key, never substring
+- [x] All unit tests pass (10, one more than planned: an empty accepted list never matches)
 
 **Verify:** `cargo test grading && cargo clippy --all-targets -- -D warnings`
 
