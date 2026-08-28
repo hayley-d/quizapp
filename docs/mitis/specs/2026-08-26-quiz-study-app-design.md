@@ -86,8 +86,10 @@ two decks called "Test 1" in the same module would be indistinguishable while re
 Study sessions select one or more decks, or a whole module (which expands to its decks).
 The API has supported both since part 3. The frontend does not currently offer either: the
 deck page starts a session for the deck you are looking at and nothing else, so the
-multi-deck and whole-module paths are reachable only through the API. Part 5 decides
-whether a mock test brings a wider pool back to the UI.
+multi-deck and whole-module paths are reachable only through the API. Part 5 decided that a
+mock test does **not** bring a wider pool back to the UI: a mock test is the one deck you
+started it from. The backend still accepts a deck list and a `module_id` for a mock session,
+so this is a decision about which buttons exist, not a narrowing of the API.
 
 ### Card kinds
 
@@ -195,35 +197,71 @@ POST /api/images                   multipart upload -> data/images/, returns pat
                                     be saved without an accepted answer, and the image
                                     IS the prompt. Cost: orphan files, accepted
 
-POST /api/sessions                 {mode, deck_ids | module_id, target_count?}
+POST /api/sessions                 {mode, deck_ids | module_id}
+                                    target_count is REJECTED, not ignored. In mock mode
+                                    the server computes it as the pool size at creation
 GET  /api/sessions/:id/next        next card: prompt, image, shuffled choices, no key
-                                    for ANY kind -- see the reveal note below
+                                    for ANY kind -- see the reveal note below.
+                                    Carries `mode`, which is the authority the client
+                                    routes on. Practice adds correct_count; mock adds
+                                    target_count and started_at and carries NO running
+                                    score
 POST /api/sessions/:id/reveal      {card_id} -> {answer_md, explanation_md}; flashcard
                                     only. Amended in Part 3: self-grading needs the
                                     answer before the grade, and a flashcard has no key
                                     to protect. A separate endpoint keeps /next's
-                                    response struct incapable of carrying an answer
+                                    response struct incapable of carrying an answer.
+                                    Amended in Part 5: 409 for a mock session, where it
+                                    would be a naked answer oracle
 POST /api/sessions/:id/answer      {card_id, given | choice_id | self_grade, ms?}
-                                    -> {review_id, correct, expected, explanation_md,
-                                        can_override}
+                                    -> practice: {mode, review_id, correct, expected,
+                                        explanation_md, can_override}
+                                    -> mock:     {mode, answered_count, pool_count}
                                     Amended in Part 3: the original {given} could not
                                     identify the card (/next is a GET that writes
                                     nothing, so the server has no memory of the serve),
                                     could not express a choice selection, and could not
-                                    express a self-grade
-POST /api/sessions/:id/finish      end session, return results summary
-POST /api/reviews/:id/override     "I was right": insert accepted, flip review
+                                    express a self-grade.
+                                    Amended in Part 5: the mock response is a separate
+                                    struct STRUCTURALLY incapable of carrying a verdict,
+                                    rather than one struct with nulled fields
+POST /api/sessions/:id/finish      end session, return results summary. Unchanged by
+                                    Part 5, including its idempotence
+GET  /api/sessions/:id/results     every question in answer order: prompt, image, what
+                                    you gave, expected, explanation, correct,
+                                    overridden, can_override, review_id, ms.
+                                    Added in Part 5, replacing the plan for /finish to
+                                    return the missed cards. Gated on ended_at IS NOT
+                                    NULL -- 409 while the session is live -- and gated on
+                                    STATE not mode, so practice sessions get a
+                                    per-question record too
+POST /api/reviews/:id/override     "I was right": insert accepted, flip review.
+                                    Amended in Part 5: extended to auto-graded
+                                    flashcards, which flip the review WITHOUT an
+                                    accepted insert (a flashcard has no accepted list),
+                                    and refused with 409 while the review's session is a
+                                    live mock -- otherwise it is a per-card answer oracle
+                                    usable mid-test
 
 GET  /api/stats?deck_ids=          accuracy overall, per deck, per card, over time
 ```
 
 `GET /api/sessions/:id/next` shuffles `choices` per serve, so the student learns the answer
-rather than its position.
+rather than its position. In mock mode the shuffle is seeded from `(session.id, card_id)`
+rather than randomised per serve, so a reload re-serves the same card with its options in the
+same order — a re-randomised order would be a second reload tell, and remembering the order
+would need the client-side store the architecture forbids.
 
 `POST /api/sessions/:id/answer` writes the `reviews` row and, in SM-2 mode, updates
-`schedule`. Its response carries the verdict, the primary expected answer, and the
-explanation if one exists. In mock test mode the response withholds the verdict until
-`/finish`.
+`schedule`. In practice mode its response carries the verdict, the primary expected answer,
+and the explanation if one exists.
+
+**In mock test mode it returns a different struct**, carrying only `mode` and the two progress
+counts. Amended in Part 5, which found the "withholds until `/finish`" phrasing above to be
+the wrong shape: a single response type with nulled-out verdict fields makes the leak a
+runtime condition that every future edit must re-honour, whereas a separate struct with no
+verdict fields cannot leak one. The verdict is not deferred to `/finish` either — it is
+`GET /api/sessions/:id/results` that serves it, after `ended_at` is set.
 
 The answer-key rule, restated precisely after Part 3 met the flashcard case: **no endpoint
 returns correctness data or answer content for a card except in response to a request that
@@ -254,9 +292,25 @@ Three modes draw from one card pool (non-archived cards in the selected decks).
 - A card may not repeat within a rolling window of ~8 cards, so it does not feel like a loop
 - The session has no end; the student stops when finished
 
-**Mock test** — `target_count` cards sampled uniformly at random. No feedback during the
-run. `/finish` returns a score and every missed card with its expected answer and
-explanation.
+**Mock test** — the whole non-archived pool, every card exactly once, in a per-session
+deterministic order. No feedback during the run.
+
+Narrowed in Part 5, which replaced "`target_count` cards sampled uniformly at random":
+sampling a strict subset of a revision deck tests a random half of your own syllabus, and the
+deck is already the set of things you decided are worth knowing. There is no length picker;
+`target_count` is computed by the server as the pool at creation and is a *record* of it, not
+an authority over serving — archive a card mid-test and the run legitimately ends at 31 of 32.
+
+The order is rank-by-hash over `(session.id, card_id)`, not a shuffle, so it is a function of
+each card rather than of the list: the next card is the first card in that order with no
+`reviews` row for this session. A reload therefore re-serves the same card, and archiving one
+card shortens the run without reshuffling the rest. This adds no table and no column, and
+keeps "session state lives only in `reviews`" exactly true.
+
+A mock flashcard is **typed and auto-graded** against `answer_md` — normalised, then tolerant
+of up to 2 edits, and only at 8 or more characters. Practice flashcards keep their reveal and
+their four self-grades, which Part 7 needs. Results come from `GET /api/sessions/:id/results`,
+not from `/finish`, and cover every question rather than only the missed ones.
 
 **SM-2** — standard SuperMemo-2 intervals and ease factors, over cards whose
 `schedule.due_at` has passed. Quality mapping:

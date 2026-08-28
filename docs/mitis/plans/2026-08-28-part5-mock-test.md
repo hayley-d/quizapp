@@ -1039,15 +1039,15 @@ Then navigate to the **Network** address vite prints (e.g. `http://192.168.2.161
 - [ ] 21. **A live mock cannot be probed.** Mid-run, POST `/api/reviews/<a guessed id>/override` and GET `/api/sessions/<id>/results` by hand — both 409, and neither body carries an expected answer or a verdict.
 
 **Handover and spec updates:**
-- [ ] `docs/HANDOVER.md`: update the **Last updated** line and commit; add a Part 5 section to "Where things stand"; replace "Next up" with Part 6 (stats)
-- [ ] Record how each of the three Part 5 questions was resolved, replacing the "Three things Part 5 must resolve" block
-- [ ] Record the Zustand decline with its reason — a prior design doc predicted otherwise, and that prediction must be visibly overturned rather than silently ignored
-- [ ] Record the flashcard prose caveat and the advice to keep mock-test flashcard answers short
-- [ ] Record the accepted false-accept cost (`type i error` / `type ii error`) and that "mark wrong" is the follow-up if it annoys
-- [ ] Record the redundant `POST /finish` on results reload as a known-and-accepted minor
-- [ ] Record **375px phone width** as still never rendered — now across Parts 1, 2b, 2c, 3, 4 and 5
-- [ ] Master spec: amend the Study engine paragraph and the API list per the two amendments at the top of this plan
-- [ ] **Anything not actually clicked is recorded as not verified.** This document has never yet claimed a walkthrough that did not happen.
+- [x] `docs/HANDOVER.md`: update the **Last updated** line and commit; add a Part 5 section to "Where things stand"; replace "Next up" with Part 6 (stats)
+- [x] Record how each of the three Part 5 questions was resolved, replacing the "Three things Part 5 must resolve" block
+- [x] Record the Zustand decline with its reason — a prior design doc predicted otherwise, and that prediction must be visibly overturned rather than silently ignored
+- [x] Record the flashcard prose caveat and the advice to keep mock-test flashcard answers short
+- [x] Record the accepted false-accept cost (`type i error` / `type ii error`) and that "mark wrong" is the follow-up if it annoys
+- [x] Record the redundant `POST /finish` on results reload as a known-and-accepted minor
+- [x] Record **375px phone width** as still never rendered — now across Parts 1, 2b, 2c, 3, 4 and 5
+- [x] Master spec: amend the Study engine paragraph and the API list per the two amendments at the top of this plan
+- [x] **Anything not actually clicked is recorded as not verified.** This document has never yet claimed a walkthrough that did not happen.
 
 **Verify:** `cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`
 

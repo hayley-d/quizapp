@@ -2,18 +2,25 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `main`, at commit `e09e76d` (the styling pass that
-followed the Part 4 merge). **Part 4 (the Bibble theme pass) is done and merged** —
-`feat/part4-bibble-theme` landed as `60575c8`, and there is no feature branch outstanding.
-Both palettes have now been driven in a browser: Hayley looked at Makka Pakka light and
-Bibble dark and made `e09e76d` in response, which is a structural change as much as a
-styling one — it deleted the `/study` screen and moved session starting onto the deck
-page. Read "The `e09e76d` styling pass" under Where things stand before touching the
-frontend; it is the most recent thing that happened and the least like what its commit
-message says.
+**Last updated:** 2026-08-28, on `feat/part5-mock-test`, at commit `f7f6c67`.
+
+**Part 5 (the mock test) is code-complete and its automated gate is green, but it is NOT
+merged and it has NOT been driven in a browser.** This is the one thing to understand
+before you touch anything: `f7f6c67` is a single large commit ("finish mock test") sitting
+on a branch, and its plan's Task 17 — a twenty-one-point browser walkthrough — was never
+performed, because the Chrome extension is not available on this machine. Four of those
+twenty-one points (3, 7, 9 and 21) are answer-leak checks, and point 9 in particular can
+only be settled in a browser's Network tab. See "Part 5 — verification status" under
+Outstanding for the itemised list of what is and is not known.
+
+Part 4 (the Bibble theme pass) is done and merged; so is Hayley's `e09e76d` styling pass,
+which is a structural change as much as a styling one — it deleted the `/study` screen and
+moved session starting onto the deck page, and in doing so built Part 5's entry point
+before Part 5 existed. Read "The `e09e76d` styling pass" under Where things stand before
+touching the frontend.
 
 Part 2c's nine-point walkthrough is still outstanding, and 375px phone width has never
-been rendered in any part (see Outstanding).
+been rendered in any part — now across Parts 1, 2b, 2c, 3, 4 **and 5** (see Outstanding).
 
 ## What this is
 
@@ -31,7 +38,7 @@ feature branch outstanding. Concretely, working today:
 Dark mode is Bibble, unchanged. Light mode was repaletted from a pale-aqua rendering of the
 same tokens into "Makka Pakka" — warm stone and sand neutrals with ochre-brown and clay
 accents. Design record:
-[`.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md`](../.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md).
+`.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md` — **which does not exist on this machine.** `.mitis/sdd/` is untracked and local, so this design record is either lost or never left the session that made it. The token values themselves are in `frontend/src/styles/globals.css` and mirrored in `frontend/scripts/check-contrast.py`; the reasoning survives only in the Part 4 bullets below.
 The practical consequence: a new colour now needs a value in *both* identities, not one
 shared value. A token that reads correctly in one theme may be meaningless or wrong in the
 other — do not assume a value carries over.
@@ -87,10 +94,11 @@ other — do not assume a value carries over.
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 229 backend tests (the count of all lib and integration test binaries combined; the
-  earlier figure of 119 recorded here was stale). No frontend test framework — that is a
-  deliberate spec decision, not an
-  omission.
+- 317 backend tests (the count of all lib and integration test binaries combined; 229
+  before Part 5, and an earlier figure of 119 recorded here was stale twice over). No
+  frontend test framework — that is a deliberate spec decision, not an omission, and it is
+  load-bearing in Part 5's design: it is *why* mock mode got its own page rather than a
+  mode branch inside the practice runner.
 
 - **Part 3, practice mode** — `grading.rs` and `practice.rs` (two pure modules, no database
   access, randomness injected as a `roll: f64`), `routes/sessions.rs` with six endpoints, and
@@ -161,7 +169,7 @@ other — do not assume a value carries over.
   - **The Makka Pakka repalette** (commit `df3b138`, after Part 4's own gate had already gone
     green): light mode stopped being a pale-aqua rendering of the Bibble tokens and became its
     own warm stone/sand/ochre identity. Dark mode did not change. Design record:
-    [`.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md`](../.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md).
+    `.mitis/sdd/2026-08-28-part4-bibble-theme/makka-pakka-palette.md` — **which does not exist on this machine.** `.mitis/sdd/` is untracked and local, so this design record is either lost or never left the session that made it. The token values themselves are in `frontend/src/styles/globals.css` and mirrored in `frontend/scripts/check-contrast.py`; the reasoning survives only in the Part 4 bullets below.
     - `--brand` is now per-theme rather than one opaque value shared by both. This is not a
       reversal of the reasoning above — an opaque colour's contrast still does not depend on
       its backdrop, so one value still serves both themes *within an identity*. Two identities
@@ -205,20 +213,20 @@ other — do not assume a value carries over.
     Any older note in this document or the spec that sends you to `/study` is stale.
   - **Session starting moved onto the deck page.** `/decks/:id` now opens with a
     three-button grid built from `TEST_TYPE_OPTIONS` in `frontend/src/pages/DeckPage.tsx`:
-    Practice (live), Mock test (disabled, "Arrives in part 5.") and Spaced repetition
-    (disabled, "Arrives in part 7."). `startSession` calls
-    `api.createSession({ mode, deck_ids: [deckId] })` and navigates to `/session/:id`.
+    Practice (live), Mock test (disabled at the time, "Arrives in part 5." — **enabled by
+    Part 5**) and Spaced repetition (disabled, "Arrives in part 7."). `startSession` calls
+    `api.createSession({ mode, deck_ids: [deckId] })` and navigates to `/session/:id`, or,
+    since Part 5, to `/mock/:id` for a mock session.
     Buttons disable when `deck.card_count === 0`, which is the right guard —
     `card_count` already excludes archived cards (`backend/src/routes/decks.rs`).
-  - **This means Part 5's entry point already exists.** The Mock test button is built,
-    positioned and labelled; Part 5 enables it rather than inventing a screen. Same for
-    SM-2 in build step 7.
+  - **This meant Part 5's entry point already existed**, and Part 5 duly enabled the tile
+    rather than inventing a screen. Same for SM-2 in build step 7.
   - **Multi-deck and module-wide sessions are no longer reachable from the UI.**
     `startSession` always sends exactly one deck. The backend and the client types still
     support both a list of decks and a whole module (`frontend/src/lib/api.ts`,
     `backend/src/routes/sessions.rs`), and that path is still tested — it is intact and
-    unused, not removed. Whether Part 5 restores it is an open question, recorded under
-    Next up.
+    unused, not removed. **Part 5 did not restore it** — a mock test is the one deck you
+    started it from. A wider pool is a picker, not an API change; see Next up.
   - **The "Show archived" switch was removed** and the list fetch is hardcoded to
     `archived: 'false'`. Deliberate — see the entry under Known-and-accepted minors for
     what it costs.
@@ -229,29 +237,150 @@ other — do not assume a value carries over.
   - Two manual layout offsets on the deck page, `pl-11` on the container and `-ml-7` on
     the card list, aligning the card rows' drag grips outside the content column.
 
+- **Part 5, the mock test** — on `feat/part5-mock-test` as `f7f6c67`, **not merged**.
+  Design: [`mitis/specs/2026-08-28-part5-mock-test-design.md`](mitis/specs/2026-08-28-part5-mock-test-design.md);
+  plan: [`mitis/plans/2026-08-28-part5-mock-test.md`](mitis/plans/2026-08-28-part5-mock-test.md).
+  No migration, no new column, no new table, no new dependency, and no new colour token.
+  - **A mock test is one deck, and the whole deck** — every non-archived card exactly once.
+    There is no length picker: `target_count` is computed by the server as the pool size at
+    creation, and a client-supplied one is still rejected rather than ignored. A revision
+    deck is already the set of things you decided are worth knowing, so sampling a strict
+    subset of it tests a random half of your own syllabus.
+  - **The stable serve needed no new storage.** The next card is the first card, in a fixed
+    per-session order, with no `reviews` row for this session. Both halves come from data
+    already stored, so a reload re-serves the same card and "session state lives only in
+    `reviews`" gets *stronger* rather than weaker — it goes from "every input is derived
+    from it" to "the output is identical".
+  - **`backend/src/mock.rs` ranks by hash, deliberately not Fisher–Yates.** A shuffle is a
+    function of *the list*, so archiving one card mid-test would reshuffle every remaining
+    card and a reload would then serve a different question — the exact defect the stable
+    serve exists to prevent. Rank-by-hash is a function of each card, so an archive
+    shortens the run without reordering it. `mix64` is written locally rather than taken
+    from `rand` because `StdRng`'s output is not a stability guarantee across versions.
+    The sort key is the tuple `(hash, card_id)`, so the order is total even on a hash
+    collision and determinism does not rest on sort stability.
+  - **Choice order is seeded in mock mode too**, from `(session.id, card_id)`, not
+    randomised per serve. A re-randomised order would be a second reload tell, and
+    remembering the order client-side is the forbidden client queue.
+  - **A mock flashcard is typed and auto-graded** against `answer_md`, with no reveal step
+    and no self-grade buttons — revealing the answer *is* feedback. Practice flashcards are
+    completely unchanged, which is not politeness about compatibility: Part 7 (SM-2) is the
+    first consumer of `reviews.self_grade` and needs the four levels. **A mock flashcard
+    review therefore has `self_grade IS NULL` and carries its verdict in `correct`, so Part
+    7 must map those through `correct`, not through the grade table.**
+  - **Spelling tolerance, flashcards only:** `tolerance(n) = min(n / 8, 2)` over the
+    *normalised expected* answer, applying only while both sides are ≤ 120 characters.
+    The divisor is 8 rather than 6 because the errors are asymmetric — a false reject is
+    one click from fixed, a false accept is permanent — and divisor 6 concretely graded
+    `ridge` correct against `bridge`. `grade_short_answer` is untouched, because it is
+    shared with practice and nobody asked for practice grading to change.
+  - **`GET /api/sessions/:id/results`** serves the post-run record: every question in
+    answer order, not only the missed ones. It is gated on `ended_at IS NOT NULL` — 409
+    while live — and on **state, not mode**, so practice sessions get a per-question record
+    too and Part 6 starts with one for free. `/finish` is byte-for-byte unchanged.
+  - **Three answer leaks were closed, not one.** `/answer` returns a *separate struct* in
+    mock mode carrying only `mode` and two progress counts, so it is structurally incapable
+    of holding a verdict rather than conditionally nulling one; `/next` omits
+    `correct_count`, which is a running score; and `/reveal` 409s for a mock session,
+    because it is a naked answer oracle.
+  - **The sharpest finding in the design: the override is an oracle too.**
+    `POST /api/reviews/:id/override` returns `expected` and distinguishes an
+    already-correct review with its own 409. Extended to flashcards and left ungated, it
+    becomes a per-card answer-and-correctness oracle usable *during* a live mock run —
+    review ids are sequential integers, so omitting `review_id` from the mock answer
+    response is not a control. It now refuses while the review's session is a mock with
+    `ended_at IS NULL`, and **the check order is part of the fix**: the mock-active gate
+    runs before both the kind check and the already-correct check, so a live mock gets one
+    identical refusal and neither of the other checks leaks through its own message.
+  - **Mock got its own page** (`/mock/:id`, `MockSessionPage.tsx`) rather than a mode branch
+    in `SessionPage.tsx`. Not for line count: `SessionPage` holds five pieces of state a
+    mock run must never enter — the verdict, the revealed answer, the two override flags and
+    the streak — and every one is read by the render tree. A mode branch would have to prove
+    five negatives on every render in a runner with **no test coverage at all**. A separate
+    file proves them by absence.
+  - **A separate route is not a mode guarantee.** Session ids are sequential and the URL is
+    hand-editable, so the authority is `mode` on the serve payload: each runner redirects on
+    its first serve if the mode is not its own. This is the **only** change Part 5 makes to
+    `SessionPage.tsx`, and it gives Part 7's `sm2` its slot.
+  - **The clock ticks in the timer leaf**, not the page — lifting it up would re-render the
+    prompt's `react-markdown` + KaTeX once per second, worst on exactly the 100+ card COS781
+    deck already flagged as an unverified responsiveness worry. Its baseline is the server's
+    `started_at` (the third reason that field joined the serve payload), so a reload
+    continues the clock; each tick recomputes from the current time rather than
+    incrementing, so a throttled background tab cannot drift; and it is `aria-hidden`, since
+    a per-second announcement is a screen-reader firehose — "Question 7 of 32" is the
+    accessible progress information. `usePrefersReducedMotion` is deliberately **not** used
+    here: a count-up clock is content, not decoration.
+  - **Enter does two jobs in mock mode**, which is a double-submit hazard practice does not
+    have — in practice two keydowns in one tick degrade harmlessly to "advance", but in mock
+    one Enter submits *and* advances. The guard is a `useRef`
+    (`submitting` in `MockSessionPage.tsx`), not React state, because two keydowns in the
+    same tick would both read state as `false` and both post.
+  - **No new colour tokens.** The results screen reuses `--success` and `--destructive`,
+    already enforced in both palettes, so `check-contrast.py` still reports **16 ENFORCED
+    rows with an empty RECORDED tier** — an unchanged count is the evidence that no pair
+    crept in. Two things are forbidden there as a result: alpha tints (`bg-success/10` and
+    friends), whose contrast depends on the surface beneath them, which is the class of bug
+    Part 4 fixed and which would be invisible anyway against light mode's ~1.2:1 surface
+    steps; and colour as the only signal, so every correctness marker pairs an opaque chip
+    with an icon and a text label, with a left border stripe carrying the scannability a
+    tint was reaching for.
+  - **No Zustand — this reverses a prediction, and the reversal is the point.** Part 4's
+    design doc deferred Zustand and named Part 5 as "the intended home", expecting mock mode
+    to have "a stable serve order, a `target_count`, no per-question feedback, and a resume
+    story that practice mode explicitly does not have". **All four turned out to be server
+    properties**, and the fourth is self-cancelling: the resume story predicted to need a
+    store is precisely what the stable serve order removed the need for. A store would be a
+    second source of truth for the current serve — the client-side queue the "session state
+    lives only in `reviews`" invariant forbids by name. Recorded here so Part 6 does not
+    re-litigate it. Revisit only when two sibling subtrees genuinely need the same mutable
+    value.
+  - **`target_count` is a record, not an authority.** It is frozen at creation while the
+    live pool is not, so a test can legitimately end at 31 answered of 32 after an archive.
+    `/next` serves from the live pool and 409s when the live unanswered set is empty. It is
+    stored rather than recomputed on read because it is the denominator the student was
+    promised at the start; recomputing would silently rewrite history to make every
+    abandoned-by-archiving test look complete.
+
 `/stats` is still a placeholder page.
 
 ## Next up
 
-**Part 5: the mock test.** Part 4 is done and merged, and its entry point is already
-built: the disabled "Mock test" button in the `/decks/:id` mode grid, labelled "Arrives in
-part 5." Part 5 enables that button rather than adding a screen.
+**Merge Part 5, once someone has driven it.** The code is complete and the automated gate is
+green; the twenty-one-point browser walkthrough in the plan's Task 17 is the outstanding
+blocker, and nine of its points are answer-leak checks that need a Network tab. Do not merge
+`feat/part5-mock-test` on the strength of the gate alone — the gate cannot see a leak, only a
+type error.
 
-After Part 5: stats → SM-2 → embed the bundle and LAN binding.
+**Then Part 6: stats.** `/stats` is still a placeholder page. Part 5 leaves it two gifts:
+`GET /api/sessions/:id/results` is gated on state rather than mode, so it already returns a
+per-question record for practice sessions, and `sessions.mode` is now meaningful as a filter.
+Part 6's own call is whether the stats screen separates the two — a mock test's accuracy is a
+fairer measure of knowledge than practice's, which is weighted towards your weaknesses by
+construction.
 
-**Three things Part 5 must resolve.** The first two are recorded in the Part 3 design doc;
-the third was created by the `e09e76d` styling pass.
+After Part 6: SM-2 → embed the bundle and LAN binding (which is also the phone layout pass,
+and the first time 375px gets rendered).
 
-- `/next` re-rolls on reload. That is correct for practice, where an unanswered serve wrote
-  no row and there is no ordered position to resume to. Under `target_count` each serve is
-  consequential, so mock mode needs a stable serve.
-- What a flashcard means in a mock test, where there is no feedback during the run but
-  self-grading structurally needs the answer.
-- **What a mock test is scoped to.** The deck-page entry point can only start a session for
-  the one deck you are looking at, but a mock test standing in for the COS781 test is more
-  plausibly the whole module. The backend already accepts both a deck list and a
-  `module_id`, so this is a UI decision, not an API one: either mock tests are per-deck and
-  match the button that starts them, or Part 5 brings back a way to pick a wider pool.
+### The three things Part 5 had to resolve — and how it did
+
+All three are closed. Recorded here rather than deleted, because each answer is a constraint
+on later parts.
+
+- **`/next` re-rolling on reload.** Resolved by *dissolving* it rather than fixing it: serving
+  every card exactly once in a per-session deterministic order means the next card is the
+  first unanswered card in that order, so a reload lands on the same card because nothing
+  about the decision changed. No "served" table, no client queue, no new column. Practice is
+  unchanged and its re-roll is still correct there.
+- **What a flashcard means in a mock test.** Resolved by making it typed and auto-graded
+  against `answer_md`, with no reveal and no self-grade. Practice flashcards keep their four
+  self-grades because Part 7 needs them. See the prose caveat under Known-and-accepted minors
+  — this answer has a real cost.
+- **What a mock test is scoped to.** Resolved as **one deck**, matching the button that starts
+  it. This is a decision about which buttons exist, not a narrowing of the API: the backend
+  still accepts a deck list and a `module_id` for a mock session, and that path is still
+  tested. A module-wide mock is a picker, not an API change, and is the thing to build if
+  COS781 revision wants one deck per lecture and a mock over all of them.
 
 ## Running it
 
@@ -443,6 +572,71 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+### Part 5 — verification status
+
+**The automated gate is green and the browser walkthrough was never performed.** Both halves
+of that sentence matter, and the second is not a formality.
+
+Verified, by running it on 2026-08-28:
+
+- `cargo test` — **317 passed, 0 failed**, including a new `backend/tests/mock.rs` of roughly
+  1,460 lines
+- `cargo clippy --all-targets -- -D warnings` — clean
+- `SQLX_OFFLINE=true cargo build` — clean
+- `python3 frontend/scripts/check-contrast.py` — **16 ENFORCED rows, RECORDED tier empty**,
+  the same count as before Part 5, which is the plan's own stated evidence that no new colour
+  pair crept in
+- `pnpm exec tsc -b --noEmit` — clean
+- `pnpm build` — builds; the JS bundle is now 904 kB (276 kB gzipped), still tripping Vite's
+  500 kB chunk warning
+- `pnpm exec oxlint` — exit 0, 12 warnings, none of them `no-explicit-any`
+
+**Not verified, because no browser was available.** The Chrome extension is not connected on
+this machine, and the plan's Task 17 walkthrough has twenty-one points, none of which were
+driven. What that costs is specific rather than general:
+
+- **Four points (3, 7, 9 and 21) are the answer-leak checks**, and they are the reason this
+  gap is not merely tidiness. The tests assert the leak boundary at the Rust level, but the
+  design closed leaks on four endpoints (`/answer`, `/next`, `/reveal`, `/override`) plus
+  `/results`, and **point 9 is the only check that the running client never *asks*** — that
+  `GET /results` does not appear mid-run at all, not as a 200 and not as a 409. A test can
+  prove the endpoint refuses; only the Network tab proves the client never asks. Point 21
+  is its manual counterpart: probing `/override` and `/results` by hand mid-run.
+- **The double-submit guard is unexercised.** Point 5 holds Enter down with and without a
+  selection and counts the `POST /answer` requests. The guard is a `useRef`, which is the
+  correct shape, but "correct shape" and "one request" are different claims.
+- **Reload-stability is unobserved end to end.** The backend tests cover the same card being
+  served; point 8 also wants the same *choice order* and a clock that continues rather than
+  restarting.
+- **The mode-mismatch redirects** (point 16, hand-editing `/session/:id` to `/mock/:id` and
+  back) exist only as code.
+- **Both palettes on the results screen** (point 17) — the chips, the border stripes, the
+  progress bar against its track, KaTeX inside a results row. The contrast script proves the
+  ratios; it says nothing about whether the stripes read at a glance, which is point 12's
+  squint test.
+- **The override on the results screen** (points 13 and 14), including whether the count and
+  accuracy update in place without a re-order.
+- **The one-card and zero-card decks** (point 20), **End test early** (point 19), and
+  **reduced motion** (point 18).
+
+**375px phone width** is still unrendered, now across Parts 1, 2b, 2c, 3, 4 and 5.
+`resize_window` reports success in this environment but the viewport does not change. It
+belongs to build step 8.
+
+**Part 5 minor findings**, from reading the committed code rather than from a review round:
+
+- `MockSessionPage.tsx:40` initialises a `useRef` from `Date.now()` during render, which
+  oxlint flags as `react(purity)`. Harmless in practice — a ref initialiser's value is
+  discarded on re-render — but it is a warning that will be re-found by every future lint
+  reader.
+- `MockSessionPage.tsx:90` and five pre-existing sites carry `react(set-state-in-effect)`
+  warnings. Twelve in total across the frontend; the count did not meaningfully change with
+  Part 5, and none is `no-explicit-any`.
+- The plan's own Task 17 checklist includes updating this document and the master spec. Those
+  were done (this section, the Part 5 section under Where things stand, and the master spec's
+  API list and Study engine paragraph). The walkthrough was not, and is recorded as not done
+  rather than quietly folded into "Part 5 complete".
 
 ### Part 4 — verification status
 
@@ -642,6 +836,48 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 **Known-and-accepted minors**
 
+- **A flashcard whose answer is a sentence will auto-grade wrong in a mock test, nearly every
+  time.** `answer_md` is markdown prose — card validation requires it non-blank and nothing
+  more — and the whole reason to author a flashcard rather than a short-answer card is that the
+  answer was not reducible to a key. No distance metric fixes this; it is what grading free
+  text against prose costs, and no authoring restriction was added because the card model is
+  not the problem. Two mitigations, neither a cleverer matcher: the override is the correction
+  path (which is *why* it had to be extended to flashcards), and the results screen carries a
+  one-line note whenever a run contained a flashcard — without it, 30% on a deck of prose
+  flashcards reads as either a broken feature or a bad night's revision, and it is neither.
+  **The practical advice: for cards you intend to sit a mock test on, keep flashcard answers
+  short and keyword-ish, or author them as short-answer cards**, which have an `accepted` list
+  built for exactly this.
+- **Fuzzy matching can only ever mark a wrong answer right, and there is no reverse
+  override.** `type i error` and `type ii error` are distance 1 within a tolerance of 1, so one
+  grades as the other — a realistic case for a Data Mining test. No divisor fixes it: the terms
+  differ by exactly one character, so any tolerance at all accepts them, and zero tolerance at
+  that length would forgive nothing anywhere. This is pinned by a test rather than engineered
+  around, so the choice stays visible. **A false accept is currently unfixable from the UI**,
+  because "I was right" has no opposite. The follow-up, if it proves annoying in practice, is a
+  "mark wrong" action — deliberately not built, because it is a second write path to a
+  `reviews` row and Part 3 left the override as the only one.
+- **Overriding a mock flashcard fixes the row but does not teach the card.** A short-answer
+  override inserts an `accepted` row, so the same wording grades correct next time. Flashcard
+  grading compares against `answer_md`, and card validation forbids `accepted` rows on a
+  flashcard, so wiring flashcards into `accepted` would be a card-model change. Out of scope,
+  and stated rather than left to be discovered.
+- **Reloading the results screen fires a redundant `POST /finish`.** The runner's state machine
+  has one terminator: a 409 from `/next` — which covers both "the pool is done" and "this
+  session has ended" — POSTs `/finish` and then GETs `/results`. On a reload of a finished
+  session that path runs again. `/finish` is idempotent, so the second call changes nothing;
+  the alternative is a second code path to the results screen, which is worse than one
+  redundant request.
+- **The `id` half of `/results`' ordering tiebreak is not provable by test.** Ordering is by
+  `answered_at` then `id`, both ascending. With several reviews sharing a one-second
+  `answered_at`, SQLite returns them in rowid order whether or not the tiebreak is written, so
+  removing it changes nothing observable. It is kept because the resulting order is only
+  *incidentally* correct — nothing guarantees rowid order for an unqualified `ORDER BY`, and a
+  future index or query-plan change could silently reorder a results screen. The sort
+  *direction* is proven, by a deliberately constructed tie. This mirrors the decks list query,
+  where the same split is already documented.
+- **Multi-deck and module-wide mock tests are intact and unreachable**, exactly as for
+  practice. The backend accepts both; no button starts one.
 - **Archived cards cannot be reached from the UI, deliberately.** `e09e76d` removed the
   "Show archived" switch and pinned the deck list to `archived: 'false'`, so archiving is
   one-way from the interface. Two knock-on facts, both left as they are: `unarchive(card)`
@@ -672,6 +908,11 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   the implementation legitimately diverged (e.g. deck-name uniqueness per module).
 - **Plans** — `mitis/plans/*.md` plus their `.tasks.json`. These carry the full per-task
   code, acceptance criteria and verification commands. All are marked complete.
+- **Part 5's design decisions** — [`mitis/specs/2026-08-28-part5-mock-test-design.md`](mitis/specs/2026-08-28-part5-mock-test-design.md).
+  Records the one-deck/whole-deck ruling, why the stable serve needs no storage, rank-by-hash
+  over Fisher–Yates, the typed-flashcard decision and its caveat, the tolerance rule and its
+  accepted false-accept cost, the three answer leaks and the override oracle, the separate
+  page, and the Zustand reversal. Read this one for *why*.
 - **Part 3's design decisions** — [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md).
   Records the weighted-sampling-over-`position` ruling, the two API amendments, why the
   flashcard reveal is its own endpoint, why never-seen dominance is derived rather than
@@ -688,10 +929,16 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 ## If you are an agent picking this up
 
-Work through `mitis:brainstorming` before designing Part 3, then `mitis:writing-plans`, then
-`mitis:subagent-driven-development`. The three existing plans are worth reading as a format
+Work through `mitis:brainstorming` before designing Part 6, then `mitis:writing-plans`, then
+`mitis:subagent-driven-development`. The four existing plans are worth reading as a format
 reference — particularly how each task carries complete code, an explicit verify command,
-and a `json:metadata` fence.
+and a `json:metadata` fence. Part 5's is the most developed of them.
+
+**Part 5's task ledger is not trustworthy.** `docs/mitis/plans/2026-08-28-part5-mock-test.md.tasks.json`
+marks all seventeen tasks `pending` while the code for all of them is committed, and there is
+no `.mitis/sdd/` progress ledger for Part 5 at all. So there is no per-task record of fix
+rounds or adjudications for this part — only the code, the design doc, and this document.
+Treat the design doc as the authority on intent and the tests as the authority on behaviour.
 
 Two habits that earned their cost here: give reviewers the *both sides* of any seam they are
 judging (a per-task review structurally cannot see an API-to-client mismatch), and demand
