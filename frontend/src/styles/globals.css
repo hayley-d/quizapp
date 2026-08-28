@@ -26,6 +26,8 @@
   --muted-foreground: oklch(0.50 0.03 255);
   --success: oklch(0.80 0.14 88);            /* gold — correct answers */
   --success-foreground: oklch(0.25 0.05 80);
+  --sparkle: oklch(0.86 0.16 88);            /* gold, matching --success */
+  --streak: oklch(0.68 0.19 335);            /* magenta, matching --accent */
   --destructive: oklch(0.58 0.20 20);
   --destructive-foreground: oklch(0.99 0.01 20);
   --border: oklch(0.90 0.02 230);
@@ -56,6 +58,8 @@
   --muted-foreground: oklch(0.72 0.03 250);
   --success: oklch(0.84 0.15 88);
   --success-foreground: oklch(0.20 0.05 80);
+  --sparkle: oklch(0.90 0.16 90);
+  --streak: oklch(0.74 0.20 335);
   --destructive: oklch(0.65 0.19 22);
   --destructive-foreground: oklch(0.16 0.04 20);
   --border: oklch(0.34 0.04 275);
@@ -87,6 +91,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-sparkle: var(--sparkle);
+  --color-streak: var(--streak);
 }
 
 @layer base {
@@ -134,3 +140,49 @@
 .markdown pre code { background: none; padding: 0; }
 
 .markdown .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
+
+@keyframes sparkle-burst {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.2) rotate(0deg);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--sparkle-x), var(--sparkle-y)) scale(1) rotate(140deg);
+  }
+}
+
+@keyframes wing-flutter {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  20% {
+    transform: rotate(-9deg) scale(1.08);
+  }
+  45% {
+    transform: rotate(7deg) scale(1.04);
+  }
+  70% {
+    transform: rotate(-4deg) scale(1.02);
+  }
+}
+
+.sparkle {
+  animation: sparkle-burst 700ms ease-out forwards;
+}
+
+.wing-flutter {
+  animation: wing-flutter 900ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
