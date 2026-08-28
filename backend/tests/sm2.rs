@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 mod common;
 
@@ -89,6 +89,48 @@ async fn set_due_at(app: &common::TestApp, card_id: i64, due_at: &str) {
         .unwrap();
 }
 
+async fn next_card(app: &common::TestApp, session_id: i64) -> (u16, Value) {
+    let (status, body) = app.get(&format!("/api/sessions/{session_id}/next")).await;
+    (status.as_u16(), body)
+}
+
+async fn answer_self_graded(
+    app: &common::TestApp,
+    session_id: i64,
+    card_id: i64,
+    self_grade: &str,
+) -> Value {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": self_grade }),
+        )
+        .await;
+    assert_eq!(status, 200, "could not answer: {body}");
+    body
+}
+
+async fn answer_whatever_was_served(
+    app: &common::TestApp,
+    session_id: i64,
+    card: &Value,
+) -> Value {
+    let card_id = card["id"].as_i64().unwrap();
+    let body = match card["kind"].as_str().unwrap() {
+        "flashcard" => json!({ "card_id": card_id, "self_grade": "good" }),
+        "short_answer" => json!({ "card_id": card_id, "given": "anything" }),
+        _ => json!({
+            "card_id": card_id,
+            "choice_id": card["choices"][0]["id"].as_i64().unwrap(),
+        }),
+    };
+    let (status, answered) = app
+        .post(&format!("/api/sessions/{session_id}/answer"), body)
+        .await;
+    assert_eq!(status, 200, "could not answer: {answered}");
+    answered
+}
+
 #[tokio::test]
 async fn a_fresh_deck_is_entirely_due() {
     let app = common::spawn_app().await;
@@ -140,7 +182,7 @@ async fn an_empty_deck_still_gets_the_empty_deck_refusal() {
 async fn archived_cards_are_never_due() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    create_flashcard(&app, deck_id, "live", "answer").await;
+    let live_card = create_flashcard(&app, deck_id, "live", "answer").await;
     let archived_card = create_flashcard(&app, deck_id, "archived", "answer").await;
     app.post(&format!("/api/cards/{archived_card}/archive"), json!({})).await;
 
@@ -148,6 +190,14 @@ async fn archived_cards_are_never_due() {
         .post("/api/sessions", json!({ "mode": "sm2", "deck_ids": [deck_id] }))
         .await;
     assert_eq!(created["target_count"], 1, "the archived card must not count as due");
+
+    let session_id = created["id"].as_i64().unwrap();
+    let (status, served) = next_card(&app, session_id).await;
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(
+        served["card"]["id"], live_card,
+        "the archived card must never be served: {served}",
+    );
 }
 
 #[tokio::test]
@@ -165,4 +215,100 @@ async fn a_client_supplied_target_count_is_refused() {
 
     assert_eq!(status, 422, "{body}");
     assert_eq!(body["fields"][0]["field"], "target_count");
+    assert_eq!(
+        body["fields"][0]["message"],
+        "A spaced repetition session is whatever is due, so its length is not yours to set",
+    );
+}
+
+#[tokio::test]
+async fn the_most_overdue_card_is_served_first() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let recent = create_flashcard(&app, deck_id, "recent", "answer").await;
+    let ancient = create_flashcard(&app, deck_id, "ancient", "answer").await;
+    set_due_at(&app, recent, "2020-06-01T00:00:00Z").await;
+    set_due_at(&app, ancient, "2019-01-01T00:00:00Z").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (status, served) = next_card(&app, session_id).await;
+
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(served["mode"], "sm2");
+    assert_eq!(
+        served["card"]["id"], ancient,
+        "the card overdue since 2019 must come before the one overdue since 2020: {served}",
+    );
+}
+
+#[tokio::test]
+async fn cards_due_at_the_same_moment_are_ordered_by_id() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let first = create_flashcard(&app, deck_id, "first", "answer").await;
+    let second = create_flashcard(&app, deck_id, "second", "answer").await;
+    set_due_at(&app, first, "2020-01-01T00:00:00Z").await;
+    set_due_at(&app, second, "2020-01-01T00:00:00Z").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (_, served) = next_card(&app, session_id).await;
+
+    assert_eq!(served["card"]["id"], first.min(second));
+}
+
+#[tokio::test]
+async fn a_reload_serves_the_same_card() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    create_flashcard(&app, deck_id, "one", "answer one").await;
+    create_flashcard(&app, deck_id, "two", "answer two").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (_, first_serve) = next_card(&app, session_id).await;
+    let (_, second_serve) = next_card(&app, session_id).await;
+
+    assert_eq!(
+        first_serve["card"]["id"], second_serve["card"]["id"],
+        "an unanswered serve wrote no review row, so the same card must come back",
+    );
+}
+
+#[tokio::test]
+async fn the_serve_carries_no_answer_content() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    create_flashcard(&app, deck_id, "flash", "the secret answer").await;
+    create_multiple_choice(&app, deck_id, "choice").await;
+    create_short_answer(&app, deck_id, "short").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+
+    for _ in 0..3 {
+        let (status, served) = next_card(&app, session_id).await;
+        assert_eq!(status, 200, "{served}");
+        let card = &served["card"];
+        assert!(card.get("answer_md").is_none(), "answer_md leaked: {card}");
+        assert!(card.get("explanation_md").is_none(), "explanation_md leaked: {card}");
+        assert!(card.get("accepted").is_none(), "accepted leaked: {card}");
+        let rendered = card.to_string();
+        assert!(!rendered.contains("is_correct"), "is_correct leaked: {card}");
+        assert!(!rendered.contains("the secret answer"), "the answer leaked: {card}");
+
+        answer_whatever_was_served(&app, session_id, card).await;
+    }
+}
+
+#[tokio::test]
+async fn an_answered_card_is_not_served_again_and_the_session_runs_out() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    create_flashcard(&app, deck_id, "only", "answer").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (_, served) = next_card(&app, session_id).await;
+    let card_id = served["card"]["id"].as_i64().unwrap();
+    answer_self_graded(&app, session_id, card_id, "good").await;
+
+    let (status, body) = next_card(&app, session_id).await;
+    assert_eq!(status, 409, "{body}");
 }

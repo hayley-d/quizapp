@@ -280,10 +280,21 @@ pub struct MockNextResponse {
 }
 
 #[derive(Serialize)]
+pub struct Sm2NextResponse {
+    pub mode: &'static str,
+    pub card: NextCardResponse,
+    pub target_count: Option<i64>,
+    pub pool_count: i64,
+    pub answered_count: i64,
+    pub correct_count: i64,
+}
+
+#[derive(Serialize)]
 #[serde(untagged)]
 pub enum NextResponse {
     Practice(PracticeNextResponse),
     Mock(MockNextResponse),
+    Sm2(Sm2NextResponse),
 }
 
 #[derive(Deserialize)]
@@ -562,6 +573,32 @@ async fn load_unanswered_mock_card_ids(
     Ok(rows)
 }
 
+async fn load_next_due_card_id(
+    pool: &sqlx::SqlitePool,
+    deck_ids_json: &str,
+    session_id: i64,
+) -> AppResult<Option<i64>> {
+    let card_id = sqlx::query_scalar!(
+        r#"
+        SELECT cards.id AS "card_id!: i64"
+        FROM cards
+        LEFT JOIN schedule ON schedule.card_id = cards.id
+        WHERE cards.archived = 0
+          AND cards.deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND (schedule.due_at IS NULL
+               OR schedule.due_at <= strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+          AND cards.id NOT IN (SELECT card_id FROM reviews WHERE session_id = ?)
+        ORDER BY COALESCE(schedule.due_at, '') ASC, cards.id ASC
+        LIMIT 1
+        "#,
+        deck_ids_json,
+        session_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(card_id)
+}
+
 async fn count_pool(pool: &sqlx::SqlitePool, deck_ids_json: &str) -> AppResult<i64> {
     let count = sqlx::query_scalar!(
         r#"
@@ -679,6 +716,27 @@ async fn next(
             started_at: session.started_at,
             pool_count,
             answered_count,
+        })));
+    }
+
+    if session.mode == "sm2" {
+        let card_id = load_next_due_card_id(&state.pool, &session.deck_ids_json, session.id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Conflict("Everything due in this session has been answered".to_string())
+            })?;
+
+        let card = load_served_card(&state.pool, card_id, None).await?;
+        let pool_count = count_due(&state.pool, &session.deck_ids_json).await?;
+        let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
+
+        return Ok(Json(NextResponse::Sm2(Sm2NextResponse {
+            mode: "sm2",
+            card,
+            target_count: session.target_count,
+            pool_count,
+            answered_count,
+            correct_count,
         })));
     }
 
