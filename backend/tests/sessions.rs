@@ -1289,3 +1289,385 @@ async fn can_override_is_true_only_for_an_incorrect_short_answer() {
         );
     }
 }
+
+async fn answer_short(app: &common::TestApp, session_id: i64, card_id: i64, given: &str) -> Value {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": given }),
+        )
+        .await;
+    assert_eq!(status, 200, "answer failed: {body}");
+    body
+}
+
+#[tokio::test]
+async fn overriding_flips_the_targeted_review_and_adds_an_accepted_row() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "Centroid Clustering").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+    let accepted_before = app.count("SELECT COUNT(*) FROM accepted").await;
+
+    let (status, body) = app
+        .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+        .await;
+
+    assert_eq!(status, 200, "body was {body}");
+    assert_eq!(body["correct"], true);
+    assert_eq!(body["overridden"], true);
+    assert_eq!(body["accepted_added"], true);
+
+    let flags: (bool, bool) =
+        sqlx::query_as("SELECT correct, overridden FROM reviews WHERE id = ?")
+            .bind(review_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(flags, (true, true));
+
+    assert_eq!(app.count("SELECT COUNT(*) FROM accepted").await, accepted_before + 1);
+
+    let added: (String, String, bool) = sqlx::query_as(
+        "SELECT text, normalised, is_primary FROM accepted WHERE card_id = ? ORDER BY id DESC",
+    )
+    .bind(card_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(added.0, "Centroid Clustering", "the student's own wording is accepted");
+    assert_eq!(added.1, "centroid clustering");
+    assert!(!added.2, "an override must never create a second primary wording");
+}
+
+#[tokio::test]
+async fn the_overridden_wording_is_accepted_on_the_next_answer() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    assert_eq!(first["correct"], false);
+    let review_id = first["review_id"].as_i64().unwrap();
+
+    app.post(&format!("/api/reviews/{review_id}/override"), json!({})).await;
+
+    let second = answer_short(&app, session_id, card_id, "Centroid  Clustering!").await;
+    assert_eq!(
+        second["correct"], true,
+        "the override must teach the card, not just fix one row",
+    );
+}
+
+#[tokio::test]
+async fn overriding_does_not_add_a_duplicate_normalised_accepted_row() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    let second = answer_short(&app, session_id, card_id, "Centroid-Clustering!").await;
+    let accepted_before = app.count("SELECT COUNT(*) FROM accepted").await;
+
+    let (_, first_body) = app
+        .post(
+            &format!("/api/reviews/{}/override", first["review_id"].as_i64().unwrap()),
+            json!({}),
+        )
+        .await;
+    assert_eq!(first_body["accepted_added"], true);
+
+    let (status, second_body) = app
+        .post(
+            &format!("/api/reviews/{}/override", second["review_id"].as_i64().unwrap()),
+            json!({}),
+        )
+        .await;
+
+    assert_eq!(status, 200);
+    assert_eq!(
+        second_body["accepted_added"], false,
+        "a wording that normalises to an existing key must add nothing",
+    );
+    assert_eq!(
+        app.count("SELECT COUNT(*) FROM accepted").await,
+        accepted_before + 1,
+        "two overrides of the same normalised key must add exactly one accepted row",
+    );
+}
+
+#[tokio::test]
+async fn overriding_leaves_other_reviews_of_the_same_card_alone() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    let second = answer_short(&app, session_id, card_id, "centroid clustering").await;
+
+    app.post(
+        &format!("/api/reviews/{}/override", first["review_id"].as_i64().unwrap()),
+        json!({}),
+    )
+    .await;
+
+    let untouched: (bool, bool) =
+        sqlx::query_as("SELECT correct, overridden FROM reviews WHERE id = ?")
+            .bind(second["review_id"].as_i64().unwrap())
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        untouched,
+        (false, false),
+        "reviews are a record of what happened; a bulk flip would rewrite history",
+    );
+}
+
+#[tokio::test]
+async fn overriding_inserts_no_new_review_row() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    let before = app.count("SELECT COUNT(*) FROM reviews").await;
+
+    app.post(
+        &format!("/api/reviews/{}/override", answered["review_id"].as_i64().unwrap()),
+        json!({}),
+    )
+    .await;
+
+    assert_eq!(app.count("SELECT COUNT(*) FROM reviews").await, before);
+}
+
+#[tokio::test]
+async fn refuses_to_override_a_multiple_choice_or_flashcard_review() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "graded", None).await;
+    let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
+    let flashcard = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+    let wrong_choice = wrong_choice_id(&app, multiple_choice).await;
+
+    let (_, mc_answer) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": multiple_choice, "choice_id": wrong_choice }),
+        )
+        .await;
+    let (_, flash_answer) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": flashcard, "self_grade": "again" }),
+        )
+        .await;
+
+    for review in [&mc_answer, &flash_answer] {
+        let review_id = review["review_id"].as_i64().unwrap();
+        let (status, body) = app
+            .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+            .await;
+        assert_eq!(status, 409, "body was {body}");
+    }
+    assert_eq!(app.count("SELECT COUNT(*) FROM accepted").await, 0);
+}
+
+#[tokio::test]
+async fn refuses_to_override_an_already_correct_review_and_adds_nothing() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    app.post(&format!("/api/reviews/{review_id}/override"), json!({})).await;
+    let accepted_after_first = app.count("SELECT COUNT(*) FROM accepted").await;
+
+    let (status, body) = app
+        .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+        .await;
+
+    assert_eq!(status, 409, "a second override must conflict: {body}");
+    assert_eq!(
+        app.count("SELECT COUNT(*) FROM accepted").await,
+        accepted_after_first,
+        "a refused override must write nothing",
+    );
+}
+
+#[tokio::test]
+async fn refuses_to_override_a_review_with_no_usable_wording() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "!!!").await;
+    assert_eq!(answered["correct"], false);
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    let (status, body) = app
+        .post(&format!("/api/reviews/{review_id}/override"), json!({}))
+        .await;
+
+    assert_eq!(status, 409, "body was {body}");
+    let empty_keys = app
+        .count("SELECT COUNT(*) FROM accepted WHERE normalised = ''")
+        .await;
+    assert_eq!(empty_keys, 0, "an override must never store an empty comparison key");
+}
+
+#[tokio::test]
+async fn overriding_after_the_session_finished_still_works() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    app.post(&format!("/api/sessions/{session_id}/finish"), json!({})).await;
+
+    let (status, _) = app
+        .post(
+            &format!("/api/reviews/{}/override", answered["review_id"].as_i64().unwrap()),
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, 200, "an unfair miss can be corrected after the session ends");
+}
+
+#[tokio::test]
+async fn overriding_an_unknown_review_is_not_found() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.post("/api/reviews/9999/override", json!({})).await;
+    assert_eq!(status, 404);
+    assert_eq!(body["error"], "not_found");
+}
+
+#[tokio::test]
+async fn finishing_sets_ended_at_and_returns_the_summary() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    answer_short(&app, session_id, card_id, "k-means").await;
+    answer_short(&app, session_id, card_id, "wrong").await;
+
+    let (status, body) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+
+    assert_eq!(status, 200, "body was {body}");
+    assert_eq!(body["answered_count"], 2);
+    assert_eq!(body["correct_count"], 1);
+    assert_eq!(body["overridden_count"], 0);
+    assert_eq!(body["distinct_card_count"], 1);
+    assert_eq!(body["accuracy"], 0.5);
+    assert!(body["ended_at"].as_str().unwrap().ends_with('Z'));
+}
+
+#[tokio::test]
+async fn finishing_twice_returns_the_same_ended_at() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (first_status, first) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+    let (second_status, second) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+
+    assert_eq!(first_status, 200);
+    assert_eq!(second_status, 200, "a double-posted finish must not error");
+    assert_eq!(
+        first["ended_at"], second["ended_at"],
+        "finishing twice must not move the original end time",
+    );
+}
+
+#[tokio::test]
+async fn accuracy_is_null_for_a_session_with_no_answers() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let (_, body) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+
+    assert_eq!(body["answered_count"], 0);
+    assert_eq!(
+        body["accuracy"],
+        Value::Null,
+        "zero accuracy would claim every answer was wrong; there were none",
+    );
+}
+
+#[tokio::test]
+async fn the_summary_counts_an_override_as_correct() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "short", None).await;
+    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
+    app.post(
+        &format!("/api/reviews/{}/override", answered["review_id"].as_i64().unwrap()),
+        json!({}),
+    )
+    .await;
+
+    let (_, body) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+
+    assert_eq!(body["answered_count"], 1);
+    assert_eq!(body["correct_count"], 1, "an overridden miss counts as correct");
+    assert_eq!(body["overridden_count"], 1);
+    assert_eq!(body["accuracy"], 1.0);
+}
+
+#[tokio::test]
+async fn the_summary_totals_the_elapsed_milliseconds() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "flash", None).await;
+    let card_id = create_flashcard(&app, deck_id, "define entropy").await;
+    let session_id = start_session(&app, deck_id).await;
+
+    for milliseconds in [1000, 2500] {
+        app.post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": "good", "ms": milliseconds }),
+        )
+        .await;
+    }
+
+    let (_, body) = app
+        .post(&format!("/api/sessions/{session_id}/finish"), json!({}))
+        .await;
+    assert_eq!(body["total_ms"], 3500);
+}
+
+#[tokio::test]
+async fn finishing_an_unknown_session_is_not_found() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.post("/api/sessions/9999/finish", json!({})).await;
+    assert_eq!(status, 404);
+    assert_eq!(body["error"], "not_found");
+}

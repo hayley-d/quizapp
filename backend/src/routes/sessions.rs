@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
+use crate::normalise::normalise;
 use crate::grading::{
     correctness_of_self_grade, grade_multiple_choice, grade_short_answer, parse_self_grade,
     self_grade_as_text, GradableChoice,
@@ -680,10 +681,203 @@ async fn answer(
     }))
 }
 
+#[derive(Serialize)]
+pub struct OverrideResponse {
+    pub review_id: i64,
+    pub correct: bool,
+    pub overridden: bool,
+    pub accepted_added: bool,
+    pub expected: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SummaryResponse {
+    pub id: i64,
+    pub mode: String,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub answered_count: i64,
+    pub correct_count: i64,
+    pub overridden_count: i64,
+    pub distinct_card_count: i64,
+    pub accuracy: Option<f64>,
+    pub total_ms: i64,
+}
+
+async fn override_review(
+    State(state): State<AppState>,
+    Path(review_id): Path<i64>,
+) -> AppResult<Json<OverrideResponse>> {
+    let review = sqlx::query!(
+        r#"
+        SELECT reviews.id AS "id!: i64",
+               reviews.card_id AS "card_id!: i64",
+               reviews.given,
+               reviews.correct AS "correct!: bool",
+               cards.kind
+        FROM reviews
+        JOIN cards ON cards.id = reviews.card_id
+        WHERE reviews.id = ?
+        "#,
+        review_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("review"))?;
+
+    if review.kind != "short_answer" {
+        return Err(AppError::Conflict(
+            "Only a short-answer review can be overridden".to_string(),
+        ));
+    }
+    if review.correct {
+        return Err(AppError::Conflict(
+            "That answer was already marked correct".to_string(),
+        ));
+    }
+
+    let given = review.given.unwrap_or_default();
+    let comparison_key = normalise(&given);
+    if comparison_key.is_empty() {
+        return Err(AppError::Conflict("There is no answer to accept".to_string()));
+    }
+
+    let mut transaction = state.pool.begin().await?;
+    let insertion = sqlx::query!(
+        r#"
+        INSERT INTO accepted (card_id, text, normalised, is_primary)
+        SELECT ?, ?, ?, 0
+        WHERE NOT EXISTS (
+            SELECT 1 FROM accepted WHERE card_id = ? AND normalised = ?
+        )
+        "#,
+        review.card_id,
+        given,
+        comparison_key,
+        review.card_id,
+        comparison_key,
+    )
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE reviews SET correct = 1, overridden = 1 WHERE id = ?",
+        review_id,
+    )
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+
+    let expected = sqlx::query_scalar!(
+        "SELECT text FROM accepted WHERE card_id = ? ORDER BY is_primary DESC, id",
+        review.card_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(OverrideResponse {
+        review_id,
+        correct: true,
+        overridden: true,
+        accepted_added: insertion.rows_affected() == 1,
+        expected,
+    }))
+}
+
+fn accuracy_for(correct_count: i64, answered_count: i64) -> Option<f64> {
+    if answered_count == 0 {
+        return None;
+    }
+    Some(correct_count as f64 / answered_count as f64)
+}
+
+async fn finish(
+    State(state): State<AppState>,
+    Path(session_id): Path<i64>,
+) -> AppResult<Json<SummaryResponse>> {
+    sqlx::query_scalar!(
+        r#"SELECT id AS "id!: i64" FROM sessions WHERE id = ?"#,
+        session_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("session"))?;
+
+    sqlx::query!(
+        r#"
+        UPDATE sessions
+        SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
+        WHERE id = ? AND ended_at IS NULL
+        "#,
+        session_id,
+    )
+    .execute(&state.pool)
+    .await?;
+
+    let session = sqlx::query!(
+        r#"SELECT id AS "id!: i64", mode, started_at, ended_at FROM sessions WHERE id = ?"#,
+        session_id,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let statistics = sqlx::query!(
+        r#"
+        SELECT COUNT(*)                                                    AS "answered_count!: i64",
+               COALESCE(SUM(correct), 0)                                   AS "correct_count!: i64",
+               COALESCE(SUM(CASE WHEN overridden = 1 THEN 1 ELSE 0 END),0) AS "overridden_count!: i64",
+               COUNT(DISTINCT card_id)                                     AS "distinct_card_count!: i64",
+               COALESCE(SUM(ms), 0)                                        AS "total_ms!: i64"
+        FROM reviews WHERE session_id = ?
+        "#,
+        session_id,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let accuracy = accuracy_for(statistics.correct_count, statistics.answered_count);
+
+    Ok(Json(SummaryResponse {
+        id: session.id,
+        mode: session.mode,
+        started_at: session.started_at,
+        ended_at: session.ended_at,
+        answered_count: statistics.answered_count,
+        correct_count: statistics.correct_count,
+        overridden_count: statistics.overridden_count,
+        distinct_card_count: statistics.distinct_card_count,
+        accuracy,
+        total_ms: statistics.total_ms,
+    }))
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/sessions", post(create))
         .route("/sessions/{id}/next", get(next))
         .route("/sessions/{id}/reveal", post(reveal))
         .route("/sessions/{id}/answer", post(answer))
+        .route("/sessions/{id}/finish", post(finish))
+        .route("/reviews/{id}/override", post(override_review))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::accuracy_for;
+
+    #[test]
+    fn accuracy_is_none_rather_than_a_division_by_zero() {
+        let accuracy = accuracy_for(0, 0);
+        assert!(
+            accuracy.is_none(),
+            "an unanswered session must report no accuracy, not a NaN that serialises to null",
+        );
+    }
+
+    #[test]
+    fn accuracy_is_the_correct_share_of_the_answered() {
+        assert_eq!(accuracy_for(1, 2), Some(0.5));
+        assert_eq!(accuracy_for(3, 3), Some(1.0));
+        assert_eq!(accuracy_for(0, 4), Some(0.0));
+    }
 }

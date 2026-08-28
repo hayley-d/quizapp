@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT COUNT(*)                                                    AS \"answered_count!: i64\",\n               COALESCE(SUM(correct), 0)                                   AS \"correct_count!: i64\",\n               COALESCE(SUM(CASE WHEN overridden = 1 THEN 1 ELSE 0 END),0) AS \"overridden_count!: i64\",\n               COUNT(DISTINCT card_id)                                     AS \"distinct_card_count!: i64\",\n               COALESCE(SUM(ms), 0)                                        AS \"total_ms!: i64\"\n        FROM reviews WHERE session_id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "answered_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "correct_count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "overridden_count!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "distinct_card_count!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "total_ms!: i64",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "33bd08d98054abdd8b42c099dfe77c80f22fb340be8a461d7cc5b37265f256b8"
+}

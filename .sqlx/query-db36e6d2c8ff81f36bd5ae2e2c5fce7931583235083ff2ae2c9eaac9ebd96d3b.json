@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT text FROM accepted WHERE card_id = ? ORDER BY is_primary DESC, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "text",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "db36e6d2c8ff81f36bd5ae2e2c5fce7931583235083ff2ae2c9eaac9ebd96d3b"
+}

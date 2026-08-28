@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO accepted (card_id, text, normalised, is_primary)\n        SELECT ?, ?, ?, 0\n        WHERE NOT EXISTS (\n            SELECT 1 FROM accepted WHERE card_id = ? AND normalised = ?\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "0733cd7779a4e48b155caf19ccf28d9536836de097677aa97d42b9d2e4ac43ea"
+}

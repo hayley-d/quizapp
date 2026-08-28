@@ -649,7 +649,7 @@ Two layers guard the blank answer, and they are different things: an absent or w
 
 ---
 
-## Task 9: `POST /api/reviews/{id}/override` and `POST /api/sessions/{id}/finish`
+## Task 9: `POST /api/reviews/{id}/override` and `POST /api/sessions/{id}/finish` — **COMPLETE**
 
 **Goal:** The only write in the app that mutates a `reviews` row, and an idempotent session end.
 
@@ -695,22 +695,24 @@ UPDATE sessions SET ended_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
 
 **Response 200:** `{id, mode, started_at, ended_at, answered_count, correct_count, overridden_count, distinct_card_count, accuracy, total_ms}`. **`accuracy` is `null` when `answered_count == 0`**, not `0.0`, which would claim you got everything wrong. A per-card weakest-cards breakdown is Part 6's job, not this summary's.
 
+**Outcome:** 16 new tests, 23 mutations killed. One survivor was worth the trouble: removing the zero-answer guard produces `Some(0.0 / 0.0)` = `Some(NaN)`, and **serde serialises NaN as `null`** because JSON has no NaN — so over HTTP `Some(NaN)` and `None` are indistinguishable and no integration test could isolate the guard. `accuracy_for(correct, answered)` is now a pure function with unit tests that tell `None` from `Some(NaN)`.
+
 **Integration tests:**
-- [ ] `overriding_flips_the_targeted_review_and_adds_an_accepted_row` — `correct = 1`, `overridden = 1`, `accepted` +1, new row `is_primary = 0`, `normalised == normalise(given)`
-- [ ] **`overriding_does_not_add_a_duplicate_normalised_accepted_row`** — two reviews whose `given` differ only by punctuation/case; `accepted` +1 total and the second response has `accepted_added: false`. Mutation: drop the `NOT EXISTS` guard. This is the regression test for the known issue.
-- [ ] **`overriding_leaves_other_reviews_of_the_same_card_alone`** — mutation: widen `WHERE id = ?` to `card_id`
-- [ ] **`the_overridden_wording_is_accepted_on_the_next_answer`** — override, then submit the same wording → correct. The end-to-end proof.
-- [ ] `overriding_never_creates_a_second_primary_accepted_row` — `COUNT(is_primary = 1) == 1`
-- [ ] `overriding_inserts_no_new_review_row`
-- [ ] `refuses_to_override_a_multiple_choice_review` / `a_flashcard_review` / `an_already_correct_review` / `a_review_with_no_usable_given` (flashcard NULL, and a `"---"`-only wording — no `accepted` row written)
-- [ ] `overriding_twice_is_409_and_adds_nothing`
-- [ ] `overriding_after_the_session_finished_still_works` — 200; mutation: a spurious session-ended check
-- [ ] `overriding_an_unknown_review_is_404` with `error: "not_found"`
-- [ ] `finishing_sets_ended_at_and_returns_the_summary`
-- [ ] **`finishing_twice_returns_the_same_ended_at`** — 200 both times, identical timestamp. Mutation: drop `AND ended_at IS NULL`.
-- [ ] `accuracy_is_null_for_a_session_with_no_answers`
-- [ ] `the_summary_counts_overrides_as_correct` — answer wrong, override, finish → `correct_count = 1`, `overridden_count = 1`
-- [ ] `finishing_an_unknown_session_is_404`
+- [x] `overriding_flips_the_targeted_review_and_adds_an_accepted_row` — `correct = 1`, `overridden = 1`, `accepted` +1, new row `is_primary = 0`, `normalised == normalise(given)`
+- [x] **`overriding_does_not_add_a_duplicate_normalised_accepted_row`** — two reviews whose `given` differ only by punctuation/case; `accepted` +1 total and the second response has `accepted_added: false`. Mutation: drop the `NOT EXISTS` guard. This is the regression test for the known issue.
+- [x] **`overriding_leaves_other_reviews_of_the_same_card_alone`** — mutation: widen `WHERE id = ?` to `card_id`
+- [x] **`the_overridden_wording_is_accepted_on_the_next_answer`** — override, then submit the same wording → correct. The end-to-end proof.
+- [x] `overriding_never_creates_a_second_primary_accepted_row` — `COUNT(is_primary = 1) == 1`
+- [x] `overriding_inserts_no_new_review_row`
+- [x] `refuses_to_override_a_multiple_choice_review` / `a_flashcard_review` / `an_already_correct_review` / `a_review_with_no_usable_given` (flashcard NULL, and a `"---"`-only wording — no `accepted` row written)
+- [x] `overriding_twice_is_409_and_adds_nothing`
+- [x] `overriding_after_the_session_finished_still_works` — 200; mutation: a spurious session-ended check
+- [x] `overriding_an_unknown_review_is_404` with `error: "not_found"`
+- [x] `finishing_sets_ended_at_and_returns_the_summary`
+- [x] **`finishing_twice_returns_the_same_ended_at`** — 200 both times, identical timestamp. Mutation: drop `AND ended_at IS NULL`.
+- [x] `accuracy_is_null_for_a_session_with_no_answers`
+- [x] `the_summary_counts_overrides_as_correct` — answer wrong, override, finish → `correct_count = 1`, `overridden_count = 1`
+- [x] `finishing_an_unknown_session_is_404`
 
 **Verify:** `cargo test --test sessions && cargo clippy --all-targets -- -D warnings`
 
