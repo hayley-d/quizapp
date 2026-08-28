@@ -167,3 +167,96 @@ async fn stats_for_an_unknown_deck_are_a_not_found() {
     assert_eq!(status, 404);
     assert_eq!(body["fields"].as_array().unwrap().len(), 0);
 }
+
+fn card_stats_for(body: &Value, card_id: i64) -> Option<&Value> {
+    body["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["card_id"].as_i64() == Some(card_id))
+}
+
+#[tokio::test]
+async fn cards_with_no_reviews_are_omitted_rather_than_sent_at_zero() {
+    let app = spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 2).await;
+
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    insert_review(&app, session_id, card_ids[0], false, "2026-08-20T10:00:00Z").await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+
+    assert_eq!(body["cards"].as_array().unwrap().len(), 1);
+    assert_eq!(card_stats_for(&body, card_ids[0]).unwrap()["attempt_count"], 1);
+    assert!(card_stats_for(&body, card_ids[1]).is_none());
+}
+
+#[tokio::test]
+async fn archived_cards_are_omitted_from_the_card_stats() {
+    let app = spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 1).await;
+
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    insert_review(&app, session_id, card_ids[0], false, "2026-08-20T10:00:00Z").await;
+    app.post(&format!("/api/cards/{}/archive", card_ids[0]), json!({})).await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+
+    assert_eq!(body["cards"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn miss_rate_weights_recent_reviews_more_heavily() {
+    let app = spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 2).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+
+    let recently_fixed = card_ids[0];
+    let recently_broken = card_ids[1];
+
+    let days = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"];
+
+    for (day_index, day) in days.iter().enumerate() {
+        let answered_at = format!("{day}T10:00:00Z");
+        insert_review(&app, session_id, recently_fixed, day_index >= 2, &answered_at).await;
+        insert_review(&app, session_id, recently_broken, day_index < 2, &answered_at).await;
+    }
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+
+    let fixed_miss_rate =
+        card_stats_for(&body, recently_fixed).unwrap()["miss_rate"].as_f64().unwrap();
+    let broken_miss_rate =
+        card_stats_for(&body, recently_broken).unwrap()["miss_rate"].as_f64().unwrap();
+
+    assert_eq!(card_stats_for(&body, recently_fixed).unwrap()["attempt_count"], 4);
+    assert_eq!(card_stats_for(&body, recently_broken).unwrap()["attempt_count"], 4);
+    assert!(
+        broken_miss_rate > fixed_miss_rate,
+        "recent misses must outweigh old ones: \
+         recently_broken={broken_miss_rate}, recently_fixed={fixed_miss_rate}",
+    );
+}
+
+#[tokio::test]
+async fn only_the_ten_most_recent_reviews_feed_the_miss_rate() {
+    let app = spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 1).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    let card_id = card_ids[0];
+
+    for review_index in 0..12 {
+        let answered_at = format!("2026-08-{:02}T10:00:00Z", review_index + 1);
+        insert_review(&app, session_id, card_id, true, &answered_at).await;
+    }
+    for review_index in 0..10 {
+        let answered_at = format!("2026-09-{:02}T10:00:00Z", review_index + 1);
+        insert_review(&app, session_id, card_id, false, &answered_at).await;
+    }
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+
+    let entry = card_stats_for(&body, card_id).unwrap();
+    assert_eq!(entry["attempt_count"], 22);
+    assert_eq!(entry["miss_rate"].as_f64().unwrap(), 1.0);
+}

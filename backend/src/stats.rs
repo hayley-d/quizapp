@@ -1,6 +1,9 @@
 use serde::Serialize;
 
 use crate::error::AppResult;
+use crate::practice::{
+    fold_candidate_rows, weighted_miss_rate, CandidateRow, RECENT_REVIEW_LIMIT,
+};
 
 #[derive(Serialize)]
 pub struct DeckStatsSummary {
@@ -37,7 +40,7 @@ pub fn accuracy_of(correct_count: i64, review_count: i64) -> Option<f64> {
 pub async fn deck_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckStatsResponse> {
     Ok(DeckStatsResponse {
         summary: load_summary(pool, deck_id).await?,
-        cards: Vec::new(),
+        cards: load_card_stats(pool, deck_id).await?,
     })
 }
 
@@ -87,6 +90,58 @@ async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckSt
         practice_review_count: row.practice_review_count,
         last_answered_at: row.last_answered_at,
     })
+}
+
+async fn load_card_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<Vec<CardStats>> {
+    let rows = sqlx::query_as!(
+        CandidateRow,
+        r#"
+        WITH pool AS (
+            SELECT id AS card_id FROM cards WHERE deck_id = ? AND archived = 0
+        ),
+        recent AS (
+            SELECT reviews.card_id AS card_id,
+                   reviews.correct AS correct,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY reviews.card_id
+                       ORDER BY reviews.answered_at DESC, reviews.id DESC
+                   ) AS recency_rank,
+                   CAST(strftime('%s','now') AS INTEGER)
+                     - CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS age_seconds
+            FROM reviews
+            JOIN pool ON pool.card_id = reviews.card_id
+        ),
+        counts AS (
+            SELECT reviews.card_id AS card_id, COUNT(*) AS review_count
+            FROM reviews
+            JOIN pool ON pool.card_id = reviews.card_id
+            GROUP BY reviews.card_id
+        )
+        SELECT pool.card_id                     AS "card_id!: i64",
+               COALESCE(counts.review_count, 0) AS "review_count!: i64",
+               recent.correct                   AS "correct?: bool",
+               recent.recency_rank              AS "recency_rank?: i64",
+               recent.age_seconds               AS "age_seconds?: i64"
+        FROM pool
+        LEFT JOIN counts ON counts.card_id = pool.card_id
+        LEFT JOIN recent ON recent.card_id = pool.card_id AND recent.recency_rank <= ?
+        ORDER BY pool.card_id, recent.recency_rank
+        "#,
+        deck_id,
+        RECENT_REVIEW_LIMIT,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(fold_candidate_rows(rows)
+        .into_iter()
+        .filter(|candidate| candidate.review_count > 0)
+        .map(|candidate| CardStats {
+            card_id: candidate.card_id,
+            attempt_count: candidate.review_count,
+            miss_rate: weighted_miss_rate(&candidate.recent_review_outcomes),
+        })
+        .collect())
 }
 
 #[cfg(test)]
