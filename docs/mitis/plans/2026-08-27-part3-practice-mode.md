@@ -248,7 +248,7 @@ Clippy required `accepted_normalised.contains(&comparison_key)` in place of `ite
 
 ---
 
-## Task 5: `backend/src/practice.rs` — pure weighting and selection
+## Task 5: `backend/src/practice.rs` — pure weighting and selection — **COMPLETE**
 
 **Goal:** The spec's weighted sampling as a pure module, with never-seen dominance a derived theorem and the small-deck window rule proved by exhaustive test.
 
@@ -404,7 +404,7 @@ pub fn select_card(
         .collect();
 
     let total: f64 = included.iter().map(|candidate| weight_for(candidate)).sum();
-    let target = roll.clamp(0.0, 1.0) * total;
+    let target = roll * total;
     let mut cumulative = 0.0;
     for candidate in &included {
         cumulative += weight_for(candidate);
@@ -417,7 +417,8 @@ pub fn select_card(
 ```
 
 Three deliberate absences, each because the alternative would be untestable code:
-- **No `.min(MAXIMUM_REVIEWED_WEIGHT)` clamp** on the weight — the bound is proved algebraically (design doc §6), so a clamp could never fire.
+- **No `.min(MAXIMUM_REVIEWED_WEIGHT)` clamp** on the weight — the bound is proved algebraically (design doc §6), so a clamp could never fire. It is enforced instead by `const _: () = assert!(NEVER_SEEN_WEIGHT > MAXIMUM_REVIEWED_WEIGHT);`, a compile-time failure.
+- **No `roll.clamp(0.0, 1.0)`** either. Mutation testing proved it dead: a negative roll makes the target negative so the first candidate already exceeds it, and a roll above one makes the target exceed the total so it falls through to `last()`. Both match the clamped result exactly.
 - **No "if `included` is empty, fall back to all candidates"** — `effective_no_repeat_window` caps exclusions at `count − 1` *distinct* ids, so at least one candidate always survives. If it somehow did not, `total` would be `0.0` and `included.last()` would return `None` naturally; no branch is needed.
 - **`select_card` takes `roll`** rather than calling `rand` — the handler supplies `rand::random::<f64>()`, which is `[0, 1)`; the trailing `last()` covers `1.0` and float drift.
 
@@ -441,7 +442,7 @@ Three deliberate absences, each because the alternative would be untestable code
 | `selection_is_deterministic_for_a_given_roll` — 100 calls, one answer | hidden RNG or `HashMap` iteration leaking in |
 | `a_roll_of_zero_selects_the_first_included_candidate`, `…just_below_one_selects_the_last` | reversed iteration; cumulative off by one |
 | `a_roll_of_exactly_one_still_returns_a_candidate` | the `last()` fallback removed |
-| `a_roll_outside_zero_to_one_is_clamped` | the clamp removed |
+| `any_roll_selects_a_candidate_from_the_included_set` — covers -5.0, 1.0, 12.0, NaN, infinity | the trailing `last()` removed |
 | `selection_frequency_tracks_the_weights` — sweep `roll` over 10 000 steps with ~100:1 weights, ratio within 2% | weights computed then ignored; `total` summed over all candidates instead of the included ones |
 | `the_window_never_starves_the_selector` — **exhaustive** over pool sizes 1..=12 × every history prefix drawn from that pool | `count − 1` → `count`; `saturating_sub` → `-`; unconditional 8-card exclusion |
 | `the_window_is_eight_for_a_large_pool` | `NO_REPEAT_WINDOW` changed |
@@ -450,14 +451,23 @@ Three deliberate absences, each because the alternative would be untestable code
 | `exclusion_deduplicates_and_ignores_ids_outside_the_pool` | exclusion by slot count rather than id set |
 | `an_empty_candidate_list_selects_nothing` | division by a zero total; `unwrap` on empty |
 
+**Outcome:** 28 tests green, clippy clean. The mutation pass found **two tests that could not fail**, both now fixed:
+
+- `a_never_seen_card_outweighs_the_worst_possible_reviewed_card` only built *reviewed* cards and compared them to the constant, so deleting the never-seen branch changed nothing it observed. It now computes `weight_for(&never_seen(...))` and compares against that, which kills both "branch removed" and "branch returns a merely-large constant".
+- `a_roll_outside_zero_to_one_is_clamped` could not fail because **the clamp was dead**. A negative roll makes the target negative, so the first candidate's cumulative already exceeds it; a roll above one makes the target exceed the total, so it falls through to `last()`. Both paths already produce exactly what the clamp forced. The clamp is removed and the test replaced with `any_roll_selects_a_candidate_from_the_included_set`, covering -5.0, 1.0, 12.0, NaN and infinity — which asserts the real guarantee and does fail when the trailing `last()` goes.
+
+Clippy also pushed the dominance invariant from a test assertion into `const _: () = assert!(NEVER_SEEN_WEIGHT > MAXIMUM_REVIEWED_WEIGHT);`. That is strictly stronger: setting `NEVER_SEEN_HEADROOM` to `0.0` now fails the **build**, not a test.
+
+All 19 mutations killed, including window-uses-count-not-count-minus-one, fold-trusts-row-order, fold-takes-oldest-age, weights-ignored, and window-not-applied.
+
 **Acceptance Criteria:**
-- [ ] `practice.rs` imports nothing from `sqlx`, `axum`, `rand` or `routes` — only `std`
-- [ ] `NEVER_SEEN_WEIGHT` is *derived* from `MAXIMUM_REVIEWED_WEIGHT`, not a literal
-- [ ] Never-seen is decided by `review_count == 0`, never by an empty outcome list
-- [ ] `effective_no_repeat_window` never exceeds `count − 1`, and `saturating_sub` handles a count of 0
-- [ ] Selection is deterministic given `(candidates, history, roll)`
-- [ ] There is no unreachable clamp and no unreachable fallback
-- [ ] All ~24 unit tests pass, and the exhaustive window test covers pool sizes 1..=12
+- [x] `practice.rs` imports nothing from `sqlx`, `axum`, `rand` or `routes` — only `std`
+- [x] `NEVER_SEEN_WEIGHT` is *derived* from `MAXIMUM_REVIEWED_WEIGHT`, not a literal
+- [x] Never-seen is decided by `review_count == 0`, never by an empty outcome list
+- [x] `effective_no_repeat_window` never exceeds `count − 1`, and `saturating_sub` handles a count of 0
+- [x] Selection is deterministic given `(candidates, history, roll)`
+- [x] There is no unreachable clamp and no unreachable fallback
+- [x] All 28 unit tests pass; the window is proved non-starving both by cycling histories over pool sizes 1..=12 and exhaustively over every history up to length 6 for pool sizes 1..=4
 
 **Verify:** `cargo test practice && cargo clippy --all-targets -- -D warnings`
 

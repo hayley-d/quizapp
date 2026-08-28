@@ -5,6 +5,7 @@ pub mod extract;
 pub mod grading;
 pub mod images;
 pub mod normalise;
+pub mod practice;
 pub mod routes;
 pub mod state;
 

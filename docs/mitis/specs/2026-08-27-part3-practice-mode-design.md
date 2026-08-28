@@ -166,9 +166,17 @@ breaking the invariant. A future fourth term must be added to `MAXIMUM_REVIEWED_
 the same edit or the invariant test fails — which is the point of deriving it.
 
 Deliberately **no** `.min(MAXIMUM_REVIEWED_WEIGHT)` clamp: no mutation of the formula can
-make the clamp fire, so it would be untestable code. The bound is proved and policed by
-test. Same reasoning kills the "if the window empties, fall back to the full pool" safety
-net (§7) and the override's "already overridden" branch (§8).
+make the clamp fire, so it would be untestable code. The bound is enforced by a
+`const _: () = assert!(NEVER_SEEN_WEIGHT > MAXIMUM_REVIEWED_WEIGHT);` — a **compile-time**
+failure rather than a test failure, so a constant cannot be retuned into breaking the
+invariant even temporarily. Same reasoning kills the "if the window empties, fall back to
+the full pool" safety net (§7), the override's "already overridden" branch (§8), and a
+`roll.clamp(0.0, 1.0)` in the selector, which mutation testing showed to be equally dead:
+a negative roll makes the target negative, so the first candidate's cumulative already
+exceeds it, and a roll above one makes the target exceed the total, so it falls through to
+the trailing `last()`. Both paths already produce exactly what the clamp would have forced.
+The real guarantee — that *any* roll, including out of range, infinite or NaN, selects a
+card from the included set — is asserted directly instead.
 
 `BASE_WEIGHT` is non-zero so a perfectly-known card stays *reachable*, and so no candidate
 can have zero weight — which is what lets the cumulative selection scan never skip one.
