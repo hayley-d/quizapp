@@ -15,6 +15,7 @@ use crate::grading::{
 use crate::mock::{first_unanswered, mock_order};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
+use crate::scheduler::{apply, initial_state, quality_for, ScheduleState};
 use crate::state::AppState;
 
 const MODES: [&str; 3] = ["practice", "mock", "sm2"];
@@ -1065,11 +1066,13 @@ async fn answer(
 
     let graded = grade_answer(&state.pool, &card, &body, &session.mode).await?;
 
-    let review_id = sqlx::query_scalar!(
+    let mut transaction = state.pool.begin().await?;
+
+    let review = sqlx::query!(
         r#"
         INSERT INTO reviews (card_id, session_id, given, correct, self_grade, ms)
         VALUES (?, ?, ?, ?, ?, ?)
-        RETURNING id AS "id!: i64"
+        RETURNING id AS "id!: i64", answered_at AS "answered_at!: String"
         "#,
         card.id,
         session.id,
@@ -1078,8 +1081,19 @@ async fn answer(
         graded.stored_self_grade,
         body.ms,
     )
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
+    let review_id = review.id;
+
+    if session.mode == "sm2" {
+        let self_grade = graded.stored_self_grade.and_then(parse_self_grade);
+        let quality = quality_for(graded.correct, self_grade);
+        let current = load_schedule_state(&mut transaction, card.id).await?;
+        let updated = apply(&current, quality);
+        write_schedule(&mut transaction, card.id, &updated, &review.answered_at).await?;
+    }
+
+    transaction.commit().await?;
 
     if session.mode == "mock" {
         let (answered_count, _) = count_progress(&state.pool, session.id).await?;
@@ -1092,13 +1106,77 @@ async fn answer(
     }
 
     Ok(Json(AnswerResponse::Practice(PracticeAnswerResponse {
-        mode: "practice",
+        mode: if session.mode == "sm2" { "sm2" } else { "practice" },
         review_id,
         correct: graded.correct,
         expected: graded.expected,
         explanation_md: card.explanation_md,
         can_override: card.kind == "short_answer" && !graded.correct,
     })))
+}
+
+async fn load_schedule_state(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+) -> AppResult<ScheduleState> {
+    let row = sqlx::query!(
+        r#"
+        SELECT interval_days AS "interval_days!: f64",
+               ease          AS "ease!: f64",
+               reps          AS "repetitions!: i64",
+               lapses        AS "lapses!: i64"
+        FROM schedule WHERE card_id = ?
+        "#,
+        card_id,
+    )
+    .fetch_optional(&mut **transaction)
+    .await?;
+
+    Ok(match row {
+        Some(row) => ScheduleState {
+            interval_days: row.interval_days,
+            ease: row.ease,
+            repetitions: row.repetitions,
+            lapses: row.lapses,
+        },
+        None => initial_state(),
+    })
+}
+
+async fn write_schedule(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: i64,
+    state: &ScheduleState,
+    answered_at: &str,
+) -> AppResult<()> {
+    let interval_days = state.interval_days;
+    let whole_days = state.interval_days as i64;
+    sqlx::query!(
+        r#"
+        INSERT INTO schedule (card_id, due_at, interval_days, ease, reps, lapses)
+        VALUES (
+            ?,
+            date(?, '+' || CAST(? AS TEXT) || ' days') || 'T00:00:00Z',
+            ?, ?, ?, ?
+        )
+        ON CONFLICT (card_id) DO UPDATE SET
+            due_at        = excluded.due_at,
+            interval_days = excluded.interval_days,
+            ease          = excluded.ease,
+            reps          = excluded.reps,
+            lapses        = excluded.lapses
+        "#,
+        card_id,
+        answered_at,
+        whole_days,
+        interval_days,
+        state.ease,
+        state.repetitions,
+        state.lapses,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
 }
 
 #[derive(Serialize)]

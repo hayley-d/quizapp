@@ -126,4 +126,14 @@ impl TestApp {
                 .bind(card_id).fetch_one(&self.pool).await.unwrap();
         (row_count, due_at)
     }
+
+    pub async fn schedule_state_for(&self, card_id: i64) -> (String, f64, f64, i64, i64) {
+        sqlx::query_as(
+            "SELECT due_at, interval_days, ease, reps, lapses FROM schedule WHERE card_id = ?",
+        )
+        .bind(card_id)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
 }

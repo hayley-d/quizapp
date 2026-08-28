@@ -312,3 +312,110 @@ async fn an_answered_card_is_not_served_again_and_the_session_runs_out() {
     let (status, body) = next_card(&app, session_id).await;
     assert_eq!(status, 409, "{body}");
 }
+
+#[tokio::test]
+async fn a_correct_answer_schedules_the_card_a_day_out() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "answer").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    answer_self_graded(&app, session_id, card_id, "good").await;
+
+    let (due_at, interval_days, ease, repetitions, lapses) = app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions, 1);
+    assert_eq!(lapses, 0);
+    assert_eq!(interval_days, 1.0);
+    assert_eq!(ease, 2.5, "quality 4 leaves the ease exactly where it started");
+    assert!(due_at.ends_with("T00:00:00Z"), "due_at must be midnight UTC: {due_at}");
+    assert_eq!(
+        due_at.len(),
+        20,
+        "due_at must be exactly YYYY-MM-DDT00:00:00Z with no leftover time-of-day: {due_at}",
+    );
+}
+
+#[tokio::test]
+async fn a_lapse_resets_the_card_without_touching_the_ease() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "answer").await;
+
+    let first_session = start_sm2_session(&app, deck_id).await;
+    answer_self_graded(&app, first_session, card_id, "easy").await;
+    let (_, _, ease_after_easy, _, _) = app.schedule_state_for(card_id).await;
+
+    set_due_at(&app, card_id, "2020-01-01T00:00:00Z").await;
+    let second_session = start_sm2_session(&app, deck_id).await;
+    answer_self_graded(&app, second_session, card_id, "again").await;
+
+    let (_, interval_days, ease, repetitions, lapses) = app.schedule_state_for(card_id).await;
+    assert_eq!(repetitions, 0);
+    assert_eq!(lapses, 1);
+    assert_eq!(interval_days, 1.0);
+    assert_eq!(ease, ease_after_easy, "a lapse must not move the ease factor");
+}
+
+#[tokio::test]
+async fn a_practice_session_leaves_the_schedule_alone() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "answer").await;
+
+    let (_, session) = app
+        .post("/api/sessions", json!({ "mode": "practice", "deck_ids": [deck_id] }))
+        .await;
+    let session_id = session["id"].as_i64().unwrap();
+
+    let before = app.schedule_state_for(card_id).await;
+    answer_self_graded(&app, session_id, card_id, "good").await;
+    let after = app.schedule_state_for(card_id).await;
+
+    assert_eq!(before, after, "only sm2 mode may write the schedule");
+}
+
+#[tokio::test]
+async fn an_sm2_flashcard_still_reveals_and_self_grades() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "the answer").await;
+
+    let session_id = start_sm2_session(&app, deck_id).await;
+    let (status, revealed) = app
+        .post(
+            &format!("/api/sessions/{session_id}/reveal"),
+            json!({ "card_id": card_id }),
+        )
+        .await;
+
+    assert_eq!(status, 200, "sm2 must keep the practice reveal: {revealed}");
+    assert_eq!(revealed["answer_md"], "the answer");
+
+    let answered = answer_self_graded(&app, session_id, card_id, "good").await;
+    assert_eq!(answered["mode"], "sm2");
+    assert_eq!(answered["correct"], true);
+}
+
+#[tokio::test]
+async fn a_failed_schedule_write_rolls_back_the_review() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "clustering", None).await;
+    let card_id = create_flashcard(&app, deck_id, "one", "answer").await;
+    let session_id = start_sm2_session(&app, deck_id).await;
+
+    sqlx::query("DROP TABLE schedule").execute(&app.pool).await.unwrap();
+
+    let (status, _) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "self_grade": "good" }),
+        )
+        .await;
+
+    assert_eq!(status, 500);
+    assert_eq!(
+        app.count("SELECT COUNT(*) FROM reviews").await,
+        0,
+        "the review must roll back with the schedule write",
+    );
+}

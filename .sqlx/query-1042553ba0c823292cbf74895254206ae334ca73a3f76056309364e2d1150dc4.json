@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT interval_days AS \"interval_days!: f64\",\n               ease          AS \"ease!: f64\",\n               reps          AS \"repetitions!: i64\",\n               lapses        AS \"lapses!: i64\"\n        FROM schedule WHERE card_id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "interval_days!: f64",
+        "ordinal": 0,
+        "type_info": "Float"
+      },
+      {
+        "name": "ease!: f64",
+        "ordinal": 1,
+        "type_info": "Float"
+      },
+      {
+        "name": "repetitions!: i64",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "lapses!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1042553ba0c823292cbf74895254206ae334ca73a3f76056309364e2d1150dc4"
+}

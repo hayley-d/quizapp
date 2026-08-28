@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO schedule (card_id, due_at, interval_days, ease, reps, lapses)\n        VALUES (\n            ?,\n            date(?, '+' || CAST(? AS TEXT) || ' days') || 'T00:00:00Z',\n            ?, ?, ?, ?\n        )\n        ON CONFLICT (card_id) DO UPDATE SET\n            due_at        = excluded.due_at,\n            interval_days = excluded.interval_days,\n            ease          = excluded.ease,\n            reps          = excluded.reps,\n            lapses        = excluded.lapses\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "1b4b714ff8809aea2ffff9f5776f0772bff918836d6cf63d6ebf5ad168dcacd8"
+}
