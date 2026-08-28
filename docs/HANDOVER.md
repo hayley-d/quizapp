@@ -159,8 +159,16 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
 cargo test
 cargo clippy --all-targets -- -D warnings        # --all-targets matters, see below
 SQLX_OFFLINE=true cargo build
-cd frontend && pnpm exec tsc -b --noEmit && pnpm build
+python3 frontend/scripts/check-contrast.py
+cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint
 ```
+
+**`pnpm exec oxlint` and the contrast script joined the gate in Part 4.** The lint run is
+what makes CLAUDE.md rule 3 (never use `any`) mechanically enforced rather than prose —
+adding the rule without running it in the gate would have changed nothing. The contrast
+script proves the `brand` button clears WCAG AA in both themes; it caught a 2.14:1
+white-on-orchid failure in light mode that had survived three parts unnoticed, because
+until Part 4 there was no way to switch themes without visiting System Settings.
 
 **`tsc --noEmit` alone checks nothing — use `tsc -b --noEmit`.** `frontend/tsconfig.json` is a
 solution file with `"files": []` and two project references, so a bare `tsc --noEmit` reads it,
