@@ -9,6 +9,7 @@ pub mod normalise;
 pub mod practice;
 pub mod routes;
 pub mod state;
+pub mod stats;
 
 use axum::Router;
 use tower_http::services::ServeDir;
