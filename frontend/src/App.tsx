@@ -1,6 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
-import { StubPage } from '@/pages/StubPage'
 import { SessionPage } from '@/pages/SessionPage'
 import { MockSessionPage } from '@/pages/MockSessionPage'
 import { DecksPage } from '@/pages/DecksPage'
@@ -19,10 +18,6 @@ export default function App() {
           <Route path="/cards/:id/edit" element={<CardEditorPage />} />
           <Route path="/session/:id" element={<SessionPage />} />
           <Route path="/mock/:id" element={<MockSessionPage />} />
-          <Route
-            path="/stats"
-            element={<StubPage title="Stats" note="Statistics arrive in part 6." />}
-          />
         </Route>
       </Routes>
     </BrowserRouter>
