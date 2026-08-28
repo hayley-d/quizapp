@@ -477,7 +477,7 @@ All 19 mutations killed, including window-uses-count-not-count-minus-one, fold-t
 
 ---
 
-## Task 6: `POST /api/sessions`
+## Task 6: `POST /api/sessions` — **COMPLETE**
 
 **Goal:** Create a practice session, expanding a module to its decks, and refuse at creation rather than producing an empty runner.
 
@@ -503,14 +503,18 @@ All 19 mutations killed, including window-uses-count-not-count-minus-one, fold-t
 
 **Response 201:** `{id, mode, deck_ids, target_count, started_at, ended_at, pool_count, answered_count}`
 
+**Outcome:** 16 tests green, 12 mutations killed. One test needed tightening: `rejects_an_unknown_module_id` asserted only the *field* name, so deleting the module-existence check still passed — the deck query returns empty and the "module has no decks" error fires instead, also a 422 on `module_id`. Asserting the exact message distinguishes them.
+
+Validation splits deliberately: the three pure checks (mode, deck-or-module selection, `target_count`) accumulate into one `Vec<FieldError>` so `/study` can render every problem at once, matching `cards::validate`. The database checks that follow are inherently sequential and short-circuit.
+
 **Integration tests:**
-- [ ] `creates_a_practice_session_from_deck_ids` — 201, `deck_ids` canonical sorted and deduped, `pool_count` correct
-- [ ] `expands_a_module_into_its_decks`
-- [ ] `rejects_mock_and_sm2_modes_for_now` / `rejects_an_unknown_mode_value` — two distinct messages, checked in the right order
-- [ ] `rejects_both_deck_ids_and_module_id` / `rejects_neither` / `rejects_an_empty_deck_id_array`
-- [ ] `rejects_an_unknown_deck_id` / `rejects_an_unknown_module_id` — correct field each
-- [ ] `rejects_a_target_count_on_a_practice_session`
-- [ ] **`refuses_to_create_a_session_with_no_eligible_cards`** — a deck whose only card is archived → 422 **and** `SELECT COUNT(*) FROM sessions` is still 0. Mutation: drop the `archived = 0` filter.
+- [x] `creates_a_practice_session_from_deck_ids` — 201, `deck_ids` canonical sorted and deduped, `pool_count` correct
+- [x] `expands_a_module_into_its_decks`
+- [x] `rejects_mock_and_sm2_modes_for_now` / `rejects_an_unknown_mode_value` — two distinct messages, checked in the right order
+- [x] `rejects_both_deck_ids_and_module_id` / `rejects_neither` / `rejects_an_empty_deck_id_array`
+- [x] `rejects_an_unknown_deck_id` / `rejects_an_unknown_module_id` — correct field each
+- [x] `rejects_a_target_count_on_a_practice_session`
+- [x] **`refuses_to_create_a_session_with_no_eligible_cards`** — a deck whose only card is archived → 422 **and** `SELECT COUNT(*) FROM sessions` is still 0. Mutation: drop the `archived = 0` filter.
 
 **Verify:** `cargo test --test sessions`
 

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"module_count!: i64\" FROM modules WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "module_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "715ad8dc1147f6b92459da4e1dc385d04e5312ba190b8518f5071727cc6a9b9c"
+}

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT COUNT(*) AS \"pool_count!: i64\"\n        FROM cards\n        WHERE archived = 0 AND deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "pool_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c508f769be906df70d4c2bc5427ef59683c40dcb314bd4ac55fb8d7f69443692"
+}

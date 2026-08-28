@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"answered_count!: i64\" FROM reviews WHERE session_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "answered_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c7f3d4169640ec351afd1eb9be25135d5be2683030e850e0b4a15281b35a70f0"
+}
