@@ -64,12 +64,12 @@
     {
       "id": 8,
       "subject": "Task 8: Documentation and the full gate",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** The record is current, and the whole gate is green in one run.\n\n**Files:**\n- Modify: `docs/mitis/specs/2026-08-28-part6-stats-design.md` (section 10)\n- Modify: `docs/mitis/specs/2026-08-26-quiz-study-app-design.md`\n- Modify: `docs/HANDOVER.md`\n\n**Acceptance Criteria:**\n- [ ] Part 6 section 10's open question is answered in place, which is what it asked for\n- [ ] The master spec's Study engine SM-2 paragraph reflects what was built: due-ordered serving, refusal when nothing is due, day-granular intervals, the ease-unchanged-on-lapse choice\n- [ ] The master spec's API section reflects that `/answer` writes `schedule` transactionally and that the override replays it\n- [ ] `docs/HANDOVER.md` gains a Part 7 section under Where things stand, and Next up no longer names Part 7\n- [ ] The browser walkthrough is recorded as driven or not driven - never quietly folded into 'Part 7 complete'\n- [ ] The actual test count is recorded, not carried forward from the previous figure\n- [ ] The full six-command gate passes in one run\n\n**Verify:** `cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint`\n\nFull steps, code and mutation table: `docs/mitis/plans/2026-08-28-part7-sm2.md` \u2192 Task 8. Design rationale: `docs/mitis/specs/2026-08-28-part7-sm2-design.md`.\n\n```json:metadata\n{\"files\": [\"docs/mitis/specs/2026-08-28-part6-stats-design.md\", \"docs/mitis/specs/2026-08-26-quiz-study-app-design.md\", \"docs/HANDOVER.md\"], \"verifyCommand\": \"cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py\", \"acceptanceCriteria\": [\"Part 6 section 10 is answered in place\", \"the master spec Study engine paragraph reflects what was built\", \"the master spec API section records the transaction and the override replay\", \"the handover has a Part 7 section and Next up no longer names Part 7\", \"the browser walkthrough is recorded as driven or not driven\", \"the recorded test count is the one actually observed\", \"the full gate passes in one run\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         7
       ]
     }
   ],
-  "lastUpdated": "2026-08-28T12:23:11.508479Z"
+  "lastUpdated": "2026-08-28T12:35:32.869241Z"
 }
