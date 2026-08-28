@@ -2,9 +2,9 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, on `main`. Part 2c (the deck card list redesign) is merged and
-its nine-point browser walkthrough is still outstanding (see Outstanding). **Part 3
-(practice mode) is designed and in progress** — tasks 1 and 2 of 7 are done; see Next up.
+**Last updated:** 2026-08-28, on branch `feat/part3-practice-mode`. **Part 3 (practice mode)
+is complete and driven in a browser** — the first part of this project to get a real
+walkthrough. Part 2c's own walkthrough is still outstanding (see Outstanding).
 
 ## What this is
 
@@ -71,58 +71,44 @@ feature branch outstanding. Concretely, working today:
 - 119 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
-`/study` and `/stats` are placeholder pages.
+- **Part 3, practice mode** — `grading.rs` and `practice.rs` (two pure modules, no database
+  access, randomness injected as a `roll: f64`), `routes/sessions.rs` with six endpoints, and
+  two screens. Design and rationale:
+  [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md);
+  plan: [`mitis/plans/2026-08-27-part3-practice-mode.md`](mitis/plans/2026-08-27-part3-practice-mode.md).
+  - `POST /api/sessions` — expands a module to its decks, refuses at creation when the pool
+    is empty, rejects `target_count` rather than ignoring it
+  - `GET /api/sessions/:id/next` — weighted sample, choices shuffled per serve, **no answer
+    content for any kind**, plus `pool_count`/`answered_count`/`correct_count`
+  - `POST /api/sessions/:id/reveal` — flashcard only; 409 for the two graded kinds
+  - `POST /api/sessions/:id/answer` — `{card_id, given | choice_id | self_grade, ms?}`
+  - `POST /api/sessions/:id/finish` — idempotent, `accuracy` null when nothing was answered
+  - `POST /api/reviews/:id/override` — the only write that mutates a `reviews` row
+  - `/study` picks mode and decks; `/session/:id` is the keyboard-first runner, **unthemed**
+    pending Part 4
+- `migrations/0003_review_self_grade.sql`: `reviews.self_grade`, nullable, CHECK-constrained
+  to the four flashcard grades, with `correct` derived (`again` → 0, the rest → 1)
+- `CLAUDE.md` rule 3, never use `any` in TypeScript. Prose-only —
+  `typescript/no-explicit-any` is **not** in the oxlint config and `pnpm lint` is not in the
+  gate, so nothing enforces it mechanically yet.
+
+`/stats` is still a placeholder page.
 
 ## Next up
 
-**Part 3: practice mode — designed, in progress.** The session runner, grading against
-`accepted.normalised`, the "I was right" override, and `reviews` rows. First feature that
-reads cards rather than writing them; first consumer of `POST /api/sessions`.
+**Part 4: the Bibble theme pass.** Part 3 shipped the runner deliberately unthemed — the
+sparkle burst on a correct answer and the wing-flutter on a streak are step 4's work, and
+both must respect `prefers-reduced-motion` without blocking the advance to the next card.
 
-- **Design decisions and their rationale:**
-  [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md)
-- **Plan with per-task code:**
-  [`mitis/plans/2026-08-27-part3-practice-mode.md`](mitis/plans/2026-08-27-part3-practice-mode.md)
+After that: mock test → stats → SM-2 → embed the bundle and LAN binding.
 
-**Done so far (tasks 1–2 of 7):**
+**Two things Part 5 (mock test) must resolve**, both recorded in the Part 3 design doc:
 
-1. `CLAUDE.md` rule 3, "Never use `any` in TypeScript" — added before any of Part 3's
-   TypeScript is written, so the runner is built under it. The codebase had zero `any`
-   usages, so it is purely preventative. It is prose-only: `typescript/no-explicit-any` is
-   **not** in `frontend/.oxlintrc.json`, and `pnpm lint` is not in the verification gate, so
-   nothing mechanically enforces it yet.
-2. Migration `0003_review_self_grade.sql` — `reviews.self_grade`, nullable, CHECK-constrained
-   to the four flashcard grades. `rand = "0.8"` declared in `backend/Cargo.toml` (it was only
-   a transitive dependency; 0.8 reuses the already-locked 0.8.8 rather than adding a second
-   major version to the tree).
-
-**Remaining (tasks 3–7):** a spike proving `cargo sqlx prepare` can type `json_each(?)`
-inside a CTE beside a window function, then the two pure modules (`grading.rs`,
-`practice.rs`), then `routes/sessions.rs` with six endpoints, then the frontend api layer,
-`/study` and `/session/:id`.
-
-**Two spec amendments Part 3 forced**, both already written into the master spec:
-
-- `POST /api/sessions/:id/answer` takes `{card_id, given | choice_id | self_grade, ms?}`.
-  The spec's `{given}` could not identify the card — `/next` is a GET that writes nothing, so
-  the server has no memory of the serve.
-- `POST /api/sessions/:id/reveal` is a new flashcard-only endpoint, and `/next` carries no
-  answer content for **any** kind. Self-grading needs the answer before the grade; putting
-  `answer_md` on `/next` would force the shared serve struct to own a leakable field.
-
-**Things Part 3 must reuse rather than reinvent:** the `<Markdown>` component (the session
-runner is its third consumer — do not add a fourth rendering path), and `normalise()`, which
-computes the same key grading looks up.
-
-Note the HANDOVER previously said practice mode "should read `cards.position`". **That was
-wrong** and has been retracted — the spec's weighted sampling wins, and `position` plays no
-part in practice mode. See §1 of the Part 3 design doc.
-
-Also resolved: the duplicate-normalised-`accepted` landmine listed under Known-and-accepted
-minors is harmless to grading (the check is set membership, not a fetch); the override
-endpoint carries a `WHERE NOT EXISTS` guard so it does not add to the pile.
-
-After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
+- `/next` re-rolls on reload. That is correct for practice, where an unanswered serve wrote
+  no row and there is no ordered position to resume to. Under `target_count` each serve is
+  consequential, so mock mode needs a stable serve.
+- What a flashcard means in a mock test, where there is no feedback during the run but
+  self-grading structurally needs the answer.
 
 ## Running it
 
@@ -137,6 +123,16 @@ Full setup, env vars, the sqlx workflow and DBeaver access are in [`../README.md
 
 - **Port 5273, not 5173.** 5173 is permanently occupied by an unrelated project on this
   machine.
+- **The browser tooling reaches the dev server on the LAN IP, not on `localhost`.** This is
+  what blocked the walkthroughs for Parts 1, 2a, 2b and 2c, each recorded as "the dev-tools
+  browser could not reach the dev server". Two separate problems, both fixable:
+  1. `pnpm dev` binds to `localhost` only, which resolves to IPv6 `::1`. Chrome asks for
+     IPv4 `127.0.0.1` and gets nothing. Start it as `pnpm dev --host 0.0.0.0`.
+  2. Even then the Chrome instance is not on this machine's loopback. Navigate to the
+     **Network** address vite prints (e.g. `http://192.168.2.161:5273`), not `localhost`.
+
+  With both, Part 3's walkthrough drove cleanly. Do this before concluding the browser
+  cannot reach the app.
 - **pnpm, not npm.** `packageManager` is pinned in `frontend/package.json`. If a
   `package-lock.json` appears, something went wrong — delete it.
 - **All cargo commands run from the repo root**, never from `backend/`. The cwd-relative
@@ -172,6 +168,11 @@ finds zero files, and exits 0 whatever the code says. Verified: a deliberate
 `const x: number = 'string'` passes `tsc --noEmit` and fails `tsc -b`. This was in the gate
 from Part 1 to Part 3 and never caught anything. Nothing was actually unprotected, because
 `pnpm build` runs `tsc -b`, but the first half of the gate was theatre. Fixed 2026-08-28.
+
+**Regenerate the sqlx cache against a scratch database, not `data/quizapp.db`.**
+`cargo sqlx prepare --workspace` needs `DATABASE_URL` pointing at a migrated database. Build
+one in a temp directory by running the migrations in order with `sqlite3`, and point
+`DATABASE_URL` at that. It keeps the dev database out of the loop entirely.
 
 **Use `--all-targets`.** Plain `cargo clippy -- -D warnings` does not build test targets. It
 was the gate for all of Part 1, which meant roughly 370 lines of test code had zero lint
@@ -240,6 +241,20 @@ being fine once real cards exist.
 **Archive, never delete.** Cards are archived so their `reviews` rows keep meaning.
 `reviews.card_id` deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly.
 
+**Session state lives only in `reviews`.** The weights, the staleness, the no-repeat window
+and the progress counts are all derived from it, which is why a mid-session reload resumes
+correctly with no client state. Adding a second store — a "served card" table, a client-side
+queue — breaks that property. `/next` re-rolling on reload is a consequence, not a defect:
+an unanswered serve wrote no row, so there is nothing to resume to.
+
+**A test that passes for the wrong reason is worse than no test.** Part 3's mutation pass
+found six that could not fail: a dominance test that only built one side of its comparison,
+a `roll.clamp` that no input could reach, an error assertion that checked only the field name
+while two different messages used that field, a no-repeat test that the weighting alone
+satisfied, a `can_override` test missing the case that mattered, and an accuracy guard whose
+removal produced `Some(NaN)` — which serde serialises as `null`, making it byte-identical
+over HTTP. Run the mutation, one change at a time; roughly one test per task was hollow.
+
 **One rendering path.** `<Markdown>` in `frontend/src/components/Markdown.tsx` is the only
 markdown renderer in the app, and it is why Part 2a shipped raw text everywhere. The card
 list, the editor preview and Part 3's session runner all go through it. If you need different
@@ -266,6 +281,27 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+**Part 3's walkthrough was driven and passed.** Recorded here because it is the first part of
+this project to get one. Verified in a browser on 2026-08-28: the `/study` picker and its live
+card count; the multiple-choice loop by keyboard (`2`, Enter); the flashcard loop (Space to
+reveal via `/reveal`, `3` to grade); short-answer normalisation, where `  K-MEANS!  ` graded
+correct against accepted `k-means`; the override, where a wrong answer flipped to "Counted as
+correct" and the *same wording in different case and punctuation* then graded correct on the
+next serve; a mid-session reload preserving the answered/correct counts; the finish summary
+reporting "1 counted correct by override"; KaTeX and markdown rendering in prompts; and forty
+consecutive serves across all three kinds carrying no `is_correct`, `answer_md`,
+`explanation_md` or `accepted` in the card object, with both choice orderings observed.
+
+**Still outstanding from Part 3:**
+
+- **Phone width.** `resize_window` reports success but the viewport does not change in this
+  environment, so 375px was never actually rendered. The runner uses the same `max-w-2xl`
+  shell as every other screen and the multiple-choice grid is `sm:grid-cols-2`, so it should
+  collapse to one column — but that is reasoning, not observation.
+- **Both themes.** Only the dark palette was seen.
+- Whether a 100+ card deck stays responsive in the runner, which is what COS781 will be.
+
 
 **Needs a human at a browser** — no agent could verify these; the Chrome extension is not
 connected on this machine, so no agent could drive a browser for either Part 1 or Part 2a:
@@ -354,8 +390,10 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 **Housekeeping**
 
-- `data/quizapp.db` holds verification debris from Part 1 and Part 2a runs (modules like
-  `REVIEW_MOD_1`, decks like `kinetics 100%`). Clear it before writing real cards — it
+- `data/quizapp.db` holds verification debris from Part 1, Part 2a **and Part 3's
+  walkthrough** (modules like `REVIEW_MOD_1` and `COS781 walkthrough`; decks like
+  `kinetics 100%`, `Clustering walkthrough`, `Override walkthrough`, `Leak check deck`; and
+  the sessions and reviews they generated). Clear it before writing real cards — it
   regenerates on startup.
 - KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 884 kB, 272 kB gzipped,
   the latter figure grown further by the deck card list redesign's three `@dnd-kit`
@@ -369,8 +407,6 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 **Known-and-accepted minors**
 
-- `AppError::Conflict` is constructed nowhere in production code — real 409s arrive via the
-  sqlx unique-violation path.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
 - `AppError::tag_foreign_key_violation` takes `&str` while `AppError::validation` is generic
@@ -381,9 +417,11 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   assertion above it is the real test.
 - `CardEditorPage` renders an inline error slot for `explanation_md`, which the validator
   never emits. Dead but harmless; Part 2b may give it a use.
-- Duplicate accepted answers that normalise to the same key are accepted — `validate` does
-  not dedupe and `idx_accepted_card_normalised` is a plain, non-unique index. Harmless in
-  2a, but Part 3's grading lookup will meet it, so it belongs on the record now.
+- Duplicate accepted answers that normalise to the same key are still accepted on card
+  *authoring* — `validate` does not dedupe and `idx_accepted_card_normalised` is a plain,
+  non-unique index. Part 3 met this and found it harmless to grading, because the lookup is
+  set membership rather than a fetch. The override endpoint carries a `WHERE NOT EXISTS`
+  guard so it cannot add to the pile.
 
 ## Where the record lives
 
