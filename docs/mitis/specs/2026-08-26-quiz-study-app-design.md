@@ -67,7 +67,8 @@ cards          id, deck_id, kind, prompt_md, image_path (nullable),
 choices        id, card_id, text_md, is_correct, position        -- mc_single only
 accepted       id, card_id, text, normalised, is_primary         -- short_answer only
 sessions       id, mode, deck_ids (json), target_count, started_at, ended_at
-reviews        id, card_id, session_id, answered_at, given, correct, overridden, ms
+reviews        id, card_id, session_id, answered_at, given, correct, overridden, ms,
+               self_grade (added in Part 3, migration 0003)
 schedule       card_id (pk), due_at, interval_days, ease, reps, lapses
 ```
 
@@ -92,7 +93,7 @@ Study sessions select one or more decks, or a whole module (which expands to its
 | -------------- | ---------------- | -------------------------------------- |
 | `mc_single`    | `choices`        | Auto: selected choice `is_correct`      |
 | `short_answer` | `accepted`       | Auto: normalised match against accepted |
-| `flashcard`    | `answer_md`      | Self-graded: again / hard / good / easy |
+| `flashcard`    | `answer_md`      | Self-graded: again / hard / good / easy, stored in `reviews.self_grade` |
 
 A diagram question is not a fourth kind — it is a `short_answer` card with `image_path`
 set. The image is prepared externally with the label erased.
@@ -128,7 +129,20 @@ Non-alphanumeric characters become spaces rather than being deleted so that "k-m
 
 `reviews` records every answer, forever. Rows are never updated or deleted, with one
 exception: the override endpoint sets `correct = true, overridden = true` on the row it
-targets, so an unfair miss does not permanently distort the statistics.
+targets, so an unfair miss does not permanently distort the statistics. That update targets
+only the addressed row — other reviews of the same card keep their original verdict, because
+a bulk flip would rewrite history rather than correct one unfair miss.
+
+`self_grade` (migration `0003`) holds a flashcard's four-level self-grade. `correct` is a
+single bit and is derived from it — `again` → 0, `hard`/`good`/`easy` → 1 — so the two
+columns answer different questions: "did I get it", which every statistic queries, and "how
+hard was it", which only the scheduler needs. Recording only the bit would discard the
+level at the moment it is made, and SM-2 (build step 7) needs it as its quality input.
+`self_grade` is NULL for the two auto-graded kinds.
+
+`reviews.given` stores what the student actually submitted, never a normalised form — the
+override needs the original wording. For `mc_single` it stores the chosen choice's `text_md`
+as a snapshot rather than its id, because an id dangles once the card's choices are edited.
 
 Practice-mode weighting, mock test results and progress-over-time statistics are all
 queries over this table. A scheduling bug therefore cannot destroy history — in the worst
@@ -176,7 +190,20 @@ POST /api/images                   multipart upload -> data/images/, returns pat
 
 POST /api/sessions                 {mode, deck_ids | module_id, target_count?}
 GET  /api/sessions/:id/next        next card: prompt, image, shuffled choices, no key
-POST /api/sessions/:id/answer      {given} -> {correct, expected, explanation}
+                                    for ANY kind -- see the reveal note below
+POST /api/sessions/:id/reveal      {card_id} -> {answer_md, explanation_md}; flashcard
+                                    only. Amended in Part 3: self-grading needs the
+                                    answer before the grade, and a flashcard has no key
+                                    to protect. A separate endpoint keeps /next's
+                                    response struct incapable of carrying an answer
+POST /api/sessions/:id/answer      {card_id, given | choice_id | self_grade, ms?}
+                                    -> {review_id, correct, expected, explanation_md,
+                                        can_override}
+                                    Amended in Part 3: the original {given} could not
+                                    identify the card (/next is a GET that writes
+                                    nothing, so the server has no memory of the serve),
+                                    could not express a choice selection, and could not
+                                    express a self-grade
 POST /api/sessions/:id/finish      end session, return results summary
 POST /api/reviews/:id/override     "I was right": insert accepted, flip review
 
@@ -190,6 +217,23 @@ rather than its position.
 `schedule`. Its response carries the verdict, the primary expected answer, and the
 explanation if one exists. In mock test mode the response withholds the verdict until
 `/finish`.
+
+The answer-key rule, restated precisely after Part 3 met the flashcard case: **no endpoint
+returns correctness data or answer content for a card except in response to a request that
+is itself an act on that card** — submitting an answer, or explicitly asking to reveal a
+flashcard. `/next` is uniformly key-free for all three kinds, which is what makes the
+leakage rule testable as a single assertion. `/reveal` is a contract boundary rather than a
+security one: a client may call it immediately, and for a self-graded card there is nothing
+better to be had, since the student is the grader.
+
+Session state lives entirely in `reviews`. There is deliberately **no** `GET
+/api/sessions/:id`: `/next` carries the progress counts a resuming client needs, and a
+session-detail endpoint would be the natural place for a future leak. Practice mode's
+`/next` is non-deterministic by design — a reload re-rolls the card, because an unanswered
+serve wrote no row and a practice session has no ordered position to resume to. What
+"resumes from `reviews`" guarantees is that every *input* to the next decision (weights,
+staleness, the no-repeat window, the counts) derives from `reviews`, so a reload can neither
+reset the window nor re-serve an answered card.
 
 ## Study engine
 

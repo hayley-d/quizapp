@@ -1,0 +1,120 @@
+{
+  "planPath": "docs/mitis/plans/2026-08-27-part3-practice-mode.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: CLAUDE.md rule 3, never use any in TypeScript",
+      "status": "completed",
+      "description": "**Goal:** The no-any rule is written down before any of Part 3's TypeScript exists.\n\n**Files:**\n- Modify: `CLAUDE.md`\n\n**Acceptance Criteria:**\n- [ ] CLAUDE.md has a numbered rule 3 between rule 2 and Accepted short forms\n- [ ] It bans bare any, any[], Array<any>, Promise<any>, Record<string, any>, as any, as unknown as T laundering, any as a generic argument, and @ts-ignore/@ts-expect-error used to hide typing problems\n- [ ] It names unknown as the correct escape hatch\n- [ ] It exempts frontend/src/components/ui/ as vendored shadcn code\n- [ ] The codebase still has zero any usages\n\n**Verify:** `grep -q 'Never use .any. in TypeScript' CLAUDE.md`\n\n```json:metadata\n{\"files\": [\"CLAUDE.md\"], \"verifyCommand\": \"grep -q 'Never use `any` in TypeScript' CLAUDE.md\", \"acceptanceCriteria\": [\"CLAUDE.md has a numbered rule 3 between rule 2 and Accepted short forms\", \"It bans bare any, any[], Array<any>, Promise<any>, Record<string, any>, as any, as unknown as T laundering, any as a generic argument, and @ts-ignore/@ts-expect-error used to hide typing problems\", \"It names unknown as the correct escape hatch\", \"It exempts frontend/src/components/ui/ as vendored shadcn code\", \"The codebase still has zero any usages\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: rand and migration 0003 (reviews.self_grade)",
+      "status": "completed",
+      "description": "**Goal:** The self-grade column exists and rand is a declared dependency, without adding a second major version to the tree.\n\n**Files:**\n- Create: `backend/migrations/0003_review_self_grade.sql`\n- Modify: `backend/Cargo.toml`\n\n**Acceptance Criteria:**\n- [ ] reviews.self_grade TEXT CHECK constrained to the four grades, nullable\n- [ ] A NULL self_grade is accepted\n- [ ] 'good' is accepted and 'medium' is rejected by the CHECK\n- [ ] 0001 and 0002 are untouched\n- [ ] rand = 0.8 resolves to the already-locked 0.8.8\n- [ ] cargo test passes with no regressions\n\n**Verify:** `cargo test && SQLX_OFFLINE=true cargo build` - 119 tests pass, build clean\n\n```json:metadata\n{\"files\": [\"backend/migrations/0003_review_self_grade.sql\", \"backend/Cargo.toml\"], \"verifyCommand\": \"cargo test && SQLX_OFFLINE=true cargo build\", \"acceptanceCriteria\": [\"reviews.self_grade TEXT CHECK constrained to the four grades, nullable\", \"A NULL self_grade is accepted\", \"'good' is accepted and 'medium' is rejected by the CHECK\", \"0001 and 0002 are untouched\", \"rand = 0.8 resolves to the already-locked 0.8.8\", \"cargo test passes with no regressions\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: SPIKE - can sqlx type json_each in a CTE with a window function",
+      "status": "pending",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** Prove the candidate query's shape is macro-checkable BEFORE anything is built on it. This is a gate, not ceremony: every query in Tasks 6-9 depends on it.\n\n**Files:**\n- No permanent files - a throwaway query, deleted afterwards\n\n**Acceptance Criteria:**\n- [ ] It is known whether json_each(?) types cleanly inside a CTE alongside a window function\n- [ ] If it does not, the chosen fallback is recorded in the plan before Task 6 starts\n- [ ] The throwaway query is deleted and the tree builds clean\n\n**Verify:** `export PATH=\"$HOME/.cargo/bin:$PATH\" && cargo sqlx prepare --workspace && SQLX_OFFLINE=true cargo build`\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"export PATH=\\\"$HOME/.cargo/bin:$PATH\\\" && cargo sqlx prepare --workspace && SQLX_OFFLINE=true cargo build\", \"acceptanceCriteria\": [\"It is known whether json_each(?) types cleanly inside a CTE alongside a window function\", \"If it does not, the chosen fallback is recorded in the plan before Task 6 starts\", \"The throwaway query is deleted and the tree builds clean\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: grading.rs - pure per-kind grading",
+      "status": "pending",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** One module that decides correctness for all three kinds, with no database access, and closes the empty-normalisation hole.\n\n**Files:**\n- Create: `backend/src/grading.rs`\n- Modify: `backend/src/lib.rs` (pub mod grading;)\n\n**Acceptance Criteria:**\n- [ ] grading.rs imports nothing from sqlx, axum or routes\n- [ ] grade_multiple_choice returns None for a choice id not on the card, so the caller can 422 rather than grade it wrong\n- [ ] grade_short_answer normalises via the existing normalise(), never its own copy\n- [ ] An empty normalised answer is incorrect without consulting accepted\n- [ ] Matching is equality on the normalised key, never substring\n- [ ] All nine unit tests pass\n\n**Verify:** `cargo test grading && cargo clippy --all-targets -- -D warnings`\n\n```json:metadata\n{\"files\": [\"backend/src/grading.rs\", \"backend/src/lib.rs\"], \"verifyCommand\": \"cargo test grading && cargo clippy --all-targets -- -D warnings\", \"acceptanceCriteria\": [\"grading.rs imports nothing from sqlx, axum or routes\", \"grade_multiple_choice returns None for a choice id not on the card, so the caller can 422 rather than grade it wrong\", \"grade_short_answer normalises via the existing normalise(), never its own copy\", \"An empty normalised answer is incorrect without consulting accepted\", \"Matching is equality on the normalised key, never substring\", \"All nine unit tests pass\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: practice.rs - pure weighting and selection",
+      "status": "pending",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** The spec's weighted sampling as a pure module, with never-seen dominance a derived theorem and the small-deck window rule proved by exhaustive test.\n\n**Files:**\n- Create: `backend/src/practice.rs`\n- Modify: `backend/src/lib.rs` (pub mod practice;)\n\n**Acceptance Criteria:**\n- [ ] practice.rs imports nothing from sqlx, axum, rand or routes\n- [ ] NEVER_SEEN_WEIGHT is derived from MAXIMUM_REVIEWED_WEIGHT, not a literal\n- [ ] Never-seen is decided by review_count == 0, never by an empty outcome list\n- [ ] effective_no_repeat_window never exceeds count minus 1 and handles a count of 0\n- [ ] Selection is deterministic given candidates, history and roll\n- [ ] There is no unreachable clamp and no unreachable fallback\n- [ ] All unit tests pass including an exhaustive window test over pool sizes 1 to 12\n\n**Verify:** `cargo test practice && cargo clippy --all-targets -- -D warnings`\n\n```json:metadata\n{\"files\": [\"backend/src/practice.rs\", \"backend/src/lib.rs\"], \"verifyCommand\": \"cargo test practice && cargo clippy --all-targets -- -D warnings\", \"acceptanceCriteria\": [\"practice.rs imports nothing from sqlx, axum, rand or routes\", \"NEVER_SEEN_WEIGHT is derived from MAXIMUM_REVIEWED_WEIGHT, not a literal\", \"Never-seen is decided by review_count == 0, never by an empty outcome list\", \"effective_no_repeat_window never exceeds count minus 1 and handles a count of 0\", \"Selection is deterministic given candidates, history and roll\", \"There is no unreachable clamp and no unreachable fallback\", \"All unit tests pass including an exhaustive window test over pool sizes 1 to 12\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: POST /api/sessions",
+      "status": "pending",
+      "blockedBy": [
+        3
+      ],
+      "description": "**Goal:** Create a practice session, expanding a module to its decks, and refuse at creation rather than producing an empty runner.\n\n**Files:**\n- Create: `backend/src/routes/sessions.rs`\n- Modify: `backend/src/routes/mod.rs`\n- Test: `backend/tests/sessions.rs`\n\n**Acceptance Criteria:**\n- [ ] POST /api/sessions creates a practice session and returns 201 with canonical sorted deduped deck_ids\n- [ ] module_id expands to its decks at creation and is stored denormalised\n- [ ] mock and sm2 are rejected with a different message from an unknown mode, checked in that order\n- [ ] Exactly one of deck_ids or module_id is required\n- [ ] An unknown deck or module id is 422 on the right field\n- [ ] target_count on a practice session is rejected, not ignored\n- [ ] A deck whose only card is archived is refused at creation and writes no sessions row\n\n**Verify:** `cargo test --test sessions`\n\n```json:metadata\n{\"files\": [\"backend/src/routes/sessions.rs\", \"backend/src/routes/mod.rs\", \"backend/tests/sessions.rs\"], \"verifyCommand\": \"cargo test --test sessions\", \"acceptanceCriteria\": [\"POST /api/sessions creates a practice session and returns 201 with canonical sorted deduped deck_ids\", \"module_id expands to its decks at creation and is stored denormalised\", \"mock and sm2 are rejected with a different message from an unknown mode, checked in that order\", \"Exactly one of deck_ids or module_id is required\", \"An unknown deck or module id is 422 on the right field\", \"target_count on a practice session is rejected, not ignored\", \"A deck whose only card is archived is refused at creation and writes no sessions row\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: GET /next and POST /reveal - the leakage pair",
+      "status": "pending",
+      "blockedBy": [
+        5,
+        6
+      ],
+      "description": "**Goal:** Serve a weighted-sampled card that structurally cannot carry an answer key, and give flashcards their own reveal.\n\n**Files:**\n- Modify: `backend/src/routes/sessions.rs`\n- Test: `backend/tests/sessions.rs`\n\n**Acceptance Criteria:**\n- [ ] NextCardResponse and NextChoiceResponse are distinct types from cards::CardResponse and cards::ChoiceResponse, and sessions.rs does not import from routes::cards\n- [ ] The serve projections select only id, kind, prompt_md, image_path and id, text_md\n- [ ] choices is a Vec so it serialises to [] for non-multiple-choice kinds\n- [ ] A served card's key set is exactly id, kind, prompt_md, image_path, choices for all three kinds\n- [ ] Choices are shuffled per serve with a constant id set\n- [ ] A never-seen card is favoured over well-known ones\n- [ ] No card repeats inside the no-repeat window, and the window survives a client reload\n- [ ] A three-card and a one-card deck both keep serving without starving\n- [ ] An emptied pool is 409 not 500; ended session 409; unknown session 404\n- [ ] POST /reveal returns a flashcard answer, 409s for the two graded kinds, and writes nothing\n\n**Verify:** `cargo test --test sessions`\n\n```json:metadata\n{\"files\": [\"backend/src/routes/sessions.rs\", \"backend/tests/sessions.rs\"], \"verifyCommand\": \"cargo test --test sessions\", \"acceptanceCriteria\": [\"NextCardResponse and NextChoiceResponse are distinct types from cards::CardResponse and cards::ChoiceResponse, and sessions.rs does not import from routes::cards\", \"The serve projections select only id, kind, prompt_md, image_path and id, text_md\", \"choices is a Vec so it serialises to [] for non-multiple-choice kinds\", \"A served card's key set is exactly id, kind, prompt_md, image_path, choices for all three kinds\", \"Choices are shuffled per serve with a constant id set\", \"A never-seen card is favoured over well-known ones\", \"No card repeats inside the no-repeat window, and the window survives a client reload\", \"A three-card and a one-card deck both keep serving without starving\", \"An emptied pool is 409 not 500; ended session 409; unknown session 404\", \"POST /reveal returns a flashcard answer, 409s for the two graded kinds, and writes nothing\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: POST /api/sessions/:id/answer",
+      "status": "pending",
+      "blockedBy": [
+        4,
+        7
+      ],
+      "description": "**Goal:** Grade server-side per kind and append exactly one reviews row, without touching schedule.\n\n**Files:**\n- Modify: `backend/src/routes/sessions.rs`\n- Test: `backend/tests/sessions.rs`\n\n**Acceptance Criteria:**\n- [ ] Card lookup enforces pool membership and archived = 0, returning 422 on field card_id\n- [ ] Each kind requires its own answer field and rejects the other two\n- [ ] Short answer grading goes through normalise and rejects an empty normalised answer without consulting accepted\n- [ ] A flashcard self_grade is persisted and correct is derived with again mapping to 0\n- [ ] reviews.given stores raw trimmed text for short_answer, the chosen choice text for mc_single, and NULL for flashcard\n- [ ] Exactly one reviews row is written per answer\n- [ ] The schedule table is completely untouched by answering\n- [ ] can_override is true only for an incorrect short answer\n- [ ] Ended session is 409 and unknown session is 404\n\n**Verify:** `cargo test --test sessions`\n\n```json:metadata\n{\"files\": [\"backend/src/routes/sessions.rs\", \"backend/tests/sessions.rs\"], \"verifyCommand\": \"cargo test --test sessions\", \"acceptanceCriteria\": [\"Card lookup enforces pool membership and archived = 0, returning 422 on field card_id\", \"Each kind requires its own answer field and rejects the other two\", \"Short answer grading goes through normalise and rejects an empty normalised answer without consulting accepted\", \"A flashcard self_grade is persisted and correct is derived with again mapping to 0\", \"reviews.given stores raw trimmed text for short_answer, the chosen choice text for mc_single, and NULL for flashcard\", \"Exactly one reviews row is written per answer\", \"The schedule table is completely untouched by answering\", \"can_override is true only for an incorrect short answer\", \"Ended session is 409 and unknown session is 404\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: POST /api/reviews/:id/override and POST /api/sessions/:id/finish",
+      "status": "pending",
+      "blockedBy": [
+        8
+      ],
+      "description": "**Goal:** The only write in the app that mutates a reviews row, and an idempotent session end.\n\n**Files:**\n- Modify: `backend/src/routes/sessions.rs`\n- Test: `backend/tests/sessions.rs`\n\n**Acceptance Criteria:**\n- [ ] Override flips correct and overridden on the addressed row only and adds one accepted row with is_primary = 0\n- [ ] The accepted insert uses WHERE NOT EXISTS so a duplicate normalised key adds nothing and reports accepted_added false\n- [ ] The overridden wording grades correct on a subsequent answer\n- [ ] Override refuses multiple choice, flashcard, already-correct, and empty-given reviews with 409\n- [ ] Override works after the session has finished and inserts no new review row\n- [ ] Finish is idempotent with 200 and preserves the original ended_at\n- [ ] accuracy is null for a session with no answers, not 0.0\n- [ ] The summary counts an overridden review as correct\n\n**Verify:** `cargo test --test sessions && cargo clippy --all-targets -- -D warnings`\n\n```json:metadata\n{\"files\": [\"backend/src/routes/sessions.rs\", \"backend/tests/sessions.rs\"], \"verifyCommand\": \"cargo test --test sessions && cargo clippy --all-targets -- -D warnings\", \"acceptanceCriteria\": [\"Override flips correct and overridden on the addressed row only and adds one accepted row with is_primary = 0\", \"The accepted insert uses WHERE NOT EXISTS so a duplicate normalised key adds nothing and reports accepted_added false\", \"The overridden wording grades correct on a subsequent answer\", \"Override refuses multiple choice, flashcard, already-correct, and empty-given reviews with 409\", \"Override works after the session has finished and inserts no new review row\", \"Finish is idempotent with 200 and preserves the original ended_at\", \"accuracy is null for a session with no answers, not 0.0\", \"The summary counts an overridden review as correct\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 10: api.ts session types and calls",
+      "status": "pending",
+      "blockedBy": [
+        9
+      ],
+      "description": "**Goal:** Typed access to the six endpoints, with no any, over the existing request() wrapper.\n\n**Files:**\n- Modify: `frontend/src/lib/api.ts`\n\n**Acceptance Criteria:**\n- [ ] Every new type is concrete with no use of any\n- [ ] NextCard and NextChoice carry no answer or correctness fields\n- [ ] submitAnswer's parameter type admits exactly one of given, choice_id or self_grade\n- [ ] All six calls go through the existing request wrapper so ApiError and byField work unchanged\n- [ ] pnpm exec tsc --noEmit is clean\n\n**Verify:** `cd frontend && pnpm exec tsc --noEmit`\n\n```json:metadata\n{\"files\": [\"frontend/src/lib/api.ts\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc --noEmit\", \"acceptanceCriteria\": [\"Every new type is concrete with no use of any\", \"NextCard and NextChoice carry no answer or correctness fields\", \"submitAnswer's parameter type admits exactly one of given, choice_id or self_grade\", \"All six calls go through the existing request wrapper so ApiError and byField work unchanged\", \"pnpm exec tsc --noEmit is clean\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 11,
+      "subject": "Task 11: /study - the picker",
+      "status": "pending",
+      "blockedBy": [
+        10
+      ],
+      "description": "**Goal:** Pick a mode and decks, see how many cards that is, and start a session.\n\n**Files:**\n- Create: `frontend/src/pages/StudyPage.tsx`\n- Modify: `frontend/src/App.tsx`\n- Modify: `frontend/package.json` (shadcn checkbox)\n\n**Acceptance Criteria:**\n- [ ] /study renders the real page rather than StubPage\n- [ ] Decks are grouped by module with unparented decks in their own group\n- [ ] The selected-card count updates live and Start is disabled at zero\n- [ ] Mock test and SM-2 are visible but disabled and labelled with their part\n- [ ] A server-side validation error renders inline on the right field\n- [ ] tsc --noEmit and pnpm build are clean\n\n**Verify:** `cd frontend && pnpm exec tsc --noEmit && pnpm build`\n\n```json:metadata\n{\"files\": [\"frontend/src/pages/StudyPage.tsx\", \"frontend/src/App.tsx\", \"frontend/package.json\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc --noEmit && pnpm build\", \"acceptanceCriteria\": [\"/study renders the real page rather than StubPage\", \"Decks are grouped by module with unparented decks in their own group\", \"The selected-card count updates live and Start is disabled at zero\", \"Mock test and SM-2 are visible but disabled and labelled with their part\", \"A server-side validation error renders inline on the right field\", \"tsc --noEmit and pnpm build are clean\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 12,
+      "subject": "Task 12: /session/:id - the runner",
+      "status": "pending",
+      "blockedBy": [
+        10
+      ],
+      "description": "**Goal:** A keyboard-first practice loop: serve, answer, verdict, advance - all three kinds, no mouse required.\n\n**Files:**\n- Create: `frontend/src/pages/SessionPage.tsx`\n- Create: `frontend/src/components/session/`\n- Modify: `frontend/src/App.tsx`\n\n**Acceptance Criteria:**\n- [ ] All three kinds render and submit with their own answer control\n- [ ] 1 to 9 select a multiple-choice option, Enter submits, Enter again advances\n- [ ] Number keys do not hijack typing in the short-answer input\n- [ ] A flashcard reveals via POST /reveal before its four grade buttons appear\n- [ ] The verdict shows expected and the explanation when present\n- [ ] I was right appears only when the server says can_override and flips the banner in place\n- [ ] The header's answered and correct counts survive a browser reload\n- [ ] ms is sent and is never negative\n- [ ] End session shows a summary matching the run\n- [ ] No window event listener is added; keyboard handling is container-level\n- [ ] tsc --noEmit and pnpm build are clean\n\n**Verify:** `cd frontend && pnpm exec tsc --noEmit && pnpm build`\n\n```json:metadata\n{\"files\": [\"frontend/src/pages/SessionPage.tsx\", \"frontend/src/components/session/\", \"frontend/src/App.tsx\"], \"verifyCommand\": \"cd frontend && pnpm exec tsc --noEmit && pnpm build\", \"acceptanceCriteria\": [\"All three kinds render and submit with their own answer control\", \"1 to 9 select a multiple-choice option, Enter submits, Enter again advances\", \"Number keys do not hijack typing in the short-answer input\", \"A flashcard reveals via POST /reveal before its four grade buttons appear\", \"The verdict shows expected and the explanation when present\", \"I was right appears only when the server says can_override and flips the banner in place\", \"The header's answered and correct counts survive a browser reload\", \"ms is sent and is never negative\", \"End session shows a summary matching the run\", \"No window event listener is added; keyboard handling is container-level\", \"tsc --noEmit and pnpm build are clean\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 13,
+      "subject": "Task 13: full gate, browser walkthrough, handover",
+      "status": "pending",
+      "blockedBy": [
+        11,
+        12
+      ],
+      "description": "**Goal:** The whole verification gate passes, the runner is actually driven in a browser, and the record is updated.\n\n**Files:**\n- Modify: `docs/HANDOVER.md`\n\n**Acceptance Criteria:**\n- [ ] cargo test passes with all new tests included\n- [ ] cargo clippy --all-targets -- -D warnings is clean\n- [ ] SQLX_OFFLINE=true cargo build succeeds and .sqlx is regenerated and committed\n- [ ] tsc --noEmit and pnpm build are clean\n- [ ] The browser walkthrough passes, including the no-leakage Network check for all three kinds\n- [ ] docs/HANDOVER.md records the six endpoints, migration 0003, rand, CLAUDE.md rule 3, the spike outcome, and the Part 5 follow-ups\n\n**Verify:** the full gate, then the ten-point browser walkthrough in the plan's Task 13\n\n```json:metadata\n{\"files\": [\"docs/HANDOVER.md\"], \"verifyCommand\": \"export PATH=\\\"$HOME/.cargo/bin:$PATH\\\" && cargo sqlx prepare --workspace && cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && cd frontend && pnpm exec tsc --noEmit && pnpm build\", \"acceptanceCriteria\": [\"cargo test passes with all new tests included\", \"cargo clippy --all-targets -- -D warnings is clean\", \"SQLX_OFFLINE=true cargo build succeeds and .sqlx is regenerated and committed\", \"tsc --noEmit and pnpm build are clean\", \"The browser walkthrough passes, including the no-leakage Network check for all three kinds\", \"docs/HANDOVER.md records the six endpoints, migration 0003, rand, CLAUDE.md rule 3, the spike outcome, and the Part 5 follow-ups\"], \"modelTier\": \"standard\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-27T00:00:00Z"
+}

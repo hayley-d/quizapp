@@ -2,8 +2,9 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-27, on `main` (Part 2c, the deck card list redesign, merged — its
-nine-point browser walkthrough is still outstanding, see Outstanding).
+**Last updated:** 2026-08-27, on `main`. Part 2c (the deck card list redesign) is merged and
+its nine-point browser walkthrough is still outstanding (see Outstanding). **Part 3
+(practice mode) is designed and in progress** — tasks 1 and 2 of 7 are done; see Next up.
 
 ## What this is
 
@@ -67,23 +68,59 @@ feature branch outstanding. Concretely, working today:
   one transaction without touching `updated_at`. It is relative rather than a whole-deck
   permutation because the deck screen can be filtered, so the client cannot honestly send a
   complete order.
-- 120 backend tests. No frontend test framework — that is a deliberate spec decision, not an
+- 119 backend tests. No frontend test framework — that is a deliberate spec decision, not an
   omission.
 
 `/study` and `/stats` are placeholder pages.
 
 ## Next up
 
-**Part 3: practice mode.** The session runner, grading against `accepted.normalised`, the
-"I was right" override, and `reviews` rows. This is the first feature that reads cards rather
-than writing them, and the first consumer of `POST /api/sessions`.
+**Part 3: practice mode — designed, in progress.** The session runner, grading against
+`accepted.normalised`, the "I was right" override, and `reviews` rows. First feature that
+reads cards rather than writing them; first consumer of `POST /api/sessions`.
 
-Two things already in place that Part 3 must use rather than reinvent: the `<Markdown>`
-component (the session runner is its third consumer — do not add a fourth rendering path),
-and `normalise()`, which computes the same key grading will look up.
+- **Design decisions and their rationale:**
+  [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md)
+- **Plan with per-task code:**
+  [`mitis/plans/2026-08-27-part3-practice-mode.md`](mitis/plans/2026-08-27-part3-practice-mode.md)
 
-A third: `cards.position` is the deck's authored order, and practice mode should read it rather
-than inventing an order of its own.
+**Done so far (tasks 1–2 of 7):**
+
+1. `CLAUDE.md` rule 3, "Never use `any` in TypeScript" — added before any of Part 3's
+   TypeScript is written, so the runner is built under it. The codebase had zero `any`
+   usages, so it is purely preventative. It is prose-only: `typescript/no-explicit-any` is
+   **not** in `frontend/.oxlintrc.json`, and `pnpm lint` is not in the verification gate, so
+   nothing mechanically enforces it yet.
+2. Migration `0003_review_self_grade.sql` — `reviews.self_grade`, nullable, CHECK-constrained
+   to the four flashcard grades. `rand = "0.8"` declared in `backend/Cargo.toml` (it was only
+   a transitive dependency; 0.8 reuses the already-locked 0.8.8 rather than adding a second
+   major version to the tree).
+
+**Remaining (tasks 3–7):** a spike proving `cargo sqlx prepare` can type `json_each(?)`
+inside a CTE beside a window function, then the two pure modules (`grading.rs`,
+`practice.rs`), then `routes/sessions.rs` with six endpoints, then the frontend api layer,
+`/study` and `/session/:id`.
+
+**Two spec amendments Part 3 forced**, both already written into the master spec:
+
+- `POST /api/sessions/:id/answer` takes `{card_id, given | choice_id | self_grade, ms?}`.
+  The spec's `{given}` could not identify the card — `/next` is a GET that writes nothing, so
+  the server has no memory of the serve.
+- `POST /api/sessions/:id/reveal` is a new flashcard-only endpoint, and `/next` carries no
+  answer content for **any** kind. Self-grading needs the answer before the grade; putting
+  `answer_md` on `/next` would force the shared serve struct to own a leakable field.
+
+**Things Part 3 must reuse rather than reinvent:** the `<Markdown>` component (the session
+runner is its third consumer — do not add a fourth rendering path), and `normalise()`, which
+computes the same key grading looks up.
+
+Note the HANDOVER previously said practice mode "should read `cards.position`". **That was
+wrong** and has been retracted — the spec's weighted sampling wins, and `position` plays no
+part in practice mode. See §1 of the Part 3 design doc.
+
+Also resolved: the duplicate-normalised-`accepted` landmine listed under Known-and-accepted
+minors is harmless to grading (the check is set membership, not a fetch); the override
+endpoint carries a `WHERE NOT EXISTS` guard so it does not add to the pile.
 
 After that: Bibble theme pass → mock test → stats → SM-2 → embed the bundle and LAN binding.
 
@@ -172,7 +209,7 @@ load-bearing: preserve the placeholder count, or you get a confusing compile err
 this machine's nightly arrives dressed up as the self-recovering ICE.
 
 **Foreign keys are per-connection.** Enforcement comes from `.foreign_keys(true)` in
-`backend/src/db.rs`, not from anything in the schema. Any other client — DBeaver, the
+`backend/src/database.rs`, not from anything in the schema. Any other client — DBeaver, the
 `sqlite3` CLI — has them OFF unless it asks.
 
 **PATCH distinguishes absent from null.** A key missing from the body means "leave
@@ -328,7 +365,8 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   sqlx unique-violation path.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
-- `AppError::fk_as` takes `&str` while `AppError::validation` is generic over `Into<String>`.
+- `AppError::tag_foreign_key_violation` takes `&str` while `AppError::validation` is generic
+  over `Into<String>`.
   Both call sites pass literals; generalising it now would be churn.
 - `patch_unknown_card_is_404`'s `count(cards) == 0` assertion cannot fail — each test gets a
   fresh empty database. Not a false claim, just an assertion carrying no weight; the 404
@@ -345,6 +383,10 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   the implementation legitimately diverged (e.g. deck-name uniqueness per module).
 - **Plans** — `mitis/plans/*.md` plus their `.tasks.json`. These carry the full per-task
   code, acceptance criteria and verification commands. All are marked complete.
+- **Part 3's design decisions** — [`mitis/specs/2026-08-27-part3-practice-mode-design.md`](mitis/specs/2026-08-27-part3-practice-mode-design.md).
+  Records the weighted-sampling-over-`position` ruling, the two API amendments, why the
+  flashcard reveal is its own endpoint, why never-seen dominance is derived rather than
+  tuned, and the small-deck window rule.
 - **Part 2b's three open design questions** were answered in the design session of
   2026-08-27 and are recorded in [`mitis/specs/2026-08-27-part2b-images-markdown-design.md`](mitis/specs/2026-08-27-part2b-images-markdown-design.md):
   standalone upload endpoint, whole-form Edit/Preview toggle, unclamped markdown rows with a
