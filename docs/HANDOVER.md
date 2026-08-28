@@ -2,9 +2,13 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on branch `feat/part3-practice-mode`. **Part 3 (practice mode)
-is complete and driven in a browser** — the first part of this project to get a real
-walkthrough. Part 2c's own walkthrough is still outstanding (see Outstanding).
+**Last updated:** 2026-08-28, on branch `feat/part4-bibble-theme`. **Part 4 (the Bibble
+theme pass) is complete but unmerged and not browser-verified** — the automated gate is
+green, but no agent in this session could drive a browser, so nothing in Part 4 has
+actually been clicked except the one claim the contrast script proves arithmetically. See
+the Part 4 "NOT VERIFIED" subsection under Outstanding before assuming any visual or
+interaction behaviour works. Part 2c's own walkthrough is also still outstanding (see
+Outstanding).
 
 ## What this is
 
@@ -92,15 +96,62 @@ feature branch outstanding. Concretely, working today:
   `typescript/no-explicit-any` is **not** in the oxlint config and `pnpm lint` is not in the
   gate, so nothing enforces it mechanically yet.
 
+- **Part 4, the Bibble theme pass** — on branch `feat/part4-bibble-theme`, **unmerged**. The
+  automated gate is green (see The verification gate); the browser walkthrough was not
+  performed in this session (see Outstanding).
+  - A Light/Dark/System theme toggle in the header, persisted to `localStorage`. The `.dark`
+    class on `<html>` remains the single source of truth — `sonner.tsx` still observes it,
+    unmodified. The inline script in `index.html` reads the stored preference before first
+    paint to avoid a flash of the wrong theme; that duplicates logic already in
+    `useTheme.ts`, deliberately, because a module import cannot run before first paint.
+  - An opaque `--brand` token replaces the 70%-alpha `--deck-card-header` on the `brand`
+    button variant. **This fixed a real WCAG failure**: white text on the button measured
+    **2.14:1 in light mode** (AA needs 4.5:1, and 3:1 even for large text), because the
+    alpha let the pale page background show through. It is now 4.88:1 in both themes. The
+    `brand` variant is the app's primary action everywhere — "Start practising", "Check",
+    "Next card", "Study again", the deck edit button, every card-row icon button — so in
+    light mode the main call to action was close to illegible, and had been since Part 1. It
+    went unnoticed because until Part 4 there was no way to switch themes without visiting
+    macOS System Settings.
+  - `frontend/scripts/check-contrast.py`, which computes these ratios from the token values
+    and exits non-zero below 4.5:1. It is now in the gate. Verified able to fail:
+    substituting the old rendered light-mode value reports 2.14:1 and exits 1.
+  - A CSS sparkle burst on a correct answer and a wing-flutter on a streak of 3+, both pure
+    `@keyframes` with no JS on the answer/advance path — so the spec's "neither blocks
+    advancing to the next question" is structural rather than something an implementer must
+    be careful about.
+  - The streak is client-side React state and resets on reload, preserving the "session
+    state lives only in `reviews`" invariant. An override extends the streak (because
+    `correct_count` and the accuracy figure already treat it as correct) but does not replay
+    the burst.
+  - A global `@media (prefers-reduced-motion: reduce)` rule plus a shared
+    `usePrefersReducedMotion` hook. Two layers deliberately: the CSS is a fail-safe net for
+    anything a later part adds and forgets; the hook exists because `useFlip` needs a
+    *different code path*, not a shorter duration — a zero-duration rotation would strand
+    the card edge-on at 90° with no callback to finish the swap. `useFlip` is now also
+    reactive to the setting, which it previously was not (it sampled `matchMedia` at flip
+    time and never subscribed).
+  - Card surfaces (`rounded-xl border bg-card p-N shadow-sm`) across the runner, `/study`,
+    the `/decks` toolbar and the card editor form.
+  - `SessionPage.tsx` shed its summary and exhausted screens into `components/session/`
+    (417 → 359 lines).
+  - Two Part 2c defects fixed: markdown links inside a card no longer flip it (the mouse
+    path had no target check while the keyboard path did), and the card row's accessible
+    names now carry the prompt instead of announcing only "Show answer" or reading raw
+    markdown syntax aloud.
+  - `strict: true` and `typescript/no-explicit-any` are now enforced, both verified
+    load-bearing with isolated probes, and `pnpm exec oxlint` was added to the gate — a lint
+    rule the gate never runs would enforce nothing.
+
 `/stats` is still a placeholder page.
 
 ## Next up
 
-**Part 4: the Bibble theme pass.** Part 3 shipped the runner deliberately unthemed — the
-sparkle burst on a correct answer and the wing-flutter on a streak are step 4's work, and
-both must respect `prefers-reduced-motion` without blocking the advance to the next card.
+**Part 5: the mock test.** Part 4 (the Bibble theme pass) is done. It is complete but sits
+unmerged on `feat/part4-bibble-theme` and has not been browser-verified — see the Part 4
+"NOT VERIFIED" subsection under Outstanding.
 
-After that: mock test → stats → SM-2 → embed the bundle and LAN binding.
+After Part 5: stats → SM-2 → embed the bundle and LAN binding.
 
 **Two things Part 5 (mock test) must resolve**, both recorded in the Part 3 design doc:
 
@@ -289,6 +340,50 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+### Part 4 — NOT VERIFIED
+
+**The full browser walkthrough was not performed.** No Chrome browser was connected to the
+session that did Part 4's gate task, so no agent could drive one. Every visual and
+interaction claim in Part 4 is therefore unobserved:
+
+- The theme toggle's three states, and its no-flash-on-load behaviour.
+- The light-mode `brand` button actually being legible.
+- The sparkle burst firing on a correct answer.
+- The streak badge appearing and fluttering at three in a row.
+- Reduced motion suppressing both the sparkle and the flutter.
+- The deck-card flip under reduced motion swapping faces without rotating.
+- KaTeX rendering legibly in both palettes.
+- The markdown-link-does-not-flip fix actually navigating without flipping the card.
+
+**The one Part 4 visual claim backed by evidence rather than observation is the contrast
+fix** — it is arithmetic from the token values, computed and checked by
+`frontend/scripts/check-contrast.py` in the gate, not something seen on screen.
+
+**375px phone width remains unverified**, now across Parts 1, 2b, 2c, 3 and 4.
+`resize_window` reports success in this environment but the viewport does not change. It
+belongs to build step 8's phone layout pass and needs a human at a browser.
+
+**Part 2c's nine-point walkthrough is still outstanding** and was not performed here
+either — see the list further down.
+
+**Part 4 deferred minor findings**, recorded during execution:
+
+- `button.tsx`'s pre-existing `brand` comment still says the variant takes "the orchid band
+  colour from the deck card", which is no longer true now that it uses `--brand`.
+- `index.html`'s `catch (error)` binds an unused variable (outside the TS project, so no
+  linter sees it).
+- `SessionSummary.tsx`'s accuracy ternary was reflowed from three lines to one during
+  extraction; rendered output identical.
+- Mixed radius on the runner: newer surfaces are `rounded-xl` while `AnswerVerdict.tsx` and
+  `ChoiceList.tsx` remain `rounded-lg`. Reviewed and judged defensible (smaller nested
+  elements taking a smaller radius is conventional), deliberately deferred.
+- `CardEditorPage.tsx`'s new surface `div` sits at the same indentation as the ternary
+  containing it, with roughly 130 lines of children not re-indented. JSX unaffected; the
+  file's indentation is now misleading.
+- `promptLabel` in `CardRow.tsx` strips hyphens, so "k-means" becomes "k means". Judged
+  non-blocking because screen readers do not vocalise a mid-word hyphen. Markdown link URLs
+  can also leak into the label.
 
 **Part 3's walkthrough was driven and passed.** Recorded here because it is the first part of
 this project to get one. Verified in a browser on 2026-08-28: the `/study` picker and its live
