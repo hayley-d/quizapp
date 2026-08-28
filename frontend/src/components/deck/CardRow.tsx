@@ -10,23 +10,31 @@ import {
   Pencil,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { KIND_LABEL, type Card, type CardSummary } from '@/lib/api'
+import { KIND_LABEL, type Card, type CardStats, type CardSummary } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { CardBack } from '@/components/deck/CardBack'
+import { CardStatBadge } from '@/components/deck/CardStatBadge'
 import { useFlip } from '@/components/deck/useFlip'
 import { cn } from '@/lib/utils'
 
 type CardRowProps = {
   card: CardSummary
+  cardStats: CardStats | null | undefined
   loadCard: (id: number, signal: AbortSignal) => Promise<Card>
   onEdit: () => void
   onArchiveToggle: () => void
 }
 
-export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: CardRowProps) {
+export function CardRow({
+  card,
+  cardStats,
+  loadCard,
+  onEdit,
+  onArchiveToggle,
+}: CardRowProps) {
   const [fullCard, setFullCard] = useState<Card | null>(null)
   const [loading, setLoading] = useState(false)
   const [revealed, setRevealed] = useState(false)
@@ -118,6 +126,9 @@ export function CardRow({ card, loadCard, onEdit, onArchiveToggle }: CardRowProp
           <div className="flex items-center gap-2">
             <Badge>{KIND_LABEL[card.kind]}</Badge>
             {card.archived && <Badge variant="secondary">Archived</Badge>}
+            {!card.archived && cardStats !== undefined && (
+              <CardStatBadge stats={cardStats} />
+            )}
 
             <Button
               variant="brand"

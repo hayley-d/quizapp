@@ -67,6 +67,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/decks", get(list).post(create))
         .route("/decks/{id}", get(get_one).patch(patch))
+        .route("/decks/{id}/stats", get(stats))
 }
 
 async fn get_one(
@@ -74,6 +75,14 @@ async fn get_one(
     Path(id): Path<i64>,
 ) -> AppResult<Json<DeckResponse>> {
     Ok(Json(fetch_one(&state.pool, id).await?))
+}
+
+async fn stats(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<crate::stats::DeckStatsResponse>> {
+    fetch_one(&state.pool, id).await?;
+    Ok(Json(crate::stats::deck_stats(&state.pool, id).await?))
 }
 
 async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckResponse> {

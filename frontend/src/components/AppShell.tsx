@@ -4,7 +4,6 @@ import { Toaster } from '@/components/ui/sonner'
 
 const navigationLinks = [
   { to: '/decks', label: 'Decks' },
-  { to: '/stats', label: 'Stats' },
 ]
 
 export function AppShell() {

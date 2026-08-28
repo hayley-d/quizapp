@@ -268,6 +268,27 @@ async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedIm
   return (await response.json()) as UploadedImage
 }
 
+export type DeckStatsSummary = {
+  card_count: number
+  unseen_count: number
+  mock_accuracy: number | null
+  mock_review_count: number
+  practice_accuracy: number | null
+  practice_review_count: number
+  last_answered_at: string | null
+}
+
+export type CardStats = {
+  card_id: number
+  attempt_count: number
+  miss_rate: number
+}
+
+export type DeckStats = {
+  summary: DeckStatsSummary
+  cards: CardStats[]
+}
+
 export const api = {
   listModules: () => request<Module[]>('GET', '/modules'),
   createModule: (name: string) => request<Module>('POST', '/modules', { name }),
@@ -279,6 +300,8 @@ export const api = {
     request<Deck>('PATCH', `/decks/${id}`, patch),
   getDeck: (id: number, signal?: AbortSignal) =>
     request<Deck>('GET', `/decks/${id}`, undefined, signal),
+  getDeckStats: (id: number, signal?: AbortSignal) =>
+    request<DeckStats>('GET', `/decks/${id}/stats`, undefined, signal),
   listCards: (query: CardQuery = {}, signal?: AbortSignal) =>
     request<CardSummary[]>('GET', `/cards${cardQueryString(query)}`, undefined, signal),
   getCard: (id: number, signal?: AbortSignal) =>

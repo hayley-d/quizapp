@@ -18,10 +18,18 @@ import {
 } from '@dnd-kit/sortable'
 import { toast } from 'sonner'
 import type { LucideIcon } from 'lucide-react'
-import { api, ApiError, type CardSummary, type Deck, type SessionMode } from '@/lib/api'
+import {
+  api,
+  ApiError,
+  type CardSummary,
+  type Deck,
+  type DeckStats,
+  type SessionMode,
+} from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CardRow } from '@/components/deck/CardRow'
+import { DeckStatsStrip } from '@/components/deck/DeckStatsStrip'
 
 type TestTypeOption = {
   mode: SessionMode
@@ -72,6 +80,7 @@ export function DeckPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [startingMode, setStartingMode] = useState<SessionMode | null>(null)
+  const [deckStats, setDeckStats] = useState<DeckStats | null>(null)
 
   const loadDeck = useCallback(
     async (signal: AbortSignal) => {
@@ -90,6 +99,19 @@ export function DeckPage() {
 
   const inFlight = useRef<AbortController | null>(null)
   const deckInFlight = useRef<AbortController | null>(null)
+
+  const loadDeckStats = useCallback(
+    async (signal: AbortSignal) => {
+      if (deckId === null) return
+      try {
+        setDeckStats(await api.getDeckStats(deckId, signal))
+      } catch (error) {
+        if ((error as Error)?.name === 'AbortError') return
+        setDeckStats(null)
+      }
+    },
+    [deckId],
+  )
 
   const loadCards = useCallback(async () => {
     if (deckId === null) return
@@ -123,10 +145,12 @@ export function DeckPage() {
     }
     setNotFound(false)
     setDeck(null)
+    setDeckStats(null)
     const controller = new AbortController()
     void loadDeck(controller.signal)
+    void loadDeckStats(controller.signal)
     return () => controller.abort()
-  }, [deckId, loadDeck])
+  }, [deckId, loadDeck, loadDeckStats])
 
   useEffect(() => { void loadCards() }, [loadCards])
 
@@ -218,6 +242,11 @@ export function DeckPage() {
       })
   }
 
+  const statsByCardId =
+    deckStats === null
+      ? null
+      : new Map(deckStats.cards.map((cardStats) => [cardStats.card_id, cardStats]))
+
   if (notFound) {
     return (
       <div className="space-y-2">
@@ -298,6 +327,8 @@ export function DeckPage() {
           ))}
         </div>
 
+        {deckStats !== null && <DeckStatsStrip summary={deckStats.summary} />}
+
         {cards.length === 0 && !loading && (
           <div className="space-y-2">
             <p className="text-muted-foreground">No cards yet.</p>
@@ -326,6 +357,11 @@ export function DeckPage() {
                 <CardRow
                   key={card.id}
                   card={card}
+                  cardStats={
+                    statsByCardId === null
+                      ? undefined
+                      : (statsByCardId.get(card.id) ?? null)
+                  }
                   loadCard={api.getCard}
                   onEdit={() => navigate(`/cards/${card.id}/edit`)}
                   onArchiveToggle={() =>
