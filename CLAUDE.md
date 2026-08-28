@@ -80,6 +80,14 @@ If a type is genuinely hard to express, that is a signal to name the shape in
 This applies to `frontend/src/`, but not to `frontend/src/components/ui/`, which is
 shadcn-generated and treated as vendored third-party code (see Accepted short forms).
 
+## 4. Never co-author commits
+
+Do not add `Co-Authored-By:` trailers to commit messages. No co-author lines for
+Claude, for any agent, or for any tool. This applies to every commit in this
+repository, including those made by subagents.
+
+Commit messages end with their body. Nothing is appended after it.
+
 ## Accepted short forms
 
 These are settled and must not be "fixed" by a later pass:
