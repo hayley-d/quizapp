@@ -5,8 +5,8 @@ Read this first if you are picking up this project without the conversation that
 **Last updated:** 2026-08-28, on `feat/part7-sm2` at `8d995a2`.
 **Part 7 (SM-2) is implemented and reviewed, but not yet merged.** Tasks 1-8 of the plan are
 complete; the branch has not been merged to `main`, so `docs/PART-7-HANDOVER.md` — a temporary
-mid-execution handover, superseded by this document — has not yet been deleted. Part 7 merged
-on a green automated gate (below) and an **undriven** browser walkthrough — the Chrome
+mid-execution handover, superseded by this document — has not yet been deleted. Part 7 reached
+a green automated gate (below) with an **undriven** browser walkthrough — the Chrome
 extension is still not connected on this machine, so all nine points of the walkthrough at the
 brief's Step 5 are outstanding. See "Part 7 — verification status" under Outstanding for the
 itemised list.
