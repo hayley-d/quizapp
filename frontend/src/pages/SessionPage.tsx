@@ -273,7 +273,7 @@ export function SessionPage() {
       onKeyDown={handleKeyDown}
       className="max-w-2xl space-y-6 outline-none"
     >
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
         <p className="text-sm text-muted-foreground">
           {answeredCount} answered · {correctCount} correct
           {answeredCount > 0 && ` · ${Math.round((correctCount / answeredCount) * 100)}%`}
@@ -288,7 +288,7 @@ export function SessionPage() {
         </Button>
       </header>
 
-      <div className="space-y-4">
+      <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
         <Markdown className="text-lg">{card.prompt_md}</Markdown>
         {card.image_path && <CardImage path={card.image_path} altText="Card image" />}
       </div>
@@ -316,7 +316,7 @@ export function SessionPage() {
       {card.kind === 'flashcard' && (
         <div className="space-y-4">
           {revealed ? (
-            <Markdown className="rounded-lg bg-muted px-4 py-3">
+            <Markdown className="rounded-xl border bg-card px-4 py-3 shadow-sm">
               {revealed.answer_md ?? ''}
             </Markdown>
           ) : (
@@ -330,6 +330,7 @@ export function SessionPage() {
                 <Button
                   key={option.grade}
                   variant="secondary"
+                  className="min-w-24"
                   onClick={() => submitSelfGrade(option.grade)}
                 >
                   {option.label}

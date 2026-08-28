@@ -137,7 +137,7 @@ export function StudyPage() {
 
       <section className="space-y-3">
         <h2 className="font-display text-lg font-semibold">Mode</h2>
-        <RadioGroup value="practice" className="space-y-2">
+        <RadioGroup value="practice" className="space-y-2 rounded-xl border bg-card p-4 shadow-sm">
           {MODE_OPTIONS.map((option) => (
             <div key={option.value} className="flex items-start gap-3">
               <RadioGroupItem
@@ -178,7 +178,7 @@ export function StudyPage() {
                 <h3 className="text-sm font-semibold text-muted-foreground">
                   {group.moduleName}
                 </h3>
-                <ul className="space-y-2">
+                <ul className="space-y-2 rounded-xl border bg-card p-4 shadow-sm">
                   {group.decks.map((deck) => (
                     <li key={deck.id} className="flex items-start gap-3">
                       <Checkbox
