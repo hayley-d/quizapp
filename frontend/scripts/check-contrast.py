@@ -66,22 +66,47 @@ def oklch_to_srgb(lightness: float, chroma: float, hue_degrees: float) -> tuple[
     return tuple(linear_to_srgb(channel) for channel in (red_linear, green_linear, blue_linear))
 
 
+def hex_to_rgb(hex_colour: str) -> tuple[float, float, float]:
+    hex_colour = hex_colour.lstrip("#")
+    return tuple(int(hex_colour[index:index + 2], 16) for index in (0, 2, 4))
+
+
 WHITE = (255, 255, 255)
 
-LIGHT_TOKENS = {
-    "primary": (0.62, 0.13, 195),
-    "primary-foreground": (0.99, 0.01, 200),
-    "secondary": (0.94, 0.035, 290),
-    "secondary-foreground": (0.30, 0.06, 285),
-    "accent-foreground": (0.99, 0.01, 330),
-    "streak": (0.58, 0.19, 335),
-    "success": (0.80, 0.14, 88),
-    "success-foreground": (0.25, 0.05, 80),
-    "destructive": (0.58, 0.20, 20),
-    "destructive-foreground": (0.99, 0.01, 20),
+LIGHT_TOKENS_OKLCH = {
+    "foreground": (0.29, 0.020, 70),
+    "primary": (0.47, 0.075, 68),
+    "secondary-foreground": (0.32, 0.030, 70),
+    "accent": (0.53, 0.085, 40),
+    "muted-foreground": (0.48, 0.025, 70),
+    "success": (0.72, 0.115, 88),
+    "success-foreground": (0.26, 0.045, 80),
+    "destructive": (0.52, 0.150, 28),
+    "border": (0.84, 0.020, 70),
+    "streak": (0.53, 0.085, 40),
+    "brand": (0.47, 0.075, 68),
+    "deck-card-chip": (0.47, 0.075, 68),
+    "deck-card-foreground": (0.29, 0.020, 70),
 }
 
-DARK_TOKENS = {
+LIGHT_TOKENS_HEX = {
+    "background": "#edede9",
+    "card": "#f5ebe0",
+    "primary-foreground": "#f5ebe0",
+    "secondary": "#e3d5ca",
+    "accent-foreground": "#f5ebe0",
+    "muted": "#e3d5ca",
+    "destructive-foreground": "#f5ebe0",
+    "brand-foreground": "#f5ebe0",
+    "deck-card": "#e3d5ca",
+    "deck-card-header": "#f5ebe0",
+    "deck-card-chip-foreground": "#f5ebe0",
+}
+
+LIGHT_RGB = {name: oklch_to_srgb(*value) for name, value in LIGHT_TOKENS_OKLCH.items()}
+LIGHT_RGB.update({name: hex_to_rgb(value) for name, value in LIGHT_TOKENS_HEX.items()})
+
+DARK_TOKENS_OKLCH = {
     "primary": (0.78, 0.14, 190),
     "primary-foreground": (0.18, 0.04, 270),
     "secondary": (0.34, 0.06, 290),
@@ -94,47 +119,47 @@ DARK_TOKENS = {
     "destructive-foreground": (0.16, 0.04, 20),
 }
 
-BRAND = (158, 84, 170)
+DARK_RGB = {name: oklch_to_srgb(*value) for name, value in DARK_TOKENS_OKLCH.items()}
 
-DECK_CARD_HEADER = (211, 112, 224)
-DECK_CARD_HEADER_ALPHA = 0.7
-DECK_CARD_CHIP = (27, 31, 57)
-DECK_CARD_CHIP_ALPHA = 0.7
+DARK_BRAND = (158, 84, 170)
+DARK_BRAND_FOREGROUND = WHITE
+
+DARK_DECK_CARD_HEADER = (211, 112, 224)
+DARK_DECK_CARD_HEADER_ALPHA = 0.7
+DARK_DECK_CARD_CHIP = (27, 31, 57)
+DARK_DECK_CARD_CHIP_ALPHA = 0.7
+DARK_DECK_CARD_CHIP_FOREGROUND = WHITE
 
 
-def token_rgb(tokens: dict[str, tuple[float, float, float]], name: str) -> tuple[float, float, float]:
-    return oklch_to_srgb(*tokens[name])
-
-
-def deck_card_chip_surface(primary: tuple[float, float, float]) -> tuple[float, float, float]:
-    band = composite(DECK_CARD_HEADER, DECK_CARD_HEADER_ALPHA, primary)
-    return composite(DECK_CARD_CHIP, DECK_CARD_CHIP_ALPHA, band)
+def dark_deck_card_chip_surface(primary: tuple[float, float, float]) -> tuple[float, float, float]:
+    band = composite(DARK_DECK_CARD_HEADER, DARK_DECK_CARD_HEADER_ALPHA, primary)
+    return composite(DARK_DECK_CARD_CHIP, DARK_DECK_CARD_CHIP_ALPHA, band)
 
 
 ENFORCED = [
-    ("brand button", WHITE, BRAND),
-    ("deck card chip, light", WHITE, deck_card_chip_surface(token_rgb(LIGHT_TOKENS, "primary"))),
-    ("deck card chip, dark", WHITE, deck_card_chip_surface(token_rgb(DARK_TOKENS, "primary"))),
-    ("streak badge, light", token_rgb(LIGHT_TOKENS, "accent-foreground"), token_rgb(LIGHT_TOKENS, "streak")),
-    ("streak badge, dark", token_rgb(DARK_TOKENS, "accent-foreground"), token_rgb(DARK_TOKENS, "streak")),
-    ("choice unselected, light", token_rgb(LIGHT_TOKENS, "secondary-foreground"), token_rgb(LIGHT_TOKENS, "secondary")),
-    ("choice unselected, dark", token_rgb(DARK_TOKENS, "secondary-foreground"), token_rgb(DARK_TOKENS, "secondary")),
-    ("verdict success, light", token_rgb(LIGHT_TOKENS, "success-foreground"), token_rgb(LIGHT_TOKENS, "success")),
-    ("verdict success, dark", token_rgb(DARK_TOKENS, "success-foreground"), token_rgb(DARK_TOKENS, "success")),
-    ("verdict destructive, light", token_rgb(LIGHT_TOKENS, "destructive-foreground"), token_rgb(LIGHT_TOKENS, "destructive")),
-    ("verdict destructive, dark", token_rgb(DARK_TOKENS, "destructive-foreground"), token_rgb(DARK_TOKENS, "destructive")),
+    ("brand button, light", LIGHT_RGB["brand-foreground"], LIGHT_RGB["brand"]),
+    ("brand button, dark", DARK_BRAND_FOREGROUND, DARK_BRAND),
+    ("selected choice / active nav, light", LIGHT_RGB["primary-foreground"], LIGHT_RGB["primary"]),
+    ("selected choice / active nav, dark", DARK_RGB["primary-foreground"], DARK_RGB["primary"]),
+    ("deck card title, light", LIGHT_RGB["deck-card-foreground"], LIGHT_RGB["deck-card"]),
+    ("deck card title, dark", DARK_RGB["primary-foreground"], DARK_RGB["primary"]),
+    ("deck card chip, light", LIGHT_RGB["deck-card-chip-foreground"], LIGHT_RGB["deck-card-chip"]),
+    (
+        "deck card chip, dark",
+        DARK_DECK_CARD_CHIP_FOREGROUND,
+        dark_deck_card_chip_surface(DARK_RGB["primary"]),
+    ),
+    ("streak badge, light", LIGHT_RGB["accent-foreground"], LIGHT_RGB["streak"]),
+    ("streak badge, dark", DARK_RGB["accent-foreground"], DARK_RGB["streak"]),
+    ("choice unselected, light", LIGHT_RGB["secondary-foreground"], LIGHT_RGB["secondary"]),
+    ("choice unselected, dark", DARK_RGB["secondary-foreground"], DARK_RGB["secondary"]),
+    ("verdict success, light", LIGHT_RGB["success-foreground"], LIGHT_RGB["success"]),
+    ("verdict success, dark", DARK_RGB["success-foreground"], DARK_RGB["success"]),
+    ("verdict destructive, light", LIGHT_RGB["destructive-foreground"], LIGHT_RGB["destructive"]),
+    ("verdict destructive, dark", DARK_RGB["destructive-foreground"], DARK_RGB["destructive"]),
 ]
 
-RECORDED = [
-    (
-        "selected choice / active nav, light",
-        token_rgb(LIGHT_TOKENS, "primary-foreground"),
-        token_rgb(LIGHT_TOKENS, "primary"),
-        "pre-existing; small text on primary (selected choice, active nav) fails AA. "
-        "Deck card title is 30px = large text, floor 3:1, so it passes there. Fixing "
-        "needs a palette decision affecting every deck card — deferred, see HANDOVER.",
-    ),
-]
+RECORDED: list[tuple[str, tuple[float, float, float], tuple[float, float, float], str]] = []
 
 
 def main() -> int:
@@ -148,13 +173,15 @@ def main() -> int:
             f"{'ok  ' if passed else 'FAIL'} {description:32} "
             f"rgb{rendered!s:<18} {ratio:5.2f}:1"
         )
-    for description, foreground, background, reason in RECORDED:
-        ratio = contrast_ratio(foreground, background)
-        rendered = tuple(round(channel) for channel in background)
-        print(
-            f"KNOWN {description:31} "
-            f"rgb{rendered!s:<18} {ratio:5.2f}:1  {reason}"
-        )
+    if RECORDED:
+        print("\nRECORDED (not enforced):")
+        for description, foreground, background, reason in RECORDED:
+            ratio = contrast_ratio(foreground, background)
+            rendered = tuple(round(channel) for channel in background)
+            print(
+                f"KNOWN {description:31} "
+                f"rgb{rendered!s:<18} {ratio:5.2f}:1  {reason}"
+            )
     if failures:
         print(f"\n{failures} enforced surface(s) below {AA_NORMAL_TEXT}:1", file=sys.stderr)
     return 1 if failures else 0
