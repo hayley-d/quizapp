@@ -248,8 +248,8 @@ export function SessionPage() {
     return (
       <div>
         <h1 className="font-display text-2xl font-bold">Session not found</h1>
-        <Link className="mt-2 inline-block underline" to="/study">
-          Back to study
+        <Link className="mt-2 inline-block underline" to="/decks">
+          Back to decks
         </Link>
       </div>
     )

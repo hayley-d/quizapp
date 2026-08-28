@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, FileText, Plus, Repeat, Zap } from 'lucide-react'
 import {
   closestCenter,
   DndContext,
@@ -17,12 +17,43 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { toast } from 'sonner'
-import { api, type CardSummary, type Deck } from '@/lib/api'
+import type { LucideIcon } from 'lucide-react'
+import { api, ApiError, type CardSummary, type Deck, type SessionMode } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import { CardRow } from '@/components/deck/CardRow'
+
+type TestTypeOption = {
+  mode: SessionMode
+  label: string
+  note: string
+  available: boolean
+  Icon: LucideIcon
+}
+
+const TEST_TYPE_OPTIONS: TestTypeOption[] = [
+  {
+    mode: 'practice',
+    label: 'Practice',
+    note: 'Weighted towards what you keep getting wrong. No end — stop when you like.',
+    available: true,
+    Icon: Zap,
+  },
+  {
+    mode: 'mock',
+    label: 'Mock test',
+    note: 'Arrives in part 5.',
+    available: false,
+    Icon: FileText,
+  },
+  {
+    mode: 'sm2',
+    label: 'Spaced repetition',
+    note: 'Arrives in part 7.',
+    available: false,
+    Icon: Repeat,
+  },
+]
 
 export function DeckPage() {
   const { id } = useParams<{ id: string }>()
@@ -32,9 +63,9 @@ export function DeckPage() {
 
   const [deck, setDeck] = useState<Deck | null>(null)
   const [cards, setCards] = useState<CardSummary[]>([])
-  const [showArchived, setShowArchived] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [startingMode, setStartingMode] = useState<SessionMode | null>(null)
 
   const loadDeck = useCallback(
     async (signal: AbortSignal) => {
@@ -62,7 +93,7 @@ export function DeckPage() {
     setLoading(true)
     try {
       const rows = await api.listCards(
-        { deckId, archived: showArchived ? 'all' : 'false' },
+        { deckId, archived: 'false' },
         controller.signal,
       )
       if (inFlight.current !== controller) return
@@ -76,7 +107,7 @@ export function DeckPage() {
         setLoading(false)
       }
     }
-  }, [deckId, showArchived])
+  }, [deckId])
 
   useEffect(() => {
     if (deckId === null) {
@@ -122,6 +153,23 @@ export function DeckPage() {
       reloadDeck()
     } catch {
       toast.error('Could not unarchive card')
+    }
+  }
+
+  async function startSession(mode: SessionMode) {
+    if (deckId === null) return
+    setStartingMode(mode)
+    try {
+      const session = await api.createSession({ mode, deck_ids: [deckId] })
+      navigate(`/session/${session.id}`)
+    } catch (error: unknown) {
+      if (error instanceof ApiError) {
+        const messages = Object.values(error.byField())
+        toast.error(messages[0] ?? error.message)
+      } else {
+        toast.error('Could not start a session')
+      }
+      setStartingMode(null)
     }
   }
 
@@ -221,53 +269,68 @@ export function DeckPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 rounded-xl border bg-card p-3 shadow-sm">
-        <Switch
-          id="show-archived"
-          checked={showArchived}
-          onCheckedChange={setShowArchived}
-        />
-        <Label htmlFor="show-archived">Show archived</Label>
-      </div>
-
-      {cards.length === 0 && !loading && (
-        <div className="space-y-2">
-          <p className="text-muted-foreground">No cards yet.</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
-          >
-            <Plus className="size-4" />
-            Add card
-          </Button>
+      <div className="space-y-6 pl-11">
+        <div className="grid gap-3 sm:grid-cols-3">
+          {TEST_TYPE_OPTIONS.map((option) => (
+            <Button
+              key={option.mode}
+              variant="secondary"
+              className="h-16 w-full gap-3 rounded-2xl text-base [&_svg:not([class*='size-'])]:size-5"
+              disabled={
+                !option.available || deck.card_count === 0 || startingMode !== null
+              }
+              title={
+                option.available && deck.card_count === 0
+                  ? 'Add a card to this deck first'
+                  : option.note
+              }
+              onClick={() => void startSession(option.mode)}
+            >
+              <option.Icon className={option.available ? 'text-brand' : undefined} />
+              {startingMode === option.mode ? 'Starting…' : option.label}
+            </Button>
+          ))}
         </div>
-      )}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={cards.map((card) => card.id)}
-          strategy={verticalListSortingStrategy}
+        {cards.length === 0 && !loading && (
+          <div className="space-y-2">
+            <p className="text-muted-foreground">No cards yet.</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
+            >
+              <Plus className="size-4" />
+              Add card
+            </Button>
+          </div>
+        )}
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          <ul className="space-y-3">
-            {cards.map((card) => (
-              <CardRow
-                key={card.id}
-                card={card}
-                loadCard={api.getCard}
-                onEdit={() => navigate(`/cards/${card.id}/edit`)}
-                onArchiveToggle={() =>
-                  void (card.archived ? unarchive(card) : archive(card))
-                }
-              />
-            ))}
-          </ul>
-        </SortableContext>
-      </DndContext>
+          <SortableContext
+            items={cards.map((card) => card.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <ul className="-ml-7 space-y-3">
+              {cards.map((card) => (
+                <CardRow
+                  key={card.id}
+                  card={card}
+                  loadCard={api.getCard}
+                  onEdit={() => navigate(`/cards/${card.id}/edit`)}
+                  onArchiveToggle={() =>
+                    void (card.archived ? unarchive(card) : archive(card))
+                  }
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      </div>
     </div>
   )
 }

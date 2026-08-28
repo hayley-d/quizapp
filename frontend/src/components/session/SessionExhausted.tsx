@@ -13,7 +13,7 @@ export function SessionExhausted({ message }: SessionExhaustedProps) {
       <p className="text-muted-foreground">{message}</p>
       <div className="flex gap-3">
         <Button variant="brand" asChild className="h-10 px-6">
-          <Link to="/study">Back to study</Link>
+          <Link to="/decks">Back to decks</Link>
         </Button>
       </div>
     </div>

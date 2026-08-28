@@ -3,7 +3,6 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { Toaster } from '@/components/ui/sonner'
 
 const navigationLinks = [
-  { to: '/study', label: 'Study' },
   { to: '/decks', label: 'Decks' },
   { to: '/stats', label: 'Stats' },
 ]

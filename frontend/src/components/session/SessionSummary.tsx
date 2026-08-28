@@ -47,9 +47,6 @@ export function SessionSummary({ summary }: SessionSummaryProps) {
       )}
       <div className="flex gap-3">
         <Button variant="brand" asChild className="h-10 px-6">
-          <Link to="/study">Study again</Link>
-        </Button>
-        <Button variant="secondary" asChild className="h-10 px-6">
           <Link to="/decks">Back to decks</Link>
         </Button>
       </div>

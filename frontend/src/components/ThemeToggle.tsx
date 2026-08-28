@@ -1,11 +1,20 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import type { ComponentType } from 'react'
+import { Monitor } from 'lucide-react'
 
+import { BibbleIcon } from '@/components/icons/BibbleIcon'
+import { MakkaPakkaIcon } from '@/components/icons/MakkaPakkaIcon'
 import { useTheme, type ThemePreference } from '@/hooks/useTheme'
 import { cn } from '@/lib/utils'
 
-const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }[] = [
-  { value: 'light', label: 'Light', Icon: Sun },
-  { value: 'dark', label: 'Dark', Icon: Moon },
+type ThemeOption = {
+  value: ThemePreference
+  label: string
+  Icon: ComponentType<{ className?: string }>
+}
+
+const THEME_OPTIONS: ThemeOption[] = [
+  { value: 'light', label: 'Makka Pakka (light)', Icon: MakkaPakkaIcon },
+  { value: 'dark', label: 'Bibble (dark)', Icon: BibbleIcon },
   { value: 'system', label: 'System', Icon: Monitor },
 ]
 
