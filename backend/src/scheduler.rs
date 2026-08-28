@@ -12,12 +12,12 @@ pub const QUALITY_INCORRECT: u8 = 2;
 pub struct ScheduleState {
     pub interval_days: f64,
     pub ease: f64,
-    pub reps: i64,
+    pub repetitions: i64,
     pub lapses: i64,
 }
 
 pub fn initial_state() -> ScheduleState {
-    ScheduleState { interval_days: 0.0, ease: INITIAL_EASE, reps: 0, lapses: 0 }
+    ScheduleState { interval_days: 0.0, ease: INITIAL_EASE, repetitions: 0, lapses: 0 }
 }
 
 pub fn quality_for(correct: bool, self_grade: Option<SelfGrade>) -> u8 {
@@ -40,19 +40,19 @@ pub fn apply(state: &ScheduleState, quality: u8) -> ScheduleState {
         return ScheduleState {
             interval_days: FIRST_INTERVAL_DAYS,
             ease: state.ease,
-            reps: 0,
+            repetitions: 0,
             lapses: state.lapses + 1,
         };
     }
 
-    let reps = state.reps + 1;
-    let interval_days = match reps {
+    let repetitions = state.repetitions + 1;
+    let interval_days = match repetitions {
         1 => FIRST_INTERVAL_DAYS,
         2 => SECOND_INTERVAL_DAYS,
         _ => (state.interval_days * adjusted_ease).round(),
     };
 
-    ScheduleState { interval_days, ease: adjusted_ease, reps, lapses: state.lapses }
+    ScheduleState { interval_days, ease: adjusted_ease, repetitions, lapses: state.lapses }
 }
 
 pub fn replay(qualities: &[u8]) -> ScheduleState {
@@ -75,36 +75,36 @@ mod tests {
 
     #[test]
     fn a_mock_flashcard_without_a_self_grade_maps_through_correct() {
-        assert_eq!(quality_for(true, None), QUALITY_CORRECT);
-        assert_eq!(quality_for(false, None), QUALITY_INCORRECT);
+        assert_eq!(quality_for(true, None), 4);
+        assert_eq!(quality_for(false, None), 2);
     }
 
     #[test]
     fn the_first_two_intervals_are_one_day_and_six_days() {
         let first = apply(&initial_state(), 4);
-        assert_eq!(first.reps, 1);
-        assert_eq!(first.interval_days, FIRST_INTERVAL_DAYS);
+        assert_eq!(first.repetitions, 1);
+        assert_eq!(first.interval_days, 1.0);
 
         let second = apply(&first, 4);
-        assert_eq!(second.reps, 2);
-        assert_eq!(second.interval_days, SECOND_INTERVAL_DAYS);
+        assert_eq!(second.repetitions, 2);
+        assert_eq!(second.interval_days, 6.0);
     }
 
     #[test]
     fn the_third_interval_multiplies_by_the_ease_factor() {
         let state = replay(&[4, 4]);
         let third = apply(&state, 4);
-        assert_eq!(third.reps, 3);
-        assert_eq!(third.interval_days, (SECOND_INTERVAL_DAYS * third.ease).round());
-        assert!(third.interval_days > SECOND_INTERVAL_DAYS);
+        assert_eq!(third.repetitions, 3);
+        assert_eq!(third.interval_days, 15.0);
+        assert!(third.interval_days > 6.0);
     }
 
     #[test]
     fn a_lapse_resets_the_repetitions_and_counts_itself() {
         let state = replay(&[4, 4, 4]);
         let lapsed = apply(&state, 1);
-        assert_eq!(lapsed.reps, 0);
-        assert_eq!(lapsed.interval_days, FIRST_INTERVAL_DAYS);
+        assert_eq!(lapsed.repetitions, 0);
+        assert_eq!(lapsed.interval_days, 1.0);
         assert_eq!(lapsed.lapses, 1);
     }
 
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn a_hard_answer_lowers_the_ease_without_lapsing() {
         let state = apply(&initial_state(), 3);
-        assert_eq!(state.reps, 1);
+        assert_eq!(state.repetitions, 1);
         assert_eq!(state.lapses, 0);
         assert!(state.ease < INITIAL_EASE, "quality 3 must reduce the ease: {}", state.ease);
     }
@@ -139,11 +139,11 @@ mod tests {
             state = apply(&state, 3);
         }
         assert!(
-            state.ease >= MINIMUM_EASE,
+            state.ease >= 1.3,
             "ease fell through the floor: {}",
             state.ease,
         );
-        assert_eq!(state.ease, MINIMUM_EASE);
+        assert_eq!(state.ease, 1.3);
     }
 
     #[test]
