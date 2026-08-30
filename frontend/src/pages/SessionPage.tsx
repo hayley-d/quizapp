@@ -333,7 +333,7 @@ export function SessionPage() {
             </Button>
           )}
           {revealed && !graded && (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {SELF_GRADES.map((option, optionIndex) => (
                 <Button
                   key={option.grade}

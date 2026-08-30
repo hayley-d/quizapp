@@ -27,7 +27,9 @@ export function AppShell() {
               {navigationLink.label}
             </NavLink>
           ))}
-          <ThemeToggle />
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
