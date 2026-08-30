@@ -27,14 +27,56 @@ Self-hosted quiz app for exam revision. Design: `docs/mitis/specs/2026-08-26-qui
 Migrations run automatically at startup, so `cargo run` on a fresh machine
 creates and migrates `data/quizapp.db` by itself.
 
+This is the *development* loop, with Vite serving the UI and hot-reloading it.
+For actual studying, use the single binary below.
+
+## Deploying: one binary, reachable from a phone
+
+The React bundle is compiled into the Rust binary, so studying is one process
+with no separate frontend server:
+
+    SQLX_OFFLINE=true cargo build --release
+    QUIZAPP_BIND=0.0.0.0:3000 ./target/release/quizapp
+
+`cargo build` runs `pnpm build` for you via `backend/build.rs`, so the embedded
+bundle can never be out of date with the source.
+
+The startup line prints the address a phone should open — when bound to
+`0.0.0.0` it resolves and logs the machine's actual LAN address rather than the
+unopenable `http://0.0.0.0:3000`:
+
+    INFO quizapp: listening on http://192.168.2.161:3000
+
+Both the laptop and the phone have to be on the same wifi. The app has no
+authentication, which is why `QUIZAPP_BIND` still defaults to `127.0.0.1:3000`
+— binding every interface is a deliberate per-run choice, not the default.
+
+Everything is served from that one origin: the UI at `/`, the API under `/api`,
+and uploaded images under `/images`. Client-side routes such as `/decks/3`
+survive a hard refresh. No internet is required — the fonts are bundled.
+
+### Building without node
+
+`backend/build.rs` shells out to `pnpm`. If pnpm is not on `PATH` it says so and
+names the two ways round it: point `QUIZAPP_PNPM` at an absolute path, or set
+`QUIZAPP_SKIP_FRONTEND_BUILD=1` to reuse an already-built `frontend/dist`.
+
+The build script only reruns when something under `frontend/` that `vite build`
+actually reads has changed, so backend-only edits do not pay for a Vite build.
+One caveat inherited from how cargo watches directories: it compares the newest
+mtime in the tree, so *deleting* a frontend file does not on its own trigger a
+rebuild. `touch frontend/index.html` if you need to force one.
+
 ## Routes
 
 Frontend (React Router, client-side):
 
     /decks                     deck list: search, module filter, sort
-    /decks/:id                 deck detail: card list, kind badges, archive toggle
+    /decks/:id                 deck detail: stats, card list, and where a session starts
     /cards/new?deck_id=        new card, all three kinds
     /cards/:id/edit            edit an existing card
+    /session/:id               the practice and spaced-repetition runner
+    /mock/:id                  the mock test runner
 
 Cards API, added in Part 2a:
 
@@ -57,6 +99,13 @@ Full API and the data model are in `docs/mitis/specs/2026-08-26-quiz-study-app-d
 | `QUIZAPP_DATA_DIR`  | `data`                               |
 | `RUST_LOG`          | `info,sqlx=warn`                     |
 
+Build-time only, read by `backend/build.rs`:
+
+| Var                            | Effect                                        |
+| ------------------------------ | --------------------------------------------- |
+| `QUIZAPP_PNPM`                 | path to the pnpm binary (default: `pnpm`)     |
+| `QUIZAPP_SKIP_FRONTEND_BUILD`  | reuse the existing `frontend/dist`            |
+
 ## After ANY change to SQL or migrations
 
 sqlx checks queries at compile time against a committed offline cache:
@@ -71,8 +120,15 @@ cache is stale. Re-run `cargo sqlx prepare --workspace`.
 ## Tests
 
     cargo test                        # unit + API integration (temp SQLite per test)
-    cargo clippy -- -D warnings
-    cd frontend && pnpm exec tsc --noEmit && pnpm build
+    cargo clippy --all-targets -- -D warnings
+    SQLX_OFFLINE=true cargo build
+    python3 frontend/scripts/check-contrast.py
+    cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint
+
+`--all-targets` matters: without it clippy does not build the test targets.
+`tsc -b`, not bare `tsc`: `frontend/tsconfig.json` is a solution file with
+`"files": []`, so `tsc --noEmit` reads it, finds nothing, and exits 0 whatever
+the code says.
 
 Frontend has no test framework by design (see the spec's non-goals).
 
@@ -89,7 +145,7 @@ Leave user/password empty; let DBeaver download the SQLite JDBC driver when it o
 Two things that will bite you if you don't know them:
 
 - **Foreign keys are OFF in any client that doesn't ask for them.** `PRAGMA foreign_keys`
-  is per-connection, and the app turns it on for its own pool (`backend/src/db.rs`).
+  is per-connection, and the app turns it on for its own pool (`backend/src/database.rs`).
   DBeaver does not. So a delete you run in DBeaver can orphan rows that the app itself
   would have refused. Run `PRAGMA foreign_keys = ON;` in the DBeaver SQL editor first if
   you intend to delete anything.
