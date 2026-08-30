@@ -26,8 +26,8 @@ export function DeckStatsStrip({ summary }: { summary: DeckStatsSummary }) {
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
       {parts.map((part, partIndex) => (
         <span key={part}>
-          {partIndex > 0 && <span className="mr-2 opacity-60">·</span>}
           {part}
+          {partIndex < parts.length - 1 && <span className="ml-2 opacity-60">·</span>}
         </span>
       ))}
     </p>

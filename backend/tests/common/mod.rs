@@ -66,6 +66,23 @@ impl TestApp {
         self.request("PATCH", uri, Some(body)).await
     }
 
+    pub async fn get_response(&self, uri: &str) -> axum::response::Response {
+        let request = Request::builder()
+            .method("GET")
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap();
+        self.router.clone().oneshot(request).await.unwrap()
+    }
+
+    pub async fn header_value(&self, uri: &str, name: &str) -> Option<String> {
+        let response = self.get_response(uri).await;
+        response
+            .headers()
+            .get(name)
+            .map(|value| value.to_str().unwrap().to_string())
+    }
+
     pub async fn get_raw(&self, uri: &str) -> (StatusCode, Vec<u8>) {
         let request = Request::builder()
             .method("GET")

@@ -2,7 +2,19 @@
 
 Read this first if you are picking up this project without the conversation that built it.
 
-**Last updated:** 2026-08-28, on `main`, at the merge of `feat/part7-sm2` (`85368ab`).
+**Last updated:** 2026-08-30, on `feat/part8-embed-lan`.
+**Build step 8 is implemented and gated green, on a branch, unmerged.** The app is now a
+single binary: the React bundle is compiled in, it binds to the LAN, and it needs no
+internet. **This is the last step in the spec's build sequencing — after it, the build
+plan is finished.** See "Part 8" under Where things stand, and "Part 8 — verification
+status" under Outstanding for what is proven and what is not.
+
+**The standing browser gap changed hands.** Hayley has taken the Part 5, 6 and 7
+walkthroughs on herself and will report defects as she finds them; agents on this machine
+still cannot drive a browser (the Chrome extension is not connected — checked again on
+2026-08-30). Step 8 was built alongside that rather than waiting for it, which was her
+explicit call.
+
 **Part 7 (SM-2) is done and merged.** Tasks 1-8 of the plan are complete and the branch has
 landed on `main`; `docs/PART-7-HANDOVER.md` — a temporary mid-execution handover, superseded
 by this document — was deleted as part of that merge. Part 7 reached
@@ -51,9 +63,103 @@ document is the record of what the app is meant to be, and it is kept current.
 ## Where things stand
 
 Parts 1, 2a and 2b of the spec's build sequencing are **done**, and so is the deck card list
-redesign that followed them ("Part 2c" below). Parts 3, 4, 5, 6 and 7 are merged to `main`.
+redesign that followed them ("Part 2c" below). Parts 3, 4, 5, 6 and 7 are merged to `main`;
+**Part 8 is complete on `feat/part8-embed-lan` and unmerged**, and is the last step there is.
 Part 7 (SM-2) landed from `feat/part7-sm2` at `85368ab`, reviewed and gated green, on an
 **undriven** browser walkthrough. Concretely, working today:
+
+### Part 8: one binary, LAN, no internet
+
+**The app is now a single process.** `cargo build` compiles the React bundle into the Rust
+binary; `QUIZAPP_BIND=0.0.0.0:3000 ./target/release/quizapp` serves the UI, the API and the
+uploaded images from one origin, reachable from a phone on the same wifi, with no Vite and
+no internet. This closes the deployment model the spec has described since Part 1.
+
+- **`backend/build.rs` runs `pnpm build`.** Chosen over a cargo feature flag and over a
+  committed `dist` placeholder, so there is **one build shape** and the embedded bundle can
+  never be stale relative to the source. The cost is real and was accepted deliberately: a
+  TypeScript error now fails `cargo build`, and a cold `cargo test` needs node and pnpm.
+  `rerun-if-changed` keeps that off the common path — a backend-only edit does not pay for a
+  Vite build, which was measured rather than assumed.
+- **The embed reads `OUT_DIR`, not `frontend/dist` — and that indirection is the fix for a
+  real failure, not architecture for its own sake.** rust-embed resolves `#[folder]` at
+  macro-expansion time. Pointed straight at `frontend/dist`, deleting that directory without
+  touching a watched input leaves cargo's fingerprint fresh, so the build script never reruns
+  to rebuild it, and the derive fails with three screens of unrelated trait-resolution errors
+  naming `icu_provider` and `SliceIndex`. **This was hit during implementation, not
+  theorised.** The build script now mirrors `dist` into `OUT_DIR`, which cargo preserves
+  between runs, so the same deletion is survivable. Do not "simplify" the folder back.
+- **`.fallback()` must stay above `.layer()` in `lib.rs`.** Axum applies a layer only to what
+  was registered before it, so moving the layer up silently leaves every frontend response
+  untraced and uncompressed — no error, no test failure, just missing behaviour. There is a
+  comment on it in place because naming cannot carry that.
+- **`/api` got its own 404 envelope first, and that ordering was the point.** Axum propagates
+  an outer fallback into `nest`ed routers, so without `api_router().fallback(...)` every
+  typo'd API path would answer with `index.html` and a **200**, and the client would try to
+  parse HTML as JSON. `routes/mod.rs` now ends in a fallback returning
+  `AppError::NotFound("endpoint")`. Pinned by
+  `the_frontend_fallback_does_not_swallow_unknown_api_paths` in `backend/tests/frontend.rs`,
+  which exists specifically as the regression test for that interaction.
+- **A miss under `/assets/` is a 404, not the index.** Serving `index.html` for a missing
+  bundle produces "Expected a JavaScript module but the server responded with a MIME type of
+  text/html", which hides the actual cause. Same reasoning gave `ServeDir` a
+  `not_found_service`, so a broken thumbnail is a JSON 404 rather than a page of HTML.
+- **Fonts are vendored through npm, not hand-downloaded.** `@fontsource/quicksand` and
+  `@fontsource/inter`, importing exactly the six `latin-<weight>.css` faces the old Google
+  Fonts `@import` declared (Quicksand 500/600/700, Inter 400/500/600). This follows the
+  precedent already set for KaTeX — fonts come from the package manager, never a CDN — and
+  keeps them under the lockfile instead of committing binaries nobody can diff. **The
+  `@import url('https://fonts.googleapis.com/...')` at `globals.css:2` is gone**, and
+  `grep` over `dist/` finds no `fonts.googleapis` or `fonts.gstatic` reference at all.
+- **woff2 only, by rewrite rather than by pruning.** KaTeX and Fontsource both ship woff and
+  truetype alongside woff2; that was **876 KB of the 2.1 MB bundle** for formats no browser
+  this app targets will ever request. A Vite plugin (`woff2OnlyFontFaces`) strips the trailing
+  `src` entries at transform time, so a KaTeX upgrade cannot silently reintroduce them —
+  post-processing `dist` would have been invisible and would have broken quietly. The leading
+  comma in its pattern is load-bearing: a face whose *only* `src` is woff keeps it, so the
+  rewrite can never leave a face with no source at all. `dist` is now 1.4 MB.
+  **Correct framing, since the first one was wrong:** this is a binary-size win, not a
+  load-time one. Font files are fetched per-glyph-family on demand, so a deck with no maths
+  never downloaded the KaTeX fonts anyway.
+- **The chunk split needed the Rolldown API, and this is the trap most worth recording.**
+  Vite 8 here depends on `rolldown`, not Rollup — there is no Rollup in the tree. **The object
+  form of `manualChunks` that every tutorial shows is not supported and is silently ignored**,
+  which would have produced one big chunk, a green build, and a note in this document claiming
+  a split that never happened. The live API is `build.rolldownOptions.output.codeSplitting`.
+  Three groups: `react` at **priority 20**, `markdown` and `dnd` at 10. The priority is not
+  cosmetic — `includeDependenciesRecursively` defaults to true, so without capturing React
+  first the markdown group swallows it as a dependency of `react-markdown` and every other
+  chunk ends up depending on markdown just to reach React. **Leave that option at its
+  default**; turning it off is what causes the circular-chunk blank page.
+- **Vite's 500 kB warning is gone because it is satisfied, not because it was raised.**
+  Largest chunk is `markdown` at 389.69 kB (117.74 kB gzipped), against one 906.95 kB chunk
+  before. KaTeX's CSS also split out into its own `markdown-*.css`, which was *not* expected —
+  the prediction was that `cssCodeSplit` only separates async chunks. It did anyway.
+- **Compression is on, and the exclusion matters.** `CompressionLayer` at
+  `CompressionLevel::Fastest`, with woff2 and woff excluded — they are already compressed
+  containers, so recompressing spends CPU for nothing. Verified against the running binary
+  rather than reasoned about: the JS asset comes back `content-encoding: gzip` at 111 KB
+  against 281 KB raw, `vary: accept-encoding` is emitted without needing an extra layer, and
+  a woff2 comes back with **no** `content-encoding` at all.
+- **Cache headers are split three ways**, because the filenames differ in kind: `/assets/*`
+  is content-hashed and gets `immutable` for a year; `index.html` gets `no-cache`, since it
+  *names* those hashed bundles and a stale copy is a white screen rather than a stale pixel;
+  everything else gets `must-revalidate`.
+- **LAN binding needed no configuration change** — `QUIZAPP_BIND` already existed and is
+  passed straight to `TcpListener::bind`. What it needed was a startup log that prints an
+  address a human can type. `configuration::reachable_url` resolves the machine's actual LAN
+  address by connecting a UDP socket (which sends no packet and needs no internet, only a
+  route) and logs `http://192.168.101.116:3000` instead of the unopenable
+  `http://0.0.0.0:3000`. Verified: the logged address matched `ipconfig getifaddr en0` and
+  served the app.
+- **The default bind is still `127.0.0.1:3000`, deliberately.** The app has no
+  authentication, so defaulting to every interface would expose it on every network the
+  laptop ever joins. Binding wide is a per-run choice. **This is a one-line change in
+  `configuration.rs` if that trade is not wanted** — it was a stated assumption, not a
+  finding.
+- **The frontend needed no API changes at all.** `api.ts` already fetched relative `/api`
+  paths and the images route already returned relative `images/<name>`, so same-origin
+  serving worked with nothing rewritten and no CORS anywhere.
 
 ### Part 7: SM-2 spaced repetition
 
@@ -547,32 +653,33 @@ other — do not assume a value carries over.
 
 ## Next up
 
-**Merge `feat/part7-sm2`, then drive all three undriven walkthroughs in one sitting.** Part
-7's code is done, reviewed and gated green, but the branch is not merged and none of Parts 5,
-6 or 7 has ever been touched by a real browser on this machine. All three walkthroughs want
-overlapping screens (the deck page, a session, the results/summary screen), so the
-highest-value next action is not code: with DevTools open, sit one mock test, one practice
-run and one SM-2 session on a real COS781 deck, and work through:
+**Merge `feat/part8-embed-lan`, and check the phone.** Step 8's code is complete and the
+automated gate is green, but four of its changes are layout claims that no one has looked
+at — see "Part 8 — verification status" under Outstanding. The check is short and needs a
+phone rather than a walkthrough script:
 
-- Part 5's twenty-one-point walkthrough (`mitis/plans/2026-08-28-part5-mock-test.md`), the
-  answer-leak checks (points 3, 7, 9, 21) above all — only the Network tab proves the client
-  never asks for `/results` mid-run.
-- Part 6's eight-point walkthrough
-  ([`mitis/plans/2026-08-28-part6-stats.md`](mitis/plans/2026-08-28-part6-stats.md)) — the
-  strip and the badges, before and after a session.
-- Part 7's nine-point walkthrough (the task-8 brief's Step 5) — see "Part 7 — verification
-  status" under Outstanding for the itemised list, including the due-date refusal, the
-  lapse-leaves-ease-unchanged check in DBeaver, and the strip's new third figure.
+    SQLX_OFFLINE=true cargo build --release
+    QUIZAPP_BIND=0.0.0.0:3000 ./target/release/quizapp
 
-The gate cannot see a leak, and it cannot see a layout, only a type error.
+Open the LAN URL it logs, on a phone, on the same wifi, and look at four things: the deck
+page's left margin, the stats strip's five parts wrapping, the four self-grade buttons
+under a revealed flashcard, and the header's theme toggle. Each is named with its file and
+the reasoning behind it under Outstanding.
 
-**Part 6's one open question is now answered**, in its design spec §10 in place: the strip
-grows a third figure for SM-2, on the same sampling-differs argument that split mock from
-practice.
+**Still outstanding, and now Hayley's:** the Part 5 (21 points), Part 6 (8 points) and
+Part 7 (9 points) walkthroughs, plus Part 2c's nine. The gate cannot see a leak and it
+cannot see a layout, only a type error. Part 5's answer-leak checks (points 3, 7, 9, 21)
+remain the sharpest of these — only the Network tab proves the client never *asks* for
+`/results` mid-run.
 
-**After the merge and the walkthroughs: build step 8** — embed the bundle and LAN binding,
-which is also the phone layout pass and the first time 375px gets rendered anywhere in this
-project, including the stats strip's new third figure.
+**After that, the build sequencing is complete.** There is no step 9. What is left is
+whatever COS781 revision actually turns up: the deferred minors listed under
+Known-and-accepted minors, a module-wide session picker if one deck per lecture proves
+annoying (the API already supports it; no button starts one), and real cards.
+
+**Part 6's one open question was answered by Part 7**, in its design spec §10 in place: the
+strip grows a third figure for SM-2, on the same sampling-differs argument that split mock
+from practice.
 
 ### The three things Part 5 had to resolve — and how it did
 
@@ -646,6 +753,13 @@ SQLX_OFFLINE=true cargo build
 python3 frontend/scripts/check-contrast.py
 cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint
 ```
+
+**Since Part 8, `cargo test` and `cargo build` run `pnpm build` first**, via
+`backend/build.rs`. Two consequences worth knowing before they surprise you: a TypeScript
+error now fails the *Rust* build, and a cold `cargo test` needs node and pnpm on `PATH`. The
+build script only reruns when a `vite build` input under `frontend/` changed, so backend-only
+work does not pay for it. `QUIZAPP_SKIP_FRONTEND_BUILD=1` opts out when you know `dist` is
+current; `QUIZAPP_PNPM` points at pnpm if it is not on `PATH`.
 
 **`pnpm exec oxlint` and the contrast script joined the gate in Part 4.** The lint run is
 what makes CLAUDE.md rule 3 (never use `any`) mechanically enforced rather than prose —
@@ -792,8 +906,9 @@ behaviour, add a prop — a second renderer is the exact outcome the 2a/2b split
 prevent.
 
 **KaTeX's fonts come from the npm package**, imported as `katex/dist/katex.min.css`. Do not
-switch to a CDN. The Google Fonts `@import` in `globals.css` is already a known defect
-deferred to build step 8; a second network dependency makes it worse.
+switch to a CDN. Part 8 vendored Quicksand and Inter the same way, so the app now has **no
+network font dependency at all** — that is a property to preserve, not a coincidence. A phone
+studying on a LAN with no internet is the case it exists for.
 
 **Tailwind's preflight strips list markers and heading sizes.** The `.markdown` block at the
 end of `globals.css` restores them. Delete it and every bullet in every card silently becomes
@@ -811,6 +926,88 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+### Part 8 — verification status
+
+**The automated gate is green, the running binary was exercised end to end, and the four
+phone-layout changes have not been looked at by anybody.** Those are three different levels
+of evidence and they are kept separate below on purpose.
+
+Verified by running it on `feat/part8-embed-lan` on 2026-08-30:
+
+- `cargo test` — **381 passed, 0 failed** (364 before Part 8; +17: 8 in the new
+  `backend/tests/frontend.rs`, 2 in `tests/health.rs`, 4 unit tests in `assets.rs`, 3 in
+  `configuration.rs`)
+- `cargo clippy --all-targets -- -D warnings` — clean
+- `SQLX_OFFLINE=true cargo build` — clean
+- `python3 frontend/scripts/check-contrast.py` — **16 rows, all `ok`, RECORDED tier empty**,
+  the same 16 as before; Part 8 introduced no colour pair
+- `pnpm exec tsc -b --noEmit` — clean
+- `pnpm build` — **no chunk-size warning**, largest chunk `markdown` at 389.69 kB
+- `pnpm exec oxlint` — exit 0, **12 warnings, the same 12 pre-existing ones**, none
+  `no-explicit-any`, none new
+
+Verified against the actual release binary, with no Vite running:
+
+- `/`, `/decks`, `/decks/3`, `/session/1` all return **200 `text/html`** — client-side routes
+  survive a hard refresh
+- `/api/nope` returns **404 `application/json`** with the envelope; `/api/decks` returns 200
+  JSON. Creating a deck and reading `/api/decks/1/stats` both worked through the binary
+- a hashed JS asset: `text/javascript; charset=utf-8`, `immutable`, **gzip 111 KB vs 281 KB
+  raw**; a woff2: `font/woff2`, `immutable`, **no `content-encoding`**
+- bound to `0.0.0.0`, the startup log printed `http://192.168.101.116:3112`, which matched
+  `ipconfig getifaddr en0` and served the app on that address
+- **the clean-state build ordering**, which is the premise the whole build.rs approach rests
+  on: `rm -rf frontend/dist && cargo clean -p quizapp && cargo build` succeeds, because cargo
+  runs a crate's build script before compiling that crate
+- **build-script rerun granularity**, measured by `dist/index.html` mtime rather than assumed:
+  a backend-only edit does not rebuild the frontend; an edit to `frontend/src/main.tsx` does
+- **both escape-hatch paths**: `QUIZAPP_SKIP_FRONTEND_BUILD=1` with a built `dist` reuses it;
+  with `dist` missing it fails with the readable message naming the way out
+
+**Not verified, because it needs a phone and a pair of eyes.** Four layout changes were made
+by reading class names against a 375px viewport. **Every one is reasoning, not observation** —
+this is the same class of claim the earlier parts recorded honestly, and it is recorded the
+same way rather than folded into "Part 8 complete":
+
+1. **`DeckPage.tsx`: `pl-11` → `sm:pl-11`, and the card list's `-ml-7` → `sm:-ml-7`.** These
+   align the drag grips outside the content column on desktop; at 375px they were spending
+   44 px of a 343 px column on nothing. The claim is that phone width now uses the full
+   column *and* desktop alignment is unchanged. Both halves need looking at.
+2. **`DeckStatsStrip.tsx`: the `·` separator moved from before its part to after the
+   preceding one.** With five parts it will wrap at 375px, and it previously rendered the dot
+   *inside* the following span, so a wrapped line could begin with a leading `·`. The claim is
+   that lines now start with real text and the desktop rendering is unchanged.
+3. **`SessionPage.tsx`: the four self-grade buttons became `grid-cols-2` at phone width**,
+   `sm:flex sm:flex-wrap` above it. Four `min-w-24` buttons want ~408 px in a ~327 px column,
+   so they were wrapping 3+1 and leaving an orphan. The claim is a clean 2×2.
+4. **`AppShell.tsx`: the theme toggle got `ml-auto`.** It sat immediately after the nav links
+   rather than at the trailing edge. Cosmetic, and the least risky of the four.
+
+Everything else on the responsive side was **checked and deliberately not changed**:
+`sm:grid-cols-2` on the choice lists and results rows, `SummaryTiles` at
+`grid-cols-2 sm:grid-cols-4`, `DecksPage`'s `flex-col sm:flex-row` toolbar, and the
+`max-w-2xl` runner shells all read as correct at 375px. Do not churn them.
+
+**Also unverified:** how the app behaves on a phone browser at all — touch targets, the drag
+grips under touch rather than mouse, and whether the KaTeX in a prompt is legible at that
+width. None of that has ever been observed in this project.
+
+**Facts recorded here so they are not later "fixed":**
+
+- **The embed reads `$OUT_DIR/frontend`, not `../frontend/dist`.** Pointing it at `dist`
+  directly reintroduces a confusing compile failure whenever `dist` is deleted without a
+  watched input changing. See the Part 8 bullet under Where things stand.
+- **`.fallback()` sits above `.layer()` in `lib.rs`** and must stay there.
+- **`api_router()` has its own fallback**, and removing it makes `/api/*` typos return HTML
+  with a 200 rather than the envelope.
+- **`manualChunks` will not work here.** Vite 8 on Rolldown; use
+  `build.rolldownOptions.output.codeSplitting`, and keep `react` at a higher priority than
+  `markdown`.
+- **The default bind is loopback on purpose**, since the app has no authentication.
+- **The `rust-objcopy` / `libLLVM.dylib` warning on `cargo build --release` is a
+  pre-existing toolchain quirk of this machine's nix nightly**, not a Part 8 regression. The
+  build completes; debug-info stripping is what fails.
 
 ### Part 7 — verification status
 
@@ -880,8 +1077,9 @@ server computes, not that a human looking at the screen sees the right thing, in
 place, in both palettes, at whatever width the browser happens to be. The gate cannot see a
 layout and it cannot see an information leak.
 
-**375px phone width remains completely unrendered**, now across Parts 1, 2b, 2c, 3, 4, 5, 6
-and 7. Part 7 is the sharpest instance of this risk so far, not just another entry in the
+**375px phone width remains completely unrendered** — Part 8 made four layout changes
+*for* it by inspection, but nobody has looked at the result; see "Part 8 — verification
+status" above. It was unrendered across Parts 1, 2b, 2c, 3, 4, 5, 6 and 7. Part 7 is the sharpest instance of this risk so far, not just another entry in the
 list: it adds a *third* figure to a stats strip that was already unverified at phone width
 after Part 6, on a wrapping flex row that has never been seen collapse. `resize_window`
 reports success in this environment but the viewport does not actually change. This belongs
@@ -958,11 +1156,11 @@ costs is specific rather than general:
 - **The one-card and zero-card decks** (point 20), **End test early** (point 19), and
   **reduced motion** (point 18).
 
-**375px phone width** is still unrendered, now across Parts 1, 2b, 2c, 3, 4, 5 and 6. Part
+**375px phone width** is still unrendered — Part 8 addressed it in code, unobserved. Part
 6's stats strip is the newest thing never seen at that width; it is a wrapping flex row and
 is *expected* to wrap rather than overflow, but that is a prediction, not an observation.
-`resize_window` reports success in this environment but the viewport does not change. It
-belongs to build step 8.
+`resize_window` reports success in this environment but the viewport does not change.
+Part 8's phone pass covered the strip's wrapping specifically, still without observation.
 
 **Part 5 minor findings**, from reading the committed code rather than from a review round:
 
@@ -1164,15 +1362,13 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   `kinetics 100%`, `Clustering walkthrough`, `Override walkthrough`, `Leak check deck`; and
   the sessions and reviews they generated). Clear it before writing real cards — it
   regenerates on startup.
-- KaTeX and `react-markdown` roughly doubled the JS bundle (437 kB → 884 kB, 272 kB gzipped,
-  the latter figure grown further by the deck card list redesign's three `@dnd-kit`
-  packages), which now trips Vite's 500 kB chunk warning on every build. Harmless for a
-  LAN-served app and deliberately not code-split yet, but build step 8 ("embed the bundle,
-  LAN binding") is where it should be looked at.
-- Google Fonts: `frontend/src/styles/globals.css` imports Quicksand and Inter over the
-  network, so typography silently falls back offline or on a LAN-only phone. Deferred to
-  build step 8, which is already the "embed the bundle, LAN binding" task, and noted there
-  in the spec.
+- ~~KaTeX and `react-markdown` roughly doubled the JS bundle … trips Vite's 500 kB chunk
+  warning on every build.~~ **Closed by Part 8.** Split into `react`, `markdown` and `dnd`
+  chunks via Rolldown's `codeSplitting`; the largest is now 389.69 kB and the warning is
+  gone because the limit is met, not raised.
+- ~~Google Fonts: `globals.css` imports Quicksand and Inter over the network, so typography
+  silently falls back offline or on a LAN-only phone.~~ **Closed by Part 8.** Vendored via
+  `@fontsource/quicksand` and `@fontsource/inter`; `dist` contains no Google reference.
 
 **Known-and-accepted minors**
 

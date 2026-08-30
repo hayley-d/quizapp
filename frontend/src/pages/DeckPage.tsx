@@ -320,7 +320,7 @@ export function DeckPage() {
         </Button>
       </div>
 
-      <div className="space-y-6 pl-11">
+      <div className="space-y-6 sm:pl-11">
         <div className="grid gap-3 sm:grid-cols-3">
           {TEST_TYPE_OPTIONS.map((option) => (
             <Button
@@ -366,7 +366,7 @@ export function DeckPage() {
             items={cards.map((card) => card.id)}
             strategy={verticalListSortingStrategy}
           >
-            <ul className="-ml-7 space-y-3">
+            <ul className="space-y-3 sm:-ml-7">
               {cards.map((card) => (
                 <CardRow
                   key={card.id}

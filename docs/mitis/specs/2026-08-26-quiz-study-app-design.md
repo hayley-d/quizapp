@@ -54,6 +54,12 @@ the laptop is running. In development, the Vite dev server proxies `/api` to axu
 actual use, the built React bundle is embedded into the Rust binary (`rust-embed`), so
 studying is one command and one process with no separate build step.
 
+**Implemented in Part 8.** `QUIZAPP_BIND=0.0.0.0:3000 ./target/release/quizapp` serves the
+UI, the API and uploaded images from one origin. The bind default stays `127.0.0.1:3000`
+because the app has no authentication, so exposing it on every interface is a per-run choice
+rather than the default. The startup log resolves and prints the machine's actual LAN address,
+since `http://0.0.0.0:3000` is not something anyone can open.
+
 Uploaded images are written to `data/images/` as files, with only the path stored in
 SQLite. Blobs in the database would bloat it and make backup-by-copy awkward.
 
@@ -443,3 +449,19 @@ over hand-written cards.
    Fonts, which silently falls back to the system stack whenever the machine is offline or
    a phone on the LAN cannot reach Google. Embedding the bundle for phone use is exactly
    when that stops being acceptable.
+
+   **Done, on `feat/part8-embed-lan` (2026-08-30), with two amendments to the wording
+   above.** The fonts are vendored through the `@fontsource/quicksand` and
+   `@fontsource/inter` npm packages rather than as hand-placed woff2 files — the same
+   package-manager route KaTeX already uses, which keeps them under the lockfile instead of
+   committing binaries. And the bundle is embedded from `$OUT_DIR` rather than from
+   `frontend/dist`: `backend/build.rs` runs `pnpm build` and mirrors the output there,
+   because rust-embed resolves its folder at macro-expansion time and pointing it at `dist`
+   makes a deleted `dist` fail as an unrelated wall of trait errors.
+
+   The phone layout pass was made by inspection against a 375px viewport and is **not yet
+   observed** — no agent on this machine can drive a browser. See "Part 8 — verification
+   status" in [`../../HANDOVER.md`](../../HANDOVER.md) for the four specific claims awaiting
+   a look.
+
+   **This is the last step in the sequencing. There is no step 9.**
