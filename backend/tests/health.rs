@@ -60,3 +60,26 @@ async fn schema_has_all_tables_and_constraints() {
         .execute(&pool).await;
     assert!(duplicate_unparented.is_err(), "duplicate unparented deck name allowed");
 }
+
+#[tokio::test]
+async fn unknown_api_path_returns_the_error_envelope() {
+    let app = common::spawn_app().await;
+
+    let (status, body) = app.get("/api/nope").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "endpoint not found");
+    assert_eq!(body["fields"], serde_json::json!([]));
+
+    let content_type = app.header_value("/api/nope", "content-type").await;
+    assert_eq!(content_type.as_deref(), Some("application/json"));
+}
+
+#[tokio::test]
+async fn unknown_nested_api_path_returns_the_error_envelope() {
+    let app = common::spawn_app().await;
+
+    let (status, body) = app.get("/api/decks/1/does-not-exist").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+}

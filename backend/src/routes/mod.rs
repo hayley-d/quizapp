@@ -5,7 +5,10 @@ pub mod images;
 pub mod modules;
 pub mod sessions;
 
+use axum::response::{IntoResponse, Response};
 use axum::Router;
+
+use crate::error::AppError;
 use crate::state::AppState;
 
 pub fn api_router() -> Router<AppState> {
@@ -16,4 +19,9 @@ pub fn api_router() -> Router<AppState> {
         .merge(cards::router())
         .merge(images::router())
         .merge(sessions::router())
+        .fallback(unknown_endpoint)
+}
+
+async fn unknown_endpoint() -> Response {
+    AppError::NotFound("endpoint").into_response()
 }
