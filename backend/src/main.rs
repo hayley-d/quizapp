@@ -18,7 +18,10 @@ async fn main() -> anyhow::Result<()> {
     let app = quizapp::app(AppState { pool, images_directory });
 
     let listener = tokio::net::TcpListener::bind(&configuration.bind_address).await?;
-    tracing::info!("listening on http://{}", configuration.bind_address);
+    tracing::info!(
+        "listening on {}",
+        quizapp::configuration::reachable_url(&configuration.bind_address)
+    );
     axum::serve(listener, app).await?;
     Ok(())
 }
