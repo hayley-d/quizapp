@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        WITH session_cards AS (\n            SELECT DISTINCT reviews.card_id AS card_id\n            FROM reviews\n            JOIN cards ON cards.id = reviews.card_id\n            WHERE reviews.session_id = ? AND cards.archived = 0\n        ),\n        ranked AS (\n            SELECT 'before' AS phase,\n                   reviews.card_id AS card_id,\n                   reviews.correct AS correct,\n                   CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS answered_at_seconds,\n                   ROW_NUMBER() OVER (\n                       PARTITION BY reviews.card_id\n                       ORDER BY reviews.answered_at DESC, reviews.id DESC\n                   ) AS recency_rank\n            FROM reviews\n            JOIN session_cards ON session_cards.card_id = reviews.card_id\n            WHERE reviews.answered_at < ?\n            UNION ALL\n            SELECT 'after' AS phase,\n                   reviews.card_id AS card_id,\n                   reviews.correct AS correct,\n                   CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS answered_at_seconds,\n                   ROW_NUMBER() OVER (\n                       PARTITION BY reviews.card_id\n                       ORDER BY reviews.answered_at DESC, reviews.id DESC\n                   ) AS recency_rank\n            FROM reviews\n            JOIN session_cards ON session_cards.card_id = reviews.card_id\n            WHERE reviews.answered_at < ? OR reviews.session_id = ?\n        )\n        SELECT phase               AS \"phase!: String\",\n               card_id             AS \"card_id!: i64\",\n               correct             AS \"correct!: bool\",\n               answered_at_seconds AS \"answered_at_seconds!: i64\"\n        FROM ranked\n        WHERE recency_rank <= ?\n        ORDER BY card_id, phase, recency_rank\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "phase!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "card_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "correct!: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "answered_at_seconds!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "cba518ab5fe54d6159033b520c5fa98686e76c98b8e7d51c4ace256dbd06188c"
+}

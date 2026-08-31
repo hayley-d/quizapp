@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT cards.id AS \"card_id!: i64\", cards.prompt_md AS \"prompt_md!: String\"\n        FROM cards\n        WHERE cards.archived = 0\n          AND cards.id IN (SELECT DISTINCT card_id FROM reviews WHERE session_id = ?)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "prompt_md!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "6a67223cc55a7018c484e12378bc8ba496176f0375102b76e07c06f961fb61a2"
+}

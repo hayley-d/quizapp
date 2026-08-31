@@ -436,3 +436,128 @@ async fn a_card_with_no_schedule_row_still_counts_as_due() {
         "the card missing a schedule row must count as due, not the not-yet-due card: {summary}",
     );
 }
+
+#[tokio::test]
+async fn every_card_lands_on_a_mastery_level_and_the_counts_total_the_deck() {
+    let app = common::spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 4).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+
+    insert_review(&app, session_id, card_ids[0], false, "2026-08-30T09:00:00Z").await;
+    insert_review(&app, session_id, card_ids[1], true, "2026-08-30T09:00:00Z").await;
+    insert_review(&app, session_id, card_ids[2], true, "2026-08-30T09:00:00Z").await;
+    insert_review(&app, session_id, card_ids[2], true, "2026-08-31T09:00:00Z").await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let counts = &body["summary"]["mastery_counts"];
+
+    assert_eq!(card_stats_for(&body, card_ids[0]).unwrap()["mastery_level"], "shaky");
+    assert_eq!(card_stats_for(&body, card_ids[1]).unwrap()["mastery_level"], "learning");
+    assert_eq!(card_stats_for(&body, card_ids[2]).unwrap()["mastery_level"], "solid");
+    assert!(
+        card_stats_for(&body, card_ids[3]).is_none(),
+        "an unreviewed card stays out of the card list and is counted as unseen instead",
+    );
+
+    assert_eq!(counts["unseen"], 1);
+    assert_eq!(counts["shaky"], 1);
+    assert_eq!(counts["learning"], 1);
+    assert_eq!(counts["solid"], 1);
+    assert_eq!(counts["mastered"], 0);
+
+    let total: i64 = ["unseen", "shaky", "learning", "solid", "mastered"]
+        .iter()
+        .map(|level| counts[*level].as_i64().unwrap())
+        .sum();
+    assert_eq!(
+        total, body["summary"]["card_count"],
+        "the mastery counts must account for every card in the deck: {body}",
+    );
+}
+
+#[tokio::test]
+async fn a_correct_streak_inside_one_sitting_stops_at_solid_until_it_is_spaced_out() {
+    let app = common::spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 1).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    let card_id = card_ids[0];
+
+    insert_review(&app, session_id, card_id, true, "2026-08-30T09:00:00Z").await;
+    insert_review(&app, session_id, card_id, true, "2026-08-30T10:00:00Z").await;
+    insert_review(&app, session_id, card_id, true, "2026-08-30T11:00:00Z").await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    assert_eq!(
+        card_stats_for(&body, card_id).unwrap()["mastery_level"],
+        "solid",
+        "three right answers two hours apart is not mastery, however long the streak",
+    );
+
+    insert_review(&app, session_id, card_id, true, "2026-08-30T22:00:00Z").await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    assert_eq!(card_stats_for(&body, card_id).unwrap()["mastery_level"], "mastered");
+}
+
+#[tokio::test]
+async fn an_overridden_review_lifts_the_mastery_level() {
+    let app = common::spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 1).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    let card_id = card_ids[0];
+
+    insert_review(&app, session_id, card_id, true, "2026-08-30T09:00:00Z").await;
+    insert_review(&app, session_id, card_id, false, "2026-08-31T09:00:00Z").await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    assert_eq!(
+        card_stats_for(&body, card_id).unwrap()["mastery_level"],
+        "shaky",
+        "the most recent answer was wrong, and recency decay makes that the dominant signal",
+    );
+
+    sqlx::query("UPDATE reviews SET correct = 1, overridden = 1 WHERE card_id = ? AND correct = 0")
+        .bind(card_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    assert_eq!(
+        card_stats_for(&body, card_id).unwrap()["mastery_level"],
+        "solid",
+        "an override flips reviews.correct, and the ladder reads that column like any other",
+    );
+}
+
+#[tokio::test]
+async fn a_deck_with_no_reviews_is_entirely_unseen() {
+    let app = common::spawn_app().await;
+    let (deck_id, _) = deck_with_cards(&app, "Data Mining", 3).await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let counts = &body["summary"]["mastery_counts"];
+
+    assert_eq!(counts["unseen"], 3);
+    assert_eq!(counts["shaky"], 0);
+    assert_eq!(counts["learning"], 0);
+    assert_eq!(counts["solid"], 0);
+    assert_eq!(counts["mastered"], 0);
+}
+
+#[tokio::test]
+async fn archived_cards_are_outside_the_mastery_counts() {
+    let app = common::spawn_app().await;
+    let (deck_id, card_ids) = deck_with_cards(&app, "Data Mining", 3).await;
+    let session_id = insert_session(&app, "practice", deck_id).await;
+    insert_review(&app, session_id, card_ids[0], false, "2026-08-30T09:00:00Z").await;
+
+    app.post(&format!("/api/cards/{}/archive", card_ids[0]), json!({})).await;
+
+    let (_, body) = app.get(&format!("/api/decks/{deck_id}/stats")).await;
+    let counts = &body["summary"]["mastery_counts"];
+
+    assert_eq!(counts["shaky"], 0, "the archived card must leave the ladder entirely");
+    assert_eq!(counts["unseen"], 2);
+    assert_eq!(body["summary"]["card_count"], 2);
+}

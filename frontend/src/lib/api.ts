@@ -136,6 +136,16 @@ function cardQueryString({ deckId, kind, archived }: CardQuery): string {
 
 export type UploadedImage = { path: string }
 
+export type MovementDirection = 'up' | 'down' | 'unchanged'
+
+export type MasteryMovement = {
+  card_id: number
+  prompt_md: string
+  level_before: MasteryLevel
+  level_after: MasteryLevel
+  direction: MovementDirection
+}
+
 export type SessionMode = 'practice' | 'mock' | 'sm2'
 export type SelfGrade = 'again' | 'hard' | 'good' | 'easy'
 
@@ -144,6 +154,7 @@ export type Session = {
   mode: SessionMode
   deck_ids: number[]
   target_count: number | null
+  mastery_goal: number | null
   started_at: string
   ended_at: string | null
   pool_count: number
@@ -151,8 +162,8 @@ export type Session = {
 }
 
 export type CreateSessionInput =
-  | { mode: SessionMode; deck_ids: number[]; module_id?: never }
-  | { mode: SessionMode; deck_ids?: never; module_id: number }
+  | { mode: SessionMode; deck_ids: number[]; module_id?: never; mastery_goal?: number }
+  | { mode: SessionMode; deck_ids?: never; module_id: number; mastery_goal?: number }
 
 export type NextChoice = { id: number; text_md: string }
 
@@ -170,6 +181,8 @@ export type PracticeNextResponse = {
   pool_count: number
   answered_count: number
   correct_count: number
+  mastery_goal: number | null
+  mastery_moved_up_count: number
 }
 
 export type MockNextResponse = {
@@ -188,6 +201,8 @@ export type Sm2NextResponse = {
   pool_count: number
   answered_count: number
   correct_count: number
+  mastery_goal: number | null
+  mastery_moved_up_count: number
 }
 
 export type NextResponse = PracticeNextResponse | MockNextResponse | Sm2NextResponse
@@ -211,6 +226,10 @@ export type AnswerResult = {
   expected: string[]
   explanation_md: string | null
   can_override: boolean
+  level_before: MasteryLevel
+  level_after: MasteryLevel
+  mastery_direction: MovementDirection
+  mastery_moved_up_count: number
 }
 
 export type OverrideResult = {
@@ -219,6 +238,9 @@ export type OverrideResult = {
   overridden: boolean
   accepted_added: boolean
   expected: string[]
+  level_after: MasteryLevel
+  mastery_direction: MovementDirection
+  mastery_moved_up_count: number
 }
 
 export type SessionSummary = {
@@ -232,6 +254,10 @@ export type SessionSummary = {
   distinct_card_count: number
   accuracy: number | null
   total_ms: number
+  mastery_goal: number | null
+  mastery_moved_up_count: number
+  mastery_moved_down_count: number
+  mastery_movements: MasteryMovement[]
 }
 
 export type RecordedAnswer = {
@@ -278,6 +304,26 @@ async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedIm
   return (await response.json()) as UploadedImage
 }
 
+export type MasteryLevel = 'unseen' | 'shaky' | 'learning' | 'solid' | 'mastered'
+
+export const MASTERY_LEVELS: readonly MasteryLevel[] = [
+  'unseen',
+  'shaky',
+  'learning',
+  'solid',
+  'mastered',
+]
+
+export const MASTERY_LEVEL_LABELS: Record<MasteryLevel, string> = {
+  unseen: 'Unseen',
+  shaky: 'Shaky',
+  learning: 'Learning',
+  solid: 'Solid',
+  mastered: 'Mastered',
+}
+
+export type MasteryCounts = Record<MasteryLevel, number>
+
 export type DeckStatsSummary = {
   card_count: number
   unseen_count: number
@@ -290,12 +336,14 @@ export type DeckStatsSummary = {
   due_count: number
   next_due_at: string | null
   last_answered_at: string | null
+  mastery_counts: MasteryCounts
 }
 
 export type CardStats = {
   card_id: number
   attempt_count: number
   miss_rate: number
+  mastery_level: MasteryLevel
 }
 
 export type DeckStats = {

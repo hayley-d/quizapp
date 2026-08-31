@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id AS \"id!: i64\", mode, target_count, started_at, deck_ids, ended_at\n        FROM sessions WHERE id = ?\n        ",
+  "query": "\n        SELECT id AS \"id!: i64\", mode, deck_ids, target_count, mastery_goal, started_at, ended_at\n        FROM sessions WHERE id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -14,23 +14,28 @@
         "type_info": "Text"
       },
       {
-        "name": "target_count",
+        "name": "deck_ids",
         "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "target_count",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mastery_goal",
+        "ordinal": 4,
         "type_info": "Integer"
       },
       {
         "name": "started_at",
-        "ordinal": 3,
-        "type_info": "Text"
-      },
-      {
-        "name": "deck_ids",
-        "ordinal": 4,
+        "ordinal": 5,
         "type_info": "Text"
       },
       {
         "name": "ended_at",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Text"
       }
     ],
@@ -40,11 +45,12 @@
     "nullable": [
       false,
       false,
-      true,
       false,
+      true,
+      true,
       false,
       true
     ]
   },
-  "hash": "95efb0ae6c87d410f2a13d81f42ac3a691957df6c3060960320afd44e718088f"
+  "hash": "14a10311e184c766eb41f7ec442f1a3fbd6a126f57c52fe100386f523a0adcc3"
 }
