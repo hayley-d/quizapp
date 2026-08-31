@@ -1,8 +1,8 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { useEffect, useRef } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { AcceptedInput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
@@ -19,12 +19,12 @@ type AcceptedEditorProps = {
 }
 
 export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps) {
-  const inputElements = useRef<(HTMLInputElement | null)[]>([])
+  const answerTextareas = useRef<(HTMLTextAreaElement | null)[]>([])
   const focusIndex = useRef<number | null>(null)
 
   useEffect(() => {
     if (focusIndex.current !== null) {
-      inputElements.current[focusIndex.current]?.focus()
+      answerTextareas.current[focusIndex.current]?.focus()
       focusIndex.current = null
     }
   }, [value])
@@ -50,17 +50,6 @@ export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps)
     onChange(next)
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>, rowIndex: number) {
-    if (event.key !== 'Enter') return
-    if (event.metaKey || event.ctrlKey) return
-    event.preventDefault()
-    if (rowIndex === value.length - 1) {
-      addRow()
-    } else {
-      inputElements.current[rowIndex + 1]?.focus()
-    }
-  }
-
   const orphanedErrors = Object.entries(errors)
     .filter(([fieldName]) => {
       const match = /^accepted\[(\d+)\]\./.exec(fieldName)
@@ -84,17 +73,18 @@ export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps)
           const fieldError = errors[`accepted[${rowIndex}].text`]
           return (
             <div key={rowIndex} className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-start gap-2">
                 <RadioGroupItem
                   value={String(rowIndex)}
                   id={`accepted-primary-${rowIndex}`}
+                  className="mt-2.5"
                   aria-label={`Mark accepted answer ${rowIndex + 1} as shown answer`}
                 />
-                <Input
-                  ref={(element) => { inputElements.current[rowIndex] = element }}
+                <Textarea
+                  ref={(element) => { answerTextareas.current[rowIndex] = element }}
+                  rows={2}
                   value={accepted.text}
                   onChange={(event) => setText(rowIndex, event.target.value)}
-                  onKeyDown={(event) => handleKeyDown(event, rowIndex)}
                   aria-invalid={!!fieldError}
                   placeholder={`Accepted answer ${rowIndex + 1}`}
                   className="flex-1"
