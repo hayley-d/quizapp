@@ -3,11 +3,12 @@
 -- no cascade so that a stray delete would fail loudly. Deletion is now an intended action
 -- offered by the interface, so the history goes with the card rather than blocking it.
 --
--- SQLite cannot alter a foreign key in place, so the table is rebuilt. Two properties make
--- that safe here. The migration runner's connection does not set PRAGMA foreign_keys (see
--- the header of 0001_init.sql), so the drop and rename cannot trip enforcement part-way
--- through. And no table references `reviews`, so the rename has no other foreign-key
--- clauses to rewrite.
+-- SQLite cannot alter a foreign key in place, so the table is rebuilt. This is safe even
+-- though the migration runner's connection does have PRAGMA foreign_keys on, for two
+-- reasons. No table references `reviews`, so `DROP TABLE reviews` violates nothing. And
+-- the copy into `reviews_rebuilt` only ever selects rows that were already sitting in
+-- `reviews`, which means each one already satisfied the `cards` and `sessions` foreign
+-- keys it was written under, so none can fail its constraints on the way back in.
 --
 -- Rows are copied with their explicit ids, which keeps AUTOINCREMENT's sqlite_sequence
 -- high-water mark correct on the rebuilt table.
