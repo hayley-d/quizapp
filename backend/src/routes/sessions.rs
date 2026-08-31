@@ -12,6 +12,7 @@ use crate::grading::{
     correctness_of_self_grade, grade_flashcard_typed, grade_multiple_choice, grade_text_answer,
     parse_self_grade, self_grade_as_text, GradableChoice,
 };
+use crate::mastery::{self, MasteryLevel, MovementDirection, SessionMasteryMovement};
 use crate::mock::{first_unanswered, mock_order};
 use crate::practice::{fold_candidate_rows, select_card, CandidateRow, NO_REPEAT_WINDOW,
     RECENT_REVIEW_LIMIT};
@@ -30,6 +31,8 @@ pub struct CreateSession {
     pub module_id: Option<i64>,
     #[serde(default)]
     pub target_count: Option<i64>,
+    #[serde(default)]
+    pub mastery_goal: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -38,6 +41,7 @@ pub struct SessionResponse {
     pub mode: String,
     pub deck_ids: Vec<i64>,
     pub target_count: Option<i64>,
+    pub mastery_goal: Option<i64>,
     pub started_at: String,
     pub ended_at: Option<String>,
     pub pool_count: i64,
@@ -70,6 +74,17 @@ fn validate_submission(body: &CreateSession) -> AppResult<()> {
             _ => "Practice sessions have no target count",
         };
         push_error("target_count", message);
+    }
+
+    match body.mastery_goal {
+        Some(_) if body.mode == "mock" => push_error(
+            "mastery_goal",
+            "A mock test is a graded run, not a target to move cards up",
+        ),
+        Some(goal) if goal < 1 => {
+            push_error("mastery_goal", "A goal must be at least one card")
+        }
+        _ => {}
     }
 
     if errors.is_empty() {
@@ -141,7 +156,7 @@ pub async fn fetch_session(
 ) -> AppResult<SessionResponse> {
     let row = sqlx::query!(
         r#"
-        SELECT id AS "id!: i64", mode, deck_ids, target_count, started_at, ended_at
+        SELECT id AS "id!: i64", mode, deck_ids, target_count, mastery_goal, started_at, ended_at
         FROM sessions WHERE id = ?
         "#,
         session_id,
@@ -176,6 +191,7 @@ pub async fn fetch_session(
         mode: row.mode,
         deck_ids,
         target_count: row.target_count,
+        mastery_goal: row.mastery_goal,
         started_at: row.started_at,
         ended_at: row.ended_at,
         pool_count,
@@ -228,15 +244,23 @@ async fn create(
         _ => None,
     };
 
+    if body.mastery_goal.is_some_and(|goal| goal > pool_count) {
+        return Err(AppError::validation([(
+            "mastery_goal",
+            "That is more cards than this deck has",
+        )]));
+    }
+
     let session_id = sqlx::query_scalar!(
         r#"
-        INSERT INTO sessions (mode, deck_ids, target_count)
-        VALUES (?, ?, ?)
+        INSERT INTO sessions (mode, deck_ids, target_count, mastery_goal)
+        VALUES (?, ?, ?, ?)
         RETURNING id AS "id!: i64"
         "#,
         body.mode,
         encoded,
         target_count,
+        body.mastery_goal,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -268,6 +292,8 @@ pub struct PracticeNextResponse {
     pub pool_count: i64,
     pub answered_count: i64,
     pub correct_count: i64,
+    pub mastery_goal: Option<i64>,
+    pub mastery_moved_up_count: i64,
 }
 
 #[derive(Serialize)]
@@ -288,6 +314,8 @@ pub struct Sm2NextResponse {
     pub pool_count: i64,
     pub answered_count: i64,
     pub correct_count: i64,
+    pub mastery_goal: Option<i64>,
+    pub mastery_moved_up_count: i64,
 }
 
 #[derive(Serialize)]
@@ -405,6 +433,7 @@ pub struct ActiveSession {
     pub id: i64,
     pub mode: String,
     pub target_count: Option<i64>,
+    pub mastery_goal: Option<i64>,
     pub started_at: String,
     pub deck_ids_json: String,
 }
@@ -422,7 +451,7 @@ pub async fn load_active_session(
 ) -> AppResult<ActiveSession> {
     let row = sqlx::query!(
         r#"
-        SELECT id AS "id!: i64", mode, target_count, started_at, deck_ids, ended_at
+        SELECT id AS "id!: i64", mode, target_count, mastery_goal, started_at, deck_ids, ended_at
         FROM sessions WHERE id = ?
         "#,
         session_id,
@@ -438,6 +467,7 @@ pub async fn load_active_session(
         id: row.id,
         mode: row.mode,
         target_count: row.target_count,
+        mastery_goal: row.mastery_goal,
         started_at: row.started_at,
         deck_ids_json: row.deck_ids,
     })
@@ -758,6 +788,9 @@ async fn next(
         let pool_count = count_due(&state.pool, &session.deck_ids_json).await?;
         let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
 
+        let movements =
+            mastery::session_movements(&state.pool, session.id, &session.started_at).await?;
+
         return Ok(Json(NextResponse::Sm2(Sm2NextResponse {
             mode: "sm2",
             card,
@@ -765,6 +798,8 @@ async fn next(
             pool_count,
             answered_count,
             correct_count,
+            mastery_goal: session.mastery_goal,
+            mastery_moved_up_count: mastery::count_moved_up(&movements),
         })));
     }
 
@@ -786,12 +821,16 @@ async fn next(
     let card = load_served_card(&state.pool, card_id, None).await?;
     let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
 
+    let movements = mastery::session_movements(&state.pool, session.id, &session.started_at).await?;
+
     Ok(Json(NextResponse::Practice(PracticeNextResponse {
         mode: "practice",
         card,
         pool_count: candidates.len() as i64,
         answered_count,
         correct_count,
+        mastery_goal: session.mastery_goal,
+        mastery_moved_up_count: mastery::count_moved_up(&movements),
     })))
 }
 
@@ -841,6 +880,10 @@ pub struct PracticeAnswerResponse {
     pub expected: Vec<String>,
     pub explanation_md: Option<String>,
     pub can_override: bool,
+    pub level_before: MasteryLevel,
+    pub level_after: MasteryLevel,
+    pub mastery_direction: MovementDirection,
+    pub mastery_moved_up_count: i64,
 }
 
 #[derive(Serialize)]
@@ -1139,6 +1182,8 @@ async fn answer(
         })));
     }
 
+    let progress = card_mastery_progress(&state.pool, session.id, &session.started_at, card.id).await?;
+
     Ok(Json(AnswerResponse::Practice(PracticeAnswerResponse {
         mode: if session.mode == "sm2" { "sm2" } else { "practice" },
         review_id,
@@ -1146,7 +1191,35 @@ async fn answer(
         expected: graded.expected,
         explanation_md: card.explanation_md,
         can_override: card.kind == "text_answer" && !graded.correct,
+        level_before: progress.level_before,
+        level_after: progress.level_after,
+        mastery_direction: progress.direction,
+        mastery_moved_up_count: progress.moved_up_count,
     })))
+}
+
+struct CardMasteryProgress {
+    level_before: MasteryLevel,
+    level_after: MasteryLevel,
+    direction: MovementDirection,
+    moved_up_count: i64,
+}
+
+async fn card_mastery_progress(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+    started_at: &str,
+    card_id: i64,
+) -> AppResult<CardMasteryProgress> {
+    let movements = mastery::session_movements(pool, session_id, started_at).await?;
+    let moved_up_count = mastery::count_moved_up(&movements);
+    let card = movements.iter().find(|movement| movement.card_id == card_id);
+    Ok(CardMasteryProgress {
+        level_before: card.map_or(MasteryLevel::Unseen, |movement| movement.level_before),
+        level_after: card.map_or(MasteryLevel::Unseen, |movement| movement.level_after),
+        direction: card.map_or(MovementDirection::Unchanged, |movement| movement.direction),
+        moved_up_count,
+    })
 }
 
 async fn load_schedule_state(
@@ -1254,6 +1327,9 @@ pub struct OverrideResponse {
     pub overridden: bool,
     pub accepted_added: bool,
     pub expected: Vec<String>,
+    pub level_after: MasteryLevel,
+    pub mastery_direction: MovementDirection,
+    pub mastery_moved_up_count: i64,
 }
 
 #[derive(Serialize)]
@@ -1268,6 +1344,10 @@ pub struct SummaryResponse {
     pub distinct_card_count: i64,
     pub accuracy: Option<f64>,
     pub total_ms: i64,
+    pub mastery_goal: Option<i64>,
+    pub mastery_moved_up_count: i64,
+    pub mastery_moved_down_count: i64,
+    pub mastery_movements: Vec<SessionMasteryMovement>,
 }
 
 async fn override_review(
@@ -1282,7 +1362,9 @@ async fn override_review(
                reviews.correct AS "correct!: bool",
                cards.kind,
                cards.answer_md,
+               sessions.id AS "session_id!: i64",
                sessions.mode,
+               sessions.started_at,
                sessions.ended_at
         FROM reviews
         JOIN cards ON cards.id = reviews.card_id
@@ -1331,12 +1413,23 @@ async fn override_review(
         .execute(&state.pool)
         .await?;
 
+        let progress = card_mastery_progress(
+            &state.pool,
+            review.session_id,
+            &review.started_at,
+            review.card_id,
+        )
+        .await?;
+
         return Ok(Json(OverrideResponse {
             review_id,
             correct: true,
             overridden: true,
             accepted_added: false,
             expected: review.answer_md.into_iter().collect(),
+            level_after: progress.level_after,
+            mastery_direction: progress.direction,
+            mastery_moved_up_count: progress.moved_up_count,
         }));
     }
 
@@ -1378,12 +1471,23 @@ async fn override_review(
     .fetch_all(&state.pool)
     .await?;
 
+    let progress = card_mastery_progress(
+        &state.pool,
+        review.session_id,
+        &review.started_at,
+        review.card_id,
+    )
+    .await?;
+
     Ok(Json(OverrideResponse {
         review_id,
         correct: true,
         overridden: true,
         accepted_added: insertion.rows_affected() == 1,
         expected,
+        level_after: progress.level_after,
+        mastery_direction: progress.direction,
+        mastery_moved_up_count: progress.moved_up_count,
     }))
 }
 
@@ -1422,11 +1526,16 @@ async fn finish(
 
 async fn summarise(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<SummaryResponse> {
     let session = sqlx::query!(
-        r#"SELECT id AS "id!: i64", mode, started_at, ended_at FROM sessions WHERE id = ?"#,
+        r#"
+        SELECT id AS "id!: i64", mode, mastery_goal, started_at, ended_at
+        FROM sessions WHERE id = ?
+        "#,
         session_id,
     )
     .fetch_one(pool)
     .await?;
+
+    let movements = mastery::session_movements(pool, session_id, &session.started_at).await?;
 
     let statistics = sqlx::query!(
         r#"
@@ -1455,6 +1564,10 @@ async fn summarise(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<Summar
         distinct_card_count: statistics.distinct_card_count,
         accuracy,
         total_ms: statistics.total_ms,
+        mastery_goal: session.mastery_goal,
+        mastery_moved_up_count: mastery::count_moved_up(&movements),
+        mastery_moved_down_count: mastery::count_moved_down(&movements),
+        mastery_movements: movements,
     })
 }
 

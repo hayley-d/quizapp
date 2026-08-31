@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
 import { ResultRow } from '@/components/session/ResultRow'
+import { MasteryMovementList } from '@/components/session/MasteryMovementList'
 import { SummaryTiles } from '@/components/session/SummaryTiles'
 import { Button } from '@/components/ui/button'
 import type { SessionResults } from '@/lib/api'
@@ -18,6 +19,11 @@ export function MockResults({ results, onOverride, overridingReviewId }: MockRes
     <div className="space-y-6">
       <h1 className="font-display text-2xl font-bold">Mock test finished</h1>
       <SummaryTiles summary={results.summary} />
+
+      <div className="space-y-2">
+        <h2 className="font-display text-base font-semibold">What moved</h2>
+        <MasteryMovementList movements={results.summary.mastery_movements} />
+      </div>
 
       {results.summary.overridden_count > 0 && (
         <p className="text-sm text-muted-foreground">

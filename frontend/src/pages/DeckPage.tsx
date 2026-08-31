@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge'
 import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { CardRow } from '@/components/deck/CardRow'
 import { DeckStatsStrip } from '@/components/deck/DeckStatsStrip'
+import { MasteryLadderBar } from '@/components/deck/MasteryLadderBar'
 import { plainTextPrompt } from '@/lib/format'
 
 type StudyLaunch =
@@ -81,6 +82,8 @@ const TEST_TYPE_OPTIONS: TestTypeOption[] = [
   },
 ]
 
+const MASTERY_GOAL_CHOICES: (number | null)[] = [null, 3, 5, 10]
+
 const SESSION_ROUTE_BY_MODE: Record<SessionMode, string> = {
   practice: '/session',
   mock: '/mock',
@@ -98,6 +101,7 @@ export function DeckPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [startingMode, setStartingMode] = useState<SessionMode | null>(null)
+  const [masteryGoal, setMasteryGoal] = useState<number | null>(null)
   const [deckStats, setDeckStats] = useState<DeckStats | null>(null)
   const [cardPendingDeletion, setCardPendingDeletion] = useState<CardSummary | null>(null)
   const [deletingCard, setDeletingCard] = useState(false)
@@ -212,11 +216,19 @@ export function DeckPage() {
     }
   }
 
+  function goalChoiceLabel(choice: number | null): string {
+    return choice === null ? 'None' : String(choice)
+  }
+
   async function startSession(mode: SessionMode) {
     if (deckId === null) return
     setStartingMode(mode)
     try {
-      const session = await api.createSession({ mode, deck_ids: [deckId] })
+      const session = await api.createSession({
+        mode,
+        deck_ids: [deckId],
+        ...(mode !== 'mock' && masteryGoal !== null ? { mastery_goal: masteryGoal } : {}),
+      })
       navigate(`${SESSION_ROUTE_BY_MODE[mode]}/${session.id}`)
     } catch (error: unknown) {
       if (error instanceof ApiError) {
@@ -392,7 +404,29 @@ export function DeckPage() {
           ))}
         </div>
 
-        {deckStats !== null && <DeckStatsStrip summary={deckStats.summary} />}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground">Goal: move cards up</span>
+          {MASTERY_GOAL_CHOICES.map((choice) => (
+            <Button
+              key={goalChoiceLabel(choice)}
+              variant={masteryGoal === choice ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setMasteryGoal(choice)}
+            >
+              {goalChoiceLabel(choice)}
+            </Button>
+          ))}
+          <span className="text-xs text-muted-foreground">
+            for practice and spaced repetition
+          </span>
+        </div>
+
+        {deckStats !== null && (
+          <div className="space-y-3">
+            <MasteryLadderBar counts={deckStats.summary.mastery_counts} />
+            <DeckStatsStrip summary={deckStats.summary} />
+          </div>
+        )}
 
         {cards.length === 0 && !loading && (
           <p className="text-muted-foreground">No cards yet.</p>

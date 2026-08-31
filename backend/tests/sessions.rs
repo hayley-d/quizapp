@@ -419,7 +419,15 @@ async fn next_never_returns_answer_data_for_any_kind() {
         envelope_keys.sort_unstable();
         assert_eq!(
             envelope_keys,
-            vec!["answered_count", "card", "correct_count", "mode", "pool_count"],
+            vec![
+                "answered_count",
+                "card",
+                "correct_count",
+                "mastery_goal",
+                "mastery_moved_up_count",
+                "mode",
+                "pool_count",
+            ],
             "the serve envelope must carry exactly the card, the mode and the progress counts",
         );
 

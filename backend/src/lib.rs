@@ -5,6 +5,7 @@ pub mod error;
 pub mod extract;
 pub mod grading;
 pub mod images;
+pub mod mastery;
 pub mod mock;
 pub mod normalise;
 pub mod practice;

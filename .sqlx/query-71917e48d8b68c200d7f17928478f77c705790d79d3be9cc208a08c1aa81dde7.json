@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT reviews.id AS \"id!: i64\",\n               reviews.card_id AS \"card_id!: i64\",\n               reviews.given,\n               reviews.correct AS \"correct!: bool\",\n               cards.kind,\n               cards.answer_md,\n               sessions.mode,\n               sessions.ended_at\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        JOIN sessions ON sessions.id = reviews.session_id\n        WHERE reviews.id = ?\n        ",
+  "query": "\n        SELECT reviews.id AS \"id!: i64\",\n               reviews.card_id AS \"card_id!: i64\",\n               reviews.given,\n               reviews.correct AS \"correct!: bool\",\n               cards.kind,\n               cards.answer_md,\n               sessions.id AS \"session_id!: i64\",\n               sessions.mode,\n               sessions.started_at,\n               sessions.ended_at\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        JOIN sessions ON sessions.id = reviews.session_id\n        WHERE reviews.id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -34,13 +34,23 @@
         "type_info": "Text"
       },
       {
-        "name": "mode",
+        "name": "session_id!: i64",
         "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mode",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "started_at",
+        "ordinal": 8,
         "type_info": "Text"
       },
       {
         "name": "ended_at",
-        "ordinal": 7,
+        "ordinal": 9,
         "type_info": "Text"
       }
     ],
@@ -55,8 +65,10 @@
       false,
       true,
       false,
+      false,
+      false,
       true
     ]
   },
-  "hash": "f6e2c391ef23de8a205f51fa5d51f79f281510cd49e3dff409b4e52ca07edd60"
+  "hash": "71917e48d8b68c200d7f17928478f77c705790d79d3be9cc208a08c1aa81dde7"
 }

@@ -1,7 +1,13 @@
-import type { CardStats } from '@/lib/api'
+import { MASTERY_LEVEL_LABELS, type CardStats, type MasteryLevel } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 
-const EMPHASIS_THRESHOLD = 0.4
+const LEVEL_EMPHASIS: Record<MasteryLevel, string | undefined> = {
+  unseen: undefined,
+  shaky: 'bg-destructive text-destructive-foreground',
+  learning: undefined,
+  solid: undefined,
+  mastered: 'bg-success text-success-foreground',
+}
 
 export function CardStatBadge({ stats }: { stats: CardStats | null }) {
   if (stats === null) {
@@ -9,19 +15,16 @@ export function CardStatBadge({ stats }: { stats: CardStats | null }) {
   }
 
   const missPercentage = Math.round(stats.miss_rate * 100)
-  const emphasised = stats.miss_rate >= EMPHASIS_THRESHOLD
 
   return (
     <Badge
       variant="secondary"
-      className={
-        emphasised ? 'bg-destructive text-destructive-foreground' : undefined
-      }
+      className={LEVEL_EMPHASIS[stats.mastery_level]}
       title={`Missed ${missPercentage}% of the last ${stats.attempt_count} attempt${
         stats.attempt_count === 1 ? '' : 's'
       }`}
     >
-      {missPercentage}% missed · {stats.attempt_count}
+      {MASTERY_LEVEL_LABELS[stats.mastery_level]} · {missPercentage}% missed · {stats.attempt_count}
     </Badge>
   )
 }

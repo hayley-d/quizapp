@@ -1,0 +1,14 @@
+-- A practice or spaced-repetition session may carry a goal expressed in mastery rungs:
+-- "move N cards up the ladder". NULL means no goal, which is every session created before
+-- this migration and every mock test.
+--
+-- Deliberately not `target_count`. That column already means three different things by mode
+-- -- the pool size for mock, the due count for sm2, NULL for practice -- and it is
+-- server-computed and client-rejected in all three. A goal is the opposite: client-supplied,
+-- and only for the two modes that reject a target_count. Overloading it would give one
+-- column both directions of authority, which is the shape `pool_count` is already regretted
+-- for.
+--
+-- Nullable, so the CHECK must tolerate NULL: `NULL > 0` evaluates to NULL, and SQLite
+-- accepts a CHECK that is not false -- the same reasoning migration 0003 relied on.
+ALTER TABLE sessions ADD COLUMN mastery_goal INTEGER CHECK (mastery_goal > 0);

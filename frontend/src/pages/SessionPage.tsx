@@ -135,6 +135,7 @@ export function SessionPage() {
               ...current,
               answered_count: current.answered_count + 1,
               correct_count: current.correct_count + (result.correct ? 1 : 0),
+              mastery_moved_up_count: result.mastery_moved_up_count,
             },
       )
     } catch (error: unknown) {
@@ -185,11 +186,17 @@ export function SessionPage() {
     if (!verdict || overriding) return
     setOverriding(true)
     try {
-      await api.overrideReview(verdict.review_id)
+      const result = await api.overrideReview(verdict.review_id)
       setOverridden(true)
       setConsecutiveCorrect((current) => current + 1)
       setServed((current) =>
-        current === null ? current : { ...current, correct_count: current.correct_count + 1 },
+        current === null
+          ? current
+          : {
+              ...current,
+              correct_count: current.correct_count + 1,
+              mastery_moved_up_count: result.mastery_moved_up_count,
+            },
       )
       toast.success('Counted as correct, and accepted for next time')
     } catch (error: unknown) {
@@ -277,6 +284,7 @@ export function SessionPage() {
 
   const answeredCount = served?.answered_count ?? 0
   const correctCount = served?.correct_count ?? 0
+  const masteryGoal = served?.mastery_goal ?? null
 
   return (
     <div
@@ -293,6 +301,9 @@ export function SessionPage() {
           {served?.mode === 'sm2'
             ? `${served.answered_count} of ${served.target_count ?? served.pool_count} due`
             : `${served?.pool_count ?? 0} in the pool`}
+          {masteryGoal !== null &&
+            served !== null &&
+            ` · ${served.mastery_moved_up_count} of ${masteryGoal} moved up`}
         </p>
         {consecutiveCorrect >= STREAK_THRESHOLD && (
           <StreakBadge streak={consecutiveCorrect} />

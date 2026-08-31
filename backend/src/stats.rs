@@ -1,9 +1,8 @@
 use serde::Serialize;
 
 use crate::error::AppResult;
-use crate::practice::{
-    fold_candidate_rows, weighted_miss_rate, CandidateRow, RECENT_REVIEW_LIMIT,
-};
+use crate::mastery::{level_for, MasteryCounts, MasteryLevel, MasteryReview};
+use crate::practice::{weighted_miss_rate, ReviewOutcome, RECENT_REVIEW_LIMIT};
 
 #[derive(Serialize)]
 pub struct DeckStatsSummary {
@@ -18,6 +17,7 @@ pub struct DeckStatsSummary {
     pub due_count: i64,
     pub next_due_at: Option<String>,
     pub last_answered_at: Option<String>,
+    pub mastery_counts: MasteryCounts,
 }
 
 #[derive(Serialize)]
@@ -25,6 +25,21 @@ pub struct CardStats {
     pub card_id: i64,
     pub attempt_count: i64,
     pub miss_rate: f64,
+    pub mastery_level: MasteryLevel,
+}
+
+struct RecentReviewRow {
+    card_id: i64,
+    review_count: i64,
+    correct: Option<bool>,
+    recency_rank: Option<i64>,
+    answered_at_seconds: Option<i64>,
+}
+
+struct CardHistory {
+    card_id: i64,
+    review_count: i64,
+    recent_reviews_newest_first: Vec<MasteryReview>,
 }
 
 #[derive(Serialize)]
@@ -42,10 +57,43 @@ pub fn accuracy_of(correct_count: i64, review_count: i64) -> Option<f64> {
 }
 
 pub async fn deck_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckStatsResponse> {
-    Ok(DeckStatsResponse {
-        summary: load_summary(pool, deck_id).await?,
-        cards: load_card_stats(pool, deck_id).await?,
-    })
+    let mut summary = load_summary(pool, deck_id).await?;
+    let cards = load_card_stats(pool, deck_id).await?;
+    summary.mastery_counts = tally_mastery_levels(summary.unseen_count, &cards);
+    Ok(DeckStatsResponse { summary, cards })
+}
+
+fn tally_mastery_levels(unseen_count: i64, cards: &[CardStats]) -> MasteryCounts {
+    let mut counts = MasteryCounts { unseen: unseen_count, ..MasteryCounts::default() };
+    for card in cards {
+        counts.add(card.mastery_level);
+    }
+    counts
+}
+
+fn fold_recent_review_rows(rows: Vec<RecentReviewRow>) -> Vec<CardHistory> {
+    let mut histories: Vec<CardHistory> = Vec::new();
+    for row in rows {
+        if histories.last().is_none_or(|history| history.card_id != row.card_id) {
+            histories.push(CardHistory {
+                card_id: row.card_id,
+                review_count: row.review_count,
+                recent_reviews_newest_first: Vec::new(),
+            });
+        }
+        let history = histories
+            .last_mut()
+            .expect("a history for this card was just pushed if it was missing");
+        if let (Some(correct), Some(_), Some(answered_at_seconds)) =
+            (row.correct, row.recency_rank, row.answered_at_seconds)
+        {
+            history.recent_reviews_newest_first.push(MasteryReview {
+                outcome: if correct { ReviewOutcome::Correct } else { ReviewOutcome::Incorrect },
+                answered_at_seconds,
+            });
+        }
+    }
+    histories
 }
 
 async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckStatsSummary> {
@@ -114,12 +162,13 @@ async fn load_summary(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<DeckSt
         due_count: row.due_count,
         next_due_at: row.next_due_at,
         last_answered_at: row.last_answered_at,
+        mastery_counts: MasteryCounts::default(),
     })
 }
 
 async fn load_card_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<Vec<CardStats>> {
     let rows = sqlx::query_as!(
-        CandidateRow,
+        RecentReviewRow,
         r#"
         WITH pool AS (
             SELECT id AS card_id FROM cards WHERE deck_id = ? AND archived = 0
@@ -131,8 +180,7 @@ async fn load_card_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<Vec
                        PARTITION BY reviews.card_id
                        ORDER BY reviews.answered_at DESC, reviews.id DESC
                    ) AS recency_rank,
-                   CAST(strftime('%s','now') AS INTEGER)
-                     - CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS age_seconds
+                   CAST(strftime('%s', reviews.answered_at) AS INTEGER) AS answered_at_seconds
             FROM reviews
             JOIN pool ON pool.card_id = reviews.card_id
         ),
@@ -146,7 +194,7 @@ async fn load_card_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<Vec
                COALESCE(counts.review_count, 0) AS "review_count!: i64",
                recent.correct                   AS "correct?: bool",
                recent.recency_rank              AS "recency_rank?: i64",
-               recent.age_seconds               AS "age_seconds?: i64"
+               recent.answered_at_seconds       AS "answered_at_seconds?: i64"
         FROM pool
         LEFT JOIN counts ON counts.card_id = pool.card_id
         LEFT JOIN recent ON recent.card_id = pool.card_id AND recent.recency_rank <= ?
@@ -158,13 +206,21 @@ async fn load_card_stats(pool: &sqlx::SqlitePool, deck_id: i64) -> AppResult<Vec
     .fetch_all(pool)
     .await?;
 
-    Ok(fold_candidate_rows(rows)
+    Ok(fold_recent_review_rows(rows)
         .into_iter()
-        .filter(|candidate| candidate.review_count > 0)
-        .map(|candidate| CardStats {
-            card_id: candidate.card_id,
-            attempt_count: candidate.review_count,
-            miss_rate: weighted_miss_rate(&candidate.recent_review_outcomes),
+        .filter(|history| history.review_count > 0)
+        .map(|history| {
+            let outcomes: Vec<ReviewOutcome> = history
+                .recent_reviews_newest_first
+                .iter()
+                .map(|review| review.outcome)
+                .collect();
+            CardStats {
+                card_id: history.card_id,
+                attempt_count: history.review_count,
+                miss_rate: weighted_miss_rate(&outcomes),
+                mastery_level: level_for(&history.recent_reviews_newest_first),
+            }
         })
         .collect())
 }
