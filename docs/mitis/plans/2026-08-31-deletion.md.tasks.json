@@ -51,7 +51,7 @@
     {
       "id": 5,
       "subject": "Task 6: Trash replaces archive on the card row",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         4
       ],
@@ -87,5 +87,5 @@
       "description": "**Goal:** The documentation no longer tells the next reader that deletes fail loudly, and the whole verification gate is green.\n\n**Files:**\n- Modify: `docs/HANDOVER.md` (`:858-859` the principle; `:1417-1424` the archived-cards note; `:355-356` the endpoint list)\n\n**Acceptance Criteria:**\n- [ ] The \"Archive, never delete\" paragraph is replaced with the current truth: deletion is real, cascades through cards to choices, accepted, schedule and reviews, and a module delete orphans its decks\n- [ ] The note that `reviews.card_id` \"deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly\" is gone \u2014 it is now false\n- [ ] The archived-cards note records that the archive button was removed too, that `archiveCard`/`unarchiveCard` are gone from the frontend, and that both endpoints and the `archived` filters remain\n- [ ] The endpoint list gains the three `DELETE` routes and `GET /api/decks/:id/deletion-impact`\n- [ ] The orphaned-`sessions` consequence is recorded, so the next reader does not treat it as a bug\n- [ ] Every command in the verification gate passes, with the actual observed output recorded in the handover \u2014 not the numbers copied from the plan\n\n**Verify:** `cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint` \u2192 all green\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 9. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"docs/HANDOVER.md\"], \"verifyCommand\": \"cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"the Archive-never-delete principle is rewritten to the current truth\", \"the false 'stray delete fails loudly' claim is gone\", \"the archived-cards note records the removed button and what remains\", \"the endpoint list gains the three DELETEs and deletion-impact\", \"the orphaned sessions consequence is recorded\", \"every gate command passes with its actual output recorded\"], \"modelTier\": \"standard\"}\n```"
     }
   ],
-  "lastUpdated": "2026-08-31T09:54:56"
+  "lastUpdated": "2026-08-31T09:59:25"
 }
