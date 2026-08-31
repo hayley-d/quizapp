@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Plus, Repeat, Zap } from 'lucide-react'
+import { ArrowLeft, FileText, Layers, Plus, Repeat, Zap } from 'lucide-react'
 import {
   closestCenter,
   DndContext,
@@ -33,8 +33,13 @@ import { CardRow } from '@/components/deck/CardRow'
 import { DeckStatsStrip } from '@/components/deck/DeckStatsStrip'
 import { plainTextPrompt } from '@/lib/format'
 
+type StudyLaunch =
+  | { kind: 'session'; mode: SessionMode }
+  | { kind: 'navigate'; to: (deckId: number) => string }
+
 type TestTypeOption = {
-  mode: SessionMode
+  key: string
+  launch: StudyLaunch
   label: string
   note: string
   available: boolean
@@ -43,25 +48,36 @@ type TestTypeOption = {
 
 const TEST_TYPE_OPTIONS: TestTypeOption[] = [
   {
-    mode: 'practice',
+    key: 'practice',
+    launch: { kind: 'session', mode: 'practice' },
     label: 'Practice',
     note: 'Weighted towards what you keep getting wrong. No end — stop when you like.',
     available: true,
     Icon: Zap,
   },
   {
-    mode: 'mock',
+    key: 'mock',
+    launch: { kind: 'session', mode: 'mock' },
     label: 'Mock test',
     note: 'Every card in the deck, once, in a fixed order. No feedback until the end.',
     available: true,
     Icon: FileText,
   },
   {
-    mode: 'sm2',
+    key: 'sm2',
+    launch: { kind: 'session', mode: 'sm2' },
     label: 'Spaced repetition',
     note: 'Only the cards the scheduler says are due today.',
     available: true,
     Icon: Repeat,
+  },
+  {
+    key: 'flashcards',
+    launch: { kind: 'navigate', to: (deckId) => `/flashcards/${deckId}` },
+    label: 'Flashcards',
+    note: 'Flip through every card in the deck. Nothing is scored.',
+    available: true,
+    Icon: Layers,
   },
 ]
 
@@ -213,6 +229,19 @@ export function DeckPage() {
     }
   }
 
+  function launchStudyOption(option: TestTypeOption) {
+    if (deckId === null) return
+    if (option.launch.kind === 'navigate') {
+      navigate(option.launch.to(deckId))
+      return
+    }
+    void startSession(option.launch.mode)
+  }
+
+  function isStarting(option: TestTypeOption): boolean {
+    return option.launch.kind === 'session' && startingMode === option.launch.mode
+  }
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -291,7 +320,7 @@ export function DeckPage() {
   const nextDueAt = deckStats?.summary.next_due_at ?? null
 
   function noteFor(option: TestTypeOption): string {
-    if (option.mode !== 'sm2') return option.note
+    if (option.key !== 'sm2') return option.note
     if (dueCount === null) return option.note
     if (dueCount > 0) return `${dueCount} card${dueCount === 1 ? '' : 's'} due now.`
     if (nextDueAt !== null) return `Nothing due — next on ${nextDueAt.slice(0, 10)}.`
@@ -299,7 +328,7 @@ export function DeckPage() {
   }
 
   function isDisabled(option: TestTypeOption): boolean {
-    if (option.mode === 'sm2' && (dueCount === null || dueCount === 0)) return true
+    if (option.key === 'sm2' && (dueCount === null || dueCount === 0)) return true
     return !option.available || deck?.card_count === 0 || startingMode !== null
   }
 
@@ -343,10 +372,10 @@ export function DeckPage() {
       </div>
 
       <div className="space-y-6 sm:pl-11">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {TEST_TYPE_OPTIONS.map((option) => (
             <Button
-              key={option.mode}
+              key={option.key}
               variant="secondary"
               className="h-16 w-full gap-3 rounded-2xl text-base [&_svg:not([class*='size-'])]:size-5"
               disabled={isDisabled(option)}
@@ -355,10 +384,10 @@ export function DeckPage() {
                   ? 'Add a card to this deck first'
                   : noteFor(option)
               }
-              onClick={() => void startSession(option.mode)}
+              onClick={() => launchStudyOption(option)}
             >
               <option.Icon className={option.available ? 'text-brand' : undefined} />
-              {startingMode === option.mode ? 'Starting…' : option.label}
+              {isStarting(option) ? 'Starting…' : option.label}
             </Button>
           ))}
         </div>

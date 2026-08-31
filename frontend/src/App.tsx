@@ -5,6 +5,7 @@ import { MockSessionPage } from '@/pages/MockSessionPage'
 import { DecksPage } from '@/pages/DecksPage'
 import { DeckPage } from '@/pages/DeckPage'
 import { CardEditorPage } from '@/pages/CardEditorPage'
+import { FlashcardsPage } from '@/pages/FlashcardsPage'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="/cards/:id/edit" element={<CardEditorPage />} />
           <Route path="/session/:id" element={<SessionPage />} />
           <Route path="/mock/:id" element={<MockSessionPage />} />
+          <Route path="/flashcards/:id" element={<FlashcardsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

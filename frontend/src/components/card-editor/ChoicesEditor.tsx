@@ -81,7 +81,12 @@ export function ChoicesEditor({ value, onChange, errors }: ChoicesEditorProps) {
         {value.map((choice, rowIndex) => {
           const fieldError = errors[`choices[${rowIndex}].text_md`]
           return (
-            <div key={rowIndex} className="space-y-1">
+            <div
+              key={rowIndex}
+              className={`space-y-1 rounded-lg p-2 transition-colors ${
+                choice.is_correct ? 'bg-muted/40' : ''
+              }`}
+            >
               <div className="flex items-center gap-2">
                 <RadioGroupItem
                   value={String(rowIndex)}

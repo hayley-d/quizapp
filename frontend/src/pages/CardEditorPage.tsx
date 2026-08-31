@@ -1,5 +1,9 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect, useRef, useState,
+  type ChangeEvent, type KeyboardEvent, type ReactNode,
+} from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, ImagePlus, Info, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   api,
@@ -14,13 +18,65 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
+  Tooltip, TooltipContent, TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { ChoicesEditor } from '@/components/card-editor/ChoicesEditor'
 import { AcceptedEditor } from '@/components/card-editor/AcceptedEditor'
 import { CardImage } from '@/components/CardImage'
 import { CardPreview } from '@/components/card-editor/CardPreview'
-import { Input } from '@/components/ui/input'
+
+const ANSWER_HINT: Record<CardKind, string> = {
+  mc_single: 'Mark the choice that counts as correct.',
+  text_answer: 'Any accepted answer counts as correct.',
+  flashcard: 'Revealed when you ask to see the answer.',
+}
+
+type KeyboardShortcut = { keys: string; action: string }
+
+const KEYBOARD_SHORTCUTS: Record<'create' | 'edit', KeyboardShortcut[]> = {
+  create: [
+    { keys: '\u2318/Ctrl+Enter', action: 'save & next' },
+    { keys: '\u2318/Ctrl+S', action: 'save & close' },
+    { keys: 'Esc', action: 'cancel' },
+    { keys: '\u2318/Ctrl+P', action: 'preview' },
+  ],
+  edit: [
+    { keys: '\u2318/Ctrl+Enter or \u2318/Ctrl+S', action: 'save & close' },
+    { keys: 'Esc', action: 'cancel' },
+    { keys: '\u2318/Ctrl+P', action: 'preview' },
+  ],
+}
+
+type EditorSectionProps = {
+  title: string
+  hint: string
+  children: ReactNode
+}
+
+function EditorSection({ title, hint, children }: EditorSectionProps) {
+  return (
+    <section className="mt-5 space-y-3 border-t pt-5 first:mt-0 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </h2>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={`About ${title.toLowerCase()}`}
+              className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <Info className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{hint}</TooltipContent>
+        </Tooltip>
+      </div>
+      {children}
+    </section>
+  )
+}
 
 function emptyChoices(): ChoiceInput[] {
   return [
@@ -265,12 +321,29 @@ function CardEditorPageInner() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6" onKeyDown={handleContainerKeyDown}>
+    <div className="space-y-6" onKeyDown={handleContainerKeyDown}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-bold">
-          {mode === 'create' ? 'New card' : 'Edit card'}
-        </h1>
-        <div className="flex items-center gap-1 rounded-lg border p-1">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to deck"
+            title="Back to deck"
+            disabled={busy}
+            onClick={cancel}
+          >
+            <ArrowLeft />
+          </Button>
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {KIND_LABEL[kind]}
+            </p>
+            <h1 className="font-display text-2xl font-bold leading-none">
+              {mode === 'create' ? 'New card' : 'Edit card'}
+            </h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1">
           <Button
             size="sm" variant={view === 'edit' ? 'secondary' : 'ghost'}
             aria-pressed={view === 'edit'} onClick={() => setView('edit')}
@@ -286,115 +359,135 @@ function CardEditorPageInner() {
         </div>
       </div>
 
+      <div className="mx-auto w-full max-w-2xl space-y-6">
       {view === 'edit' ? (
-      <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
-      {errors.deck_id && <p className="text-sm text-destructive">{errors.deck_id}</p>}
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        {errors.deck_id && (
+          <p className="pb-4 text-sm text-destructive">{errors.deck_id}</p>
+        )}
 
-      <div className="space-y-2">
-        <Label htmlFor="card-kind">Kind</Label>
-        <Select
-          value={kind}
-          onValueChange={(selectedValue) => changeKind(selectedValue as CardKind)}
-        >
-          <SelectTrigger id="card-kind"><SelectValue /></SelectTrigger>
-          <SelectContent>
+        <EditorSection title="Format" hint="How you answer this card.">
+          <div className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
             {(Object.keys(KIND_LABEL) as CardKind[]).map((cardKind) => (
-              <SelectItem key={cardKind} value={cardKind}>
+              <Button
+                key={cardKind}
+                type="button"
+                size="sm"
+                variant={kind === cardKind ? 'secondary' : 'ghost'}
+                aria-pressed={kind === cardKind}
+                onClick={() => changeKind(cardKind)}
+              >
                 {KIND_LABEL[cardKind]}
-              </SelectItem>
+              </Button>
             ))}
-          </SelectContent>
-        </Select>
-        {errors.kind && <p className="text-sm text-destructive">{errors.kind}</p>}
-      </div>
+          </div>
+          {errors.kind && <p className="text-sm text-destructive">{errors.kind}</p>}
+        </EditorSection>
 
-      <div className="space-y-2">
-        <Label htmlFor="card-prompt">Prompt</Label>
-        <Textarea
-          id="card-prompt"
-          ref={promptTextarea}
-          autoFocus
-          rows={4}
-          value={promptMd}
-          onChange={(event) => setPromptMd(event.target.value)}
-          aria-invalid={!!errors.prompt_md}
-        />
-        {errors.prompt_md && <p className="text-sm text-destructive">{errors.prompt_md}</p>}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="card-image">Image (optional)</Label>
-        {imagePath === null ? (
-          <Input
-            id="card-image"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            disabled={imageBusy || busy}
-            onChange={(event) => void pickImage(event)}
-            aria-invalid={!!errors.file}
+        <EditorSection title="Question" hint="Markdown and LaTeX are supported.">
+          <Label htmlFor="card-prompt" className="sr-only">Prompt</Label>
+          <Textarea
+            id="card-prompt"
+            ref={promptTextarea}
+            autoFocus
+            rows={4}
+            placeholder="Ask the question"
+            value={promptMd}
+            onChange={(event) => setPromptMd(event.target.value)}
+            aria-invalid={!!errors.prompt_md}
           />
-        ) : (
-          <div className="flex items-center gap-3">
-            <CardImage path={imagePath} altText="Card image" />
-            <Button
-              type="button" variant="secondary" size="sm" disabled={busy}
-              onClick={() => { setImagePath(null); clearError('image_path') }}
-            >
-              Remove
-            </Button>
+          {errors.prompt_md && <p className="text-sm text-destructive">{errors.prompt_md}</p>}
+
+          {imagePath === null ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                id="card-image"
+                type="file"
+                className="sr-only"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={imageBusy || busy}
+                onChange={(event) => void pickImage(event)}
+                aria-invalid={!!errors.file}
+              />
+              <Button
+                asChild
+                variant="secondary"
+                size="sm"
+                className={imageBusy || busy ? 'pointer-events-none opacity-50' : ''}
+              >
+                <label htmlFor="card-image">
+                  <ImagePlus />
+                  {imageBusy ? 'Uploading' : 'Add an image'}
+                </label>
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Optional · PNG, JPEG or WebP
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <CardImage path={imagePath} altText="Card image" />
+              <Button
+                type="button" variant="ghost" size="sm" disabled={busy}
+                onClick={() => { setImagePath(null); clearError('image_path') }}
+              >
+                <X />
+                Remove image
+              </Button>
+            </div>
+          )}
+          {(errors.file ?? errors.image_path) && (
+            <p className="text-sm text-destructive">{errors.file ?? errors.image_path}</p>
+          )}
+        </EditorSection>
+
+        <EditorSection title="Answer" hint={ANSWER_HINT[kind]}>
+          {kind === 'mc_single' && (
+            <ChoicesEditor value={choices} onChange={setChoices} errors={errors} />
+          )}
+          {kind === 'text_answer' && (
+            <AcceptedEditor value={accepted} onChange={setAccepted} errors={errors} />
+          )}
+          {kind === 'flashcard' && (
+            <>
+              <Label htmlFor="card-answer" className="sr-only">Answer</Label>
+              <Textarea
+                id="card-answer"
+                rows={4}
+                placeholder="Write the answer"
+                value={answerMd}
+                onChange={(event) => setAnswerMd(event.target.value)}
+                aria-invalid={!!errors.answer_md}
+              />
+              {errors.answer_md && (
+                <p className="text-sm text-destructive">{errors.answer_md}</p>
+              )}
+            </>
+          )}
+        </EditorSection>
+
+        <EditorSection title="Explanation" hint="Optional. Shown once the card has been answered.">
+          <Label htmlFor="card-explanation" className="sr-only">Explanation</Label>
+          <Textarea
+            id="card-explanation"
+            rows={3}
+            placeholder="Explain why the answer is what it is"
+            value={explanationMd}
+            onChange={(event) => setExplanationMd(event.target.value)}
+            aria-invalid={!!errors.explanation_md}
+          />
+          {errors.explanation_md && (
+            <p className="text-sm text-destructive">{errors.explanation_md}</p>
+          )}
+        </EditorSection>
+
+        {unclaimedErrors.length > 0 && (
+          <div className="space-y-1 border-t pt-5">
+            {unclaimedErrors.map(([field, message]) => (
+              <p key={field} className="text-sm text-destructive">{message}</p>
+            ))}
           </div>
         )}
-        {imageBusy && <p className="text-sm text-muted-foreground">Uploading…</p>}
-        {(errors.file ?? errors.image_path) && (
-          <p className="text-sm text-destructive">{errors.file ?? errors.image_path}</p>
-        )}
-      </div>
-
-      {kind === 'mc_single' && (
-        <div className="space-y-2">
-          <Label>Choices</Label>
-          <ChoicesEditor value={choices} onChange={setChoices} errors={errors} />
-        </div>
-      )}
-
-      {kind === 'text_answer' && (
-        <div className="space-y-2">
-          <Label>Accepted answers</Label>
-          <AcceptedEditor value={accepted} onChange={setAccepted} errors={errors} />
-        </div>
-      )}
-
-      {kind === 'flashcard' && (
-        <div className="space-y-2">
-          <Label htmlFor="card-answer">Answer</Label>
-          <Textarea
-            id="card-answer"
-            rows={4}
-            value={answerMd}
-            onChange={(event) => setAnswerMd(event.target.value)}
-            aria-invalid={!!errors.answer_md}
-          />
-          {errors.answer_md && <p className="text-sm text-destructive">{errors.answer_md}</p>}
-        </div>
-      )}
-
-      {unclaimedErrors.map(([field, message]) => (
-        <p key={field} className="text-sm text-destructive">{message}</p>
-      ))}
-
-      <div className="space-y-2">
-        <Label htmlFor="card-explanation">Explanation (optional)</Label>
-        <Textarea
-          id="card-explanation"
-          rows={3}
-          value={explanationMd}
-          onChange={(event) => setExplanationMd(event.target.value)}
-          aria-invalid={!!errors.explanation_md}
-        />
-        {errors.explanation_md && (
-          <p className="text-sm text-destructive">{errors.explanation_md}</p>
-        )}
-      </div>
       </div>
       ) : (
         <CardPreview
@@ -408,33 +501,41 @@ function CardEditorPageInner() {
         />
       )}
 
-      <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-        {mode === 'create' ? (
-          <>
-            <Button onClick={() => void saveAndNext()} disabled={busy}>
-              Save &amp; next
+      <div className="space-y-3 border-t pt-4">
+        <div className="flex flex-wrap items-center gap-3">
+          {mode === 'create' ? (
+            <>
+              <Button onClick={() => void saveAndNext()} disabled={busy}>
+                Save &amp; next
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => void saveAndReturn()}
+                disabled={busy}
+              >
+                Save &amp; close
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => void saveAndReturn()} disabled={busy}>
+              Save
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => void saveAndReturn()}
-              disabled={busy}
-            >
-              Save &amp; close
-            </Button>
-          </>
-        ) : (
-          <Button onClick={() => void saveAndReturn()} disabled={busy}>
-            Save
+          )}
+          <Button variant="ghost" onClick={cancel} disabled={busy}>
+            Cancel
           </Button>
-        )}
-        <Button variant="ghost" onClick={cancel} disabled={busy}>
-          Cancel
-        </Button>
-        <p className="text-sm text-muted-foreground">
-          {mode === 'create'
-            ? '⌘/Ctrl+Enter save & next · ⌘/Ctrl+S save & close · Esc cancel · ⌘/Ctrl+P preview'
-            : '⌘/Ctrl+Enter or ⌘/Ctrl+S save & close · Esc cancel · ⌘/Ctrl+P preview'}
+        </div>
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {KEYBOARD_SHORTCUTS[mode].map((shortcut) => (
+            <span key={shortcut.action} className="flex items-center gap-1.5">
+              <kbd className="rounded border bg-muted/60 px-1.5 py-0.5 font-sans text-[0.7rem] font-medium">
+                {shortcut.keys}
+              </kbd>
+              {shortcut.action}
+            </span>
+          ))}
         </p>
+      </div>
       </div>
     </div>
   )

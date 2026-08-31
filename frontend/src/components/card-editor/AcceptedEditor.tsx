@@ -3,7 +3,6 @@ import { Plus, X } from 'lucide-react'
 import type { AcceptedInput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 const MIN_ROWS = 1
@@ -63,7 +62,9 @@ export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps)
       {orphanedErrors.map((message, index) => (
         <p key={index} className="text-sm text-destructive">{message}</p>
       ))}
-      <Label className="text-sm text-muted-foreground">Shown as the answer</Label>
+      <p className="text-sm text-muted-foreground">
+        Select the one shown as the model answer.
+      </p>
       <RadioGroup
         value={String(value.findIndex((answer) => answer.is_primary))}
         onValueChange={(selectedValue) => setPrimary(Number(selectedValue))}
@@ -72,7 +73,12 @@ export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps)
         {value.map((accepted, rowIndex) => {
           const fieldError = errors[`accepted[${rowIndex}].text`]
           return (
-            <div key={rowIndex} className="space-y-1">
+            <div
+              key={rowIndex}
+              className={`space-y-1 rounded-lg p-2 transition-colors ${
+                accepted.is_primary ? 'bg-muted/40' : ''
+              }`}
+            >
               <div className="flex items-start gap-2">
                 <RadioGroupItem
                   value={String(rowIndex)}
@@ -93,6 +99,7 @@ export function AcceptedEditor({ value, onChange, errors }: AcceptedEditorProps)
                   type="button"
                   variant="ghost"
                   size="icon"
+                  className="mt-1"
                   aria-label={`Remove accepted answer ${rowIndex + 1}`}
                   disabled={value.length <= MIN_ROWS}
                   onClick={() => removeRow(rowIndex)}
