@@ -83,7 +83,16 @@ export function DecksPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold">Decks</h1>
         <div className="flex gap-2">
-          <ModuleDialog onSaved={() => { void loadModules(); void loadDecks() }} />
+          <ModuleDialog
+            modules={modules}
+            onChanged={(deletedModuleId) => {
+              if (deletedModuleId !== null && moduleFilter === deletedModuleId) {
+                setModuleFilter(ALL)
+              }
+              void loadModules()
+              void loadDecks()
+            }}
+          />
           <Button className="h-10 px-4" onClick={() => setEditing('new')}>
             <Plus className="size-4" />
             Create deck
