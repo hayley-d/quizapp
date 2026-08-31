@@ -1127,4 +1127,5 @@ async fn deleting_an_unknown_card_is_404() {
     let (status, body) = app.delete("/api/cards/9999").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "card not found");
 }

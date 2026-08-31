@@ -167,10 +167,11 @@ export function DeckDialog({
         <ConfirmDeleteDialog
           open={confirmingDeletion}
           onOpenChange={(isOpen) => { if (!isOpen) setConfirmingDeletion(false) }}
-          title={`Delete "${deck.name}"?`}
+          title={`Delete “${deck.name}”?`}
           lines={deletionLines()}
           confirmLabel="Delete deck"
-          busy={deleting || impact === null}
+          busy={deleting}
+          confirmDisabled={impact === null}
           onConfirm={() => void confirmDeletion()}
         />
       )}

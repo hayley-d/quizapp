@@ -368,8 +368,8 @@ other — do not assume a value carries over.
   answer is fetched per row on first flip via `GET /api/cards/:id`. Multiple-choice backs show a
   two-column grid whose options stay uniform until the eye button reveals the correct one. Rows
   drag to reorder by their grip (`@dnd-kit/sortable`, keyboard reorder included), and the order
-  persists. Archiving is unchanged; the show-archived toggle was later removed by
-  `e09e76d`. Design:
+  persists. The per-card archive button was replaced by a delete button, so archiving is no
+  longer reachable from the interface (see the Known-and-accepted entry). Design:
   [`mitis/specs/2026-08-27-deck-card-list-redesign-design.md`](mitis/specs/2026-08-27-deck-card-list-redesign-design.md)
 
   **Manual verification outstanding.** The nine-point browser walkthrough for this screen

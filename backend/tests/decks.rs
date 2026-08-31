@@ -433,6 +433,7 @@ async fn deleting_an_unknown_deck_is_404() {
     let (status, body) = app.delete("/api/decks/9999").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "deck not found");
 }
 
 #[tokio::test]
@@ -475,4 +476,5 @@ async fn deletion_impact_for_an_unknown_deck_is_404() {
     let (status, body) = app.get("/api/decks/9999/deletion-impact").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "deck not found");
 }

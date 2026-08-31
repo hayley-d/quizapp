@@ -16,6 +16,7 @@ type ConfirmDeleteDialogProps = {
   lines: string[]
   confirmLabel: string
   busy: boolean
+  confirmDisabled?: boolean
   onConfirm: () => void
 }
 
@@ -26,6 +27,7 @@ export function ConfirmDeleteDialog({
   lines,
   confirmLabel,
   busy,
+  confirmDisabled = false,
   onConfirm,
 }: ConfirmDeleteDialogProps) {
   return (
@@ -35,8 +37,8 @@ export function ConfirmDeleteDialog({
           <AlertDialogTitle className="font-display">{title}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-1">
-              {lines.map((line) => (
-                <p key={line}>{line}</p>
+              {lines.map((line, lineIndex) => (
+                <p key={lineIndex}>{line}</p>
               ))}
             </div>
           </AlertDialogDescription>
@@ -44,7 +46,7 @@ export function ConfirmDeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={(clickEvent) => {
               clickEvent.preventDefault()
               onConfirm()

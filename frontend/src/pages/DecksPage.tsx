@@ -170,7 +170,7 @@ export function DecksPage() {
           deck={editing === 'new' ? undefined : editing}
           open
           onOpenChange={(isOpen) => { if (!isOpen) setEditing(null) }}
-          onSaved={() => { void loadDecks() }}
+          onSaved={() => { void loadDecks(); void loadModules() }}
           onDeleted={() => { void loadDecks(); void loadModules() }}
         />
       )}
