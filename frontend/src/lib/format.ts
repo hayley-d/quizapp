@@ -20,6 +20,14 @@ export function formatPercentage(fraction: number | null): string {
   return fraction === null ? '—' : `${Math.round(fraction * 100)}%`
 }
 
+export function plainTextPrompt(promptMarkdown: string): string {
+  return promptMarkdown
+    .replace(/[#*_`~>$\\[\]()!-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
 const MILLISECONDS_PER_MINUTE = 60_000
 const MILLISECONDS_PER_HOUR = 3_600_000
 const MILLISECONDS_PER_DAY = 86_400_000
