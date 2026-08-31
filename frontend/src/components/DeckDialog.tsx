@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { api, ApiError, type Deck, type Module, type UpdateDeckInput } from '@/lib/api'
+import { Trash2 } from 'lucide-react'
+import { api, ApiError, type Deck, type DeckDeletionImpact, type Module, type UpdateDeckInput } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,6 +12,7 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 
 const NO_MODULE = 'none'
 
@@ -20,10 +22,11 @@ type DeckDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: () => void
+  onDeleted: () => void
 }
 
 export function DeckDialog({
-  modules, deck, open, onOpenChange, onSaved,
+  modules, deck, open, onOpenChange, onSaved, onDeleted,
 }: DeckDialogProps) {
   const [name, setName] = useState(deck?.name ?? '')
   const [moduleId, setModuleId] = useState(
@@ -32,6 +35,9 @@ export function DeckDialog({
   const [description, setDescription] = useState(deck?.description ?? '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  const [confirmingDeletion, setConfirmingDeletion] = useState(false)
+  const [impact, setImpact] = useState<DeckDeletionImpact | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const selectedModuleId = moduleId === NO_MODULE ? null : Number(moduleId)
 
@@ -63,6 +69,45 @@ export function DeckDialog({
     } finally {
       setBusy(false)
     }
+  }
+
+  async function openDeletionConfirmation() {
+    if (!deck) return
+    setImpact(null)
+    setConfirmingDeletion(true)
+    try {
+      setImpact(await api.getDeckDeletionImpact(deck.id))
+    } catch {
+      setConfirmingDeletion(false)
+      toast.error('Could not work out what deleting this deck would remove')
+    }
+  }
+
+  async function confirmDeletion() {
+    if (!deck) return
+    setDeleting(true)
+    try {
+      await api.deleteDeck(deck.id)
+      setConfirmingDeletion(false)
+      onOpenChange(false)
+      onDeleted()
+    } catch {
+      toast.error('Could not delete the deck')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  function deletionLines(): string[] {
+    if (impact === null) return ['Working out what this would remove…']
+    const cardClause =
+      impact.card_count === 1 ? '1 card' : `${impact.card_count} cards`
+    const answerClause =
+      impact.review_count === 1 ? '1 recorded answer' : `${impact.review_count} recorded answers`
+    return [
+      `${cardClause} and ${answerClause} will be deleted with it.`,
+      'This cannot be undone.',
+    ]
   }
 
   return (
@@ -104,10 +149,32 @@ export function DeckDialog({
             />
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className={deck ? 'sm:justify-between' : undefined}>
+          {deck && (
+            <Button
+              variant="destructive"
+              disabled={busy || deleting}
+              onClick={() => void openDeletionConfirmation()}
+            >
+              <Trash2 className="size-4" />
+              Delete deck
+            </Button>
+          )}
           <Button onClick={save} disabled={busy}>Save</Button>
         </DialogFooter>
       </DialogContent>
+      {deck && (
+        <ConfirmDeleteDialog
+          open={confirmingDeletion}
+          onOpenChange={(isOpen) => { if (!isOpen) setConfirmingDeletion(false) }}
+          title={`Delete “${deck.name}”?`}
+          lines={deletionLines()}
+          confirmLabel="Delete deck"
+          busy={deleting}
+          confirmDisabled={impact === null}
+          onConfirm={() => void confirmDeletion()}
+        />
+      )}
     </Dialog>
   )
 }

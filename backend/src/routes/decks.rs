@@ -19,6 +19,12 @@ pub struct DeckResponse {
     pub card_count: i64,
 }
 
+#[derive(Serialize)]
+pub struct DeckDeletionImpactResponse {
+    pub card_count: i64,
+    pub review_count: i64,
+}
+
 #[derive(Deserialize)]
 pub struct ListQuery {
     pub module_id: Option<String>,
@@ -66,8 +72,9 @@ pub struct PatchDeck {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/decks", get(list).post(create))
-        .route("/decks/{id}", get(get_one).patch(patch))
+        .route("/decks/{id}", get(get_one).patch(patch).delete(delete_deck))
         .route("/decks/{id}/stats", get(stats))
+        .route("/decks/{id}/deletion-impact", get(deletion_impact))
 }
 
 async fn get_one(
@@ -83,6 +90,44 @@ async fn stats(
 ) -> AppResult<Json<crate::stats::DeckStatsResponse>> {
     fetch_one(&state.pool, id).await?;
     Ok(Json(crate::stats::deck_stats(&state.pool, id).await?))
+}
+
+async fn deletion_impact(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<DeckDeletionImpactResponse>> {
+    fetch_one(&state.pool, id).await?;
+
+    let row = sqlx::query!(
+        r#"SELECT
+             (SELECT COUNT(*) FROM cards WHERE deck_id = ?)
+                 AS "card_count!: i64",
+             (SELECT COUNT(*) FROM reviews
+               WHERE card_id IN (SELECT id FROM cards WHERE deck_id = ?))
+                 AS "review_count!: i64""#,
+        id,
+        id
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(DeckDeletionImpactResponse {
+        card_count: row.card_count,
+        review_count: row.review_count,
+    }))
+}
+
+async fn delete_deck(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    fetch_one(&state.pool, id).await?;
+
+    sqlx::query!("DELETE FROM decks WHERE id = ?", id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<DeckResponse> {

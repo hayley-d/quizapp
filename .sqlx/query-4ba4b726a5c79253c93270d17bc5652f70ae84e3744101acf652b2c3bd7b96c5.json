@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n             (SELECT COUNT(*) FROM cards WHERE deck_id = ?)\n                 AS \"card_count!: i64\",\n             (SELECT COUNT(*) FROM reviews\n               WHERE card_id IN (SELECT id FROM cards WHERE deck_id = ?))\n                 AS \"review_count!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_count!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "review_count!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4ba4b726a5c79253c93270d17bc5652f70ae84e3744101acf652b2c3bd7b96c5"
+}

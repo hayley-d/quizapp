@@ -4,40 +4,43 @@
     {
       "id": 0,
       "subject": "Task 1: Migration \u2014 cascade reviews from cards",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Deleting a `cards` row removes that card's `reviews` rows instead of being refused by a foreign key.\n\n**Files:**\n- Create: `backend/migrations/0004_delete_cascades.sql`\n- Modify: `backend/tests/common/mod.rs` (add a `delete` helper, used from Task 2 onwards)\n- Test: `backend/tests/cards.rs`\n\n**Acceptance Criteria:**\n- [ ] A `DELETE FROM cards WHERE id = ?` on a card that has a review row succeeds and removes that review\n- [ ] The test asserts the review exists *before* the delete, so it cannot pass vacuously on a never-answered card\n- [ ] Every pre-existing review row survives the rebuild with its `id`, `card_id`, `session_id`, `answered_at`, `given`, `correct`, `overridden`, `ms` and `self_grade` intact\n- [ ] `idx_reviews_card_time` and `idx_reviews_session` both exist after the migration\n- [ ] The `.sqlx` offline cache is regenerated against a scratch database, not `data/quizapp.db`\n- [ ] `cargo test` passes in full \u2014 the whole existing suite writes and reads reviews, so it is the regression net for the rebuild\n\n**Verify:** `cargo test` \u2192 all pass (317 tests passed before this plan; expect that plus the new ones)\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 1. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"backend/migrations/0004_delete_cascades.sql\", \"backend/tests/common/mod.rs\", \"backend/tests/cards.rs\", \".sqlx\"], \"verifyCommand\": \"cargo test\", \"acceptanceCriteria\": [\"deleting a card row cascades to its reviews\", \"the review is asserted present before the delete\", \"all nine review columns survive the rebuild\", \"both reviews indexes exist afterwards\", \"the sqlx cache is regenerated from a scratch database\", \"the full cargo test suite passes\"], \"modelTier\": \"standard\"}\n```"
     },
     {
       "id": 1,
       "subject": "Task 2: DELETE /api/cards/{id}",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         0
       ],
-      "description": "**Goal:** One endpoint deletes a card and, through the schema's cascades, its choices, accepted answers, schedule row and reviews.\n\n**Files:**\n- Modify: `backend/src/routes/cards.rs` (add `delete_card`; route at `:531-535`)\n- Test: `backend/tests/cards.rs`\n\n**Acceptance Criteria:**\n- [ ] `DELETE /api/cards/{id}` returns `204 No Content` with an empty body\n- [ ] The card's `choices` rows are gone, asserted non-zero before the delete\n- [ ] The card's `accepted` rows are gone, asserted non-zero before the delete \u2014 which requires a short-answer card, since a multiple-choice card has none and the assertion would be hollow\n- [ ] The card's `schedule` and `reviews` rows are gone, each asserted non-zero before the delete\n- [ ] An unknown id returns `404` with `error == \"not_found\"`\n- [ ] Other cards in the same deck are untouched\n\n**Verify:** `cargo test --test cards` \u2192 all pass\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 2. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"backend/src/routes/cards.rs\", \"backend/tests/cards.rs\"], \"verifyCommand\": \"cargo test --test cards\", \"acceptanceCriteria\": [\"DELETE /api/cards/{id} returns 204 with no body\", \"choices rows are gone, asserted non-zero first\", \"accepted rows are gone, proven on a short-answer card\", \"schedule and reviews rows are gone, each asserted non-zero first\", \"an unknown id is a 404 not_found\", \"sibling cards in the deck are untouched\"], \"modelTier\": \"mechanical\"}\n```"
+      "description": "**Goal:** One endpoint deletes a card and, through the schema's cascades, its choices, accepted answers, schedule row and reviews.\n\n**Files:**\n- Modify: `backend/src/routes/cards.rs` (add `delete_card`; route at `:531-535`)\n- Test: `backend/tests/cards.rs`\n\n**Acceptance Criteria:**\n- [ ] `DELETE /api/cards/{id}` returns `204 No Content` with an empty body\n- [ ] The card's `choices` rows are gone, asserted non-zero before the delete\n- [ ] The card's `accepted` rows are gone, asserted non-zero before the delete \u2014 which requires a short-answer card, since a multiple-choice card has none and the assertion would be hollow\n- [ ] The card's `schedule` and `reviews` rows are gone, each asserted non-zero before the delete\n- [ ] An unknown id returns `404` with `error == \"not_found\"`\n- [ ] Other cards in the same deck are untouched\n\n**Verify:** `cargo test --test cards` \u2192 all pass\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 2. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"backend/src/routes/cards.rs\", \"backend/tests/cards.rs\", \".sqlx\"], \"verifyCommand\": \"cargo test --test cards && SQLX_OFFLINE=true cargo build\", \"acceptanceCriteria\": [\"DELETE /api/cards/{id} returns 204 with no body\", \"choices rows are gone, asserted non-zero first\", \"accepted rows are gone, proven on a short-answer card\", \"schedule and reviews rows are gone, each asserted non-zero first\", \"an unknown id is a 404 not_found\", \"sibling cards in the deck are untouched\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 2,
       "subject": "Task 3: DELETE /api/decks/{id} + deletion-impact",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
-        0
+        0,
+        1
       ],
       "description": "**Goal:** Deleting a deck removes its cards and their history, and a companion endpoint reports the honest counts the confirmation dialog will quote.\n\n**Files:**\n- Modify: `backend/src/routes/decks.rs` (add `delete_deck` and `deletion_impact`; router at `:64-69`)\n- Test: `backend/tests/decks.rs`\n\n**Acceptance Criteria:**\n- [ ] `DELETE /api/decks/{id}` returns `204` and the deck, its cards, and those cards' reviews are all gone\n- [ ] An unknown deck id returns `404` on both the delete and the impact endpoint\n- [ ] `GET /api/decks/{id}/deletion-impact` returns `{ card_count, review_count }`\n- [ ] `card_count` includes archived cards, and `review_count` includes an archived card's reviews\n- [ ] The same test asserts `GET /api/decks/{id}` still reports the archived-excluding `card_count`, proving the two numbers genuinely differ and that the `archived = 0` filter was not copied in from the neighbouring queries\n- [ ] Decks in the same module are untouched\n\n**Verify:** `cargo test --test decks` \u2192 all pass\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 3. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"backend/src/routes/decks.rs\", \"backend/tests/decks.rs\", \".sqlx\"], \"verifyCommand\": \"cargo test --test decks\", \"acceptanceCriteria\": [\"deleting a deck removes its cards and their reviews\", \"unknown ids are 404 on both new routes\", \"deletion-impact returns card_count and review_count\", \"both counts include archived cards and their reviews\", \"the deck's own card_count still excludes archived, so the figures differ\", \"sibling decks in the module are untouched\"], \"modelTier\": \"standard\"}\n```"
     },
     {
       "id": 3,
       "subject": "Task 4: DELETE /api/modules/{id}",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
-        0
+        0,
+        1,
+        2
       ],
       "description": "**Goal:** Deleting a module removes only the module \u2014 its decks survive, unparented.\n\n**Files:**\n- Modify: `backend/src/routes/modules.rs` (add `fetch_one` and `delete_module`; `create` reuses `fetch_one`; router at `:26`)\n- Test: `backend/tests/modules.rs`\n\n**Acceptance Criteria:**\n- [ ] `DELETE /api/modules/{id}` returns `204` and the module no longer appears in `GET /api/modules`\n- [ ] Its decks still exist, with `module_id` and `module_name` both null and their names unchanged \u2014 asserting only the 204 would pass against a cascade, so this half is the test\n- [ ] An unknown module id returns `404` with `error == \"not_found\"` **and** `message == \"module not found\"`, which is what distinguishes a handler 404 from the router's endpoint fallback\n- [ ] `POST /api/modules` still returns `deck_count: 0` for a newly created module after `create` is refactored onto `fetch_one`\n\n**Verify:** `cargo test --test modules && cargo test --test decks` \u2192 all pass\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 4. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"backend/src/routes/modules.rs\", \"backend/tests/modules.rs\", \".sqlx\"], \"verifyCommand\": \"cargo test --test modules && cargo test --test decks\", \"acceptanceCriteria\": [\"DELETE /api/modules/{id} returns 204 and the module is gone\", \"its decks survive with module_id and module_name null\", \"an unknown id is a handler 404 saying 'module not found', not the router fallback\", \"create still reports deck_count 0 after the fetch_one refactor\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 4,
       "subject": "Task 5: API calls + shared confirmation dialog",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         1,
         2,
@@ -48,7 +51,7 @@
     {
       "id": 5,
       "subject": "Task 6: Trash replaces archive on the card row",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         4
       ],
@@ -57,7 +60,7 @@
     {
       "id": 6,
       "subject": "Task 7: Delete a deck from its edit dialog",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         4
       ],
@@ -66,7 +69,7 @@
     {
       "id": 7,
       "subject": "Task 8: A manage-modules dialog with delete",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         4
       ],
@@ -75,7 +78,7 @@
     {
       "id": 8,
       "subject": "Task 9: Rewrite the handover, run the full gate",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         5,
         6,
@@ -84,5 +87,5 @@
       "description": "**Goal:** The documentation no longer tells the next reader that deletes fail loudly, and the whole verification gate is green.\n\n**Files:**\n- Modify: `docs/HANDOVER.md` (`:858-859` the principle; `:1417-1424` the archived-cards note; `:355-356` the endpoint list)\n\n**Acceptance Criteria:**\n- [ ] The \"Archive, never delete\" paragraph is replaced with the current truth: deletion is real, cascades through cards to choices, accepted, schedule and reviews, and a module delete orphans its decks\n- [ ] The note that `reviews.card_id` \"deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly\" is gone \u2014 it is now false\n- [ ] The archived-cards note records that the archive button was removed too, that `archiveCard`/`unarchiveCard` are gone from the frontend, and that both endpoints and the `archived` filters remain\n- [ ] The endpoint list gains the three `DELETE` routes and `GET /api/decks/:id/deletion-impact`\n- [ ] The orphaned-`sessions` consequence is recorded, so the next reader does not treat it as a bug\n- [ ] Every command in the verification gate passes, with the actual observed output recorded in the handover \u2014 not the numbers copied from the plan\n\n**Verify:** `cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint` \u2192 all green\n\nFull steps, code and commands: `docs/mitis/plans/2026-08-31-deletion.md` \u2192 Task 9. Design rationale: `docs/mitis/specs/2026-08-31-deletion-design.md`.\n\n```json:metadata\n{\"files\": [\"docs/HANDOVER.md\"], \"verifyCommand\": \"cargo test && cargo clippy --all-targets -- -D warnings && SQLX_OFFLINE=true cargo build && python3 frontend/scripts/check-contrast.py && cd frontend && pnpm exec tsc -b --noEmit && pnpm build && pnpm exec oxlint\", \"acceptanceCriteria\": [\"the Archive-never-delete principle is rewritten to the current truth\", \"the false 'stray delete fails loudly' claim is gone\", \"the archived-cards note records the removed button and what remains\", \"the endpoint list gains the three DELETEs and deletion-impact\", \"the orphaned sessions consequence is recorded\", \"every gate command passes with its actual output recorded\"], \"modelTier\": \"standard\"}\n```"
     }
   ],
-  "lastUpdated": "2026-08-31T09:16:45"
+  "lastUpdated": "2026-08-31T10:12:59"
 }

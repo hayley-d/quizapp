@@ -19,6 +19,14 @@ fn multiple_choice_card(deck_id: i64) -> Value {
     })
 }
 
+fn short_answer_card(deck_id: i64) -> Value {
+    json!({
+        "deck_id": deck_id, "kind": "short_answer",
+        "prompt_md": "Name the linkage that merges the two closest points",
+        "accepted": [{ "text": "single", "is_primary": true }]
+    })
+}
+
 async fn create_flashcard(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
     let (status, created) = app
         .post("/api/cards", json!({
@@ -28,6 +36,25 @@ async fn create_flashcard(app: &common::TestApp, deck_id: i64, prompt: &str) -> 
         .await;
     assert_eq!(status, StatusCode::CREATED, "helper card create failed: {created}");
     created["id"].as_i64().unwrap()
+}
+
+async fn record_review(app: &common::TestApp, deck_id: i64, card_id: i64) -> i64 {
+    let session_id: i64 = sqlx::query_scalar(
+        "INSERT INTO sessions (mode, deck_ids) VALUES ('practice', ?) RETURNING id",
+    )
+    .bind(format!("[{deck_id}]"))
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    sqlx::query_scalar(
+        "INSERT INTO reviews (card_id, session_id, correct) VALUES (?, ?, 1) RETURNING id",
+    )
+    .bind(card_id)
+    .bind(session_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap()
 }
 
 async fn card_ids_in_order(app: &common::TestApp, deck_id: i64) -> Vec<i64> {
@@ -999,4 +1026,106 @@ async fn a_move_keeps_interleaved_archived_cards_in_place() {
     app.post(&format!("/api/cards/{third_card_id}/move"), json!({ "before": first_card_id })).await;
     assert_eq!(card_ids_in_order(&app, deck_id).await, vec![third_card_id, first_card_id, hidden]);
     assert_eq!(card_positions(&app, deck_id).await, vec![0, 1, 2]);
+}
+
+#[tokio::test]
+async fn deleting_a_card_row_cascades_to_its_reviews() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "Test 1").await;
+    let card_id = create_flashcard(&app, deck_id, "what is k-means").await;
+    let review_id = record_review(&app, deck_id, card_id).await;
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        1,
+        "the review must exist before the delete, or the cascade proves nothing",
+    );
+
+    sqlx::query("DELETE FROM cards WHERE id = ?")
+        .bind(card_id)
+        .execute(&app.pool)
+        .await
+        .expect("the delete must succeed rather than be refused by a foreign key");
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        0,
+        "the card's review must be gone with it",
+    );
+}
+
+#[tokio::test]
+async fn deletes_a_multiple_choice_card_with_its_choices_schedule_and_reviews() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "Test 1").await;
+    let (_, card) = app.post("/api/cards", multiple_choice_card(deck_id)).await;
+    let card_id = card["id"].as_i64().unwrap();
+    let survivor_id = create_flashcard(&app, deck_id, "untouched").await;
+    record_review(&app, deck_id, card_id).await;
+    sqlx::query("UPDATE schedule SET due_at = '2026-01-01T00:00:00Z' WHERE card_id = ?")
+        .bind(card_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    for (table, expected) in [("choices", 2), ("schedule", 1), ("reviews", 1)] {
+        assert_eq!(
+            app.count(&format!("SELECT COUNT(*) FROM {table} WHERE card_id = {card_id}")).await,
+            expected,
+            "{table} must be populated before the delete, or its assertion proves nothing",
+        );
+    }
+
+    let (status, body) = app.delete(&format!("/api/cards/{card_id}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "body was {body}");
+    assert_eq!(body, Value::Null, "204 must carry no body");
+
+    for table in ["choices", "schedule", "reviews"] {
+        assert_eq!(
+            app.count(&format!("SELECT COUNT(*) FROM {table} WHERE card_id = {card_id}")).await,
+            0,
+            "{table} rows survived the delete",
+        );
+    }
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM cards WHERE id = {card_id}")).await,
+        0,
+    );
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM cards WHERE id = {survivor_id}")).await,
+        1,
+        "the other card in the deck must be untouched",
+    );
+}
+
+#[tokio::test]
+async fn deletes_a_short_answer_card_with_its_accepted_answers() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "Test 1").await;
+    let (created_status, card) = app.post("/api/cards", short_answer_card(deck_id)).await;
+    assert_eq!(created_status, StatusCode::CREATED, "setup failed: {card}");
+    let card_id = card["id"].as_i64().unwrap();
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM accepted WHERE card_id = {card_id}")).await,
+        1,
+        "accepted must be populated before the delete",
+    );
+
+    let (status, _) = app.delete(&format!("/api/cards/{card_id}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM accepted WHERE card_id = {card_id}")).await,
+        0,
+    );
+}
+
+#[tokio::test]
+async fn deleting_an_unknown_card_is_404() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.delete("/api/cards/9999").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "card not found");
 }

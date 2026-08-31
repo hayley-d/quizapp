@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-  Archive as ArchiveIcon,
-  ArchiveRestore,
-  Eye,
-  EyeOff,
-  GripVertical,
-  Pencil,
-} from 'lucide-react'
+import { Eye, EyeOff, GripVertical, Pencil, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { KIND_LABEL, type Card, type CardStats, type CardSummary } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +11,7 @@ import { Markdown } from '@/components/Markdown'
 import { CardBack } from '@/components/deck/CardBack'
 import { CardStatBadge } from '@/components/deck/CardStatBadge'
 import { useFlip } from '@/components/deck/useFlip'
+import { plainTextPrompt } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type CardRowProps = {
@@ -25,7 +19,7 @@ type CardRowProps = {
   cardStats: CardStats | null | undefined
   loadCard: (id: number, signal: AbortSignal) => Promise<Card>
   onEdit: () => void
-  onArchiveToggle: () => void
+  onDelete: () => void
 }
 
 export function CardRow({
@@ -33,7 +27,7 @@ export function CardRow({
   cardStats,
   loadCard,
   onEdit,
-  onArchiveToggle,
+  onDelete,
 }: CardRowProps) {
   const [fullCard, setFullCard] = useState<Card | null>(null)
   const [loading, setLoading] = useState(false)
@@ -87,11 +81,7 @@ export function CardRow({
 
   const showingAnswer = face === 'back'
 
-  const promptLabel = card.prompt_md
-    .replace(/[#*_`~>$\\[\]()!-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
+  const promptLabel = plainTextPrompt(card.prompt_md)
 
   return (
     <li
@@ -144,11 +134,11 @@ export function CardRow({
               variant="brand"
               size="icon-sm"
               className="rounded-full"
-              aria-label={`${card.archived ? 'Unarchive' : 'Archive'} card ${card.id}`}
-              title={card.archived ? 'Unarchive card' : 'Archive card'}
-              onClick={onArchiveToggle}
+              aria-label={`Delete card ${card.id}`}
+              title="Delete card"
+              onClick={onDelete}
             >
-              {card.archived ? <ArchiveRestore /> : <ArchiveIcon />}
+              <Trash2 />
             </Button>
 
             {card.kind === 'mc_single' && showingAnswer && fullCard && (

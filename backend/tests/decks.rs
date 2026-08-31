@@ -8,6 +8,41 @@ async fn create_module(app: &common::TestApp, name: &str) -> i64 {
     created["id"].as_i64().unwrap()
 }
 
+async fn create_deck_named(app: &common::TestApp, name: &str) -> i64 {
+    let (_, created) = app.post("/api/decks", json!({ "name": name })).await;
+    created["id"].as_i64().unwrap()
+}
+
+async fn create_flashcard(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
+    let (status, created) = app
+        .post("/api/cards", json!({
+            "deck_id": deck_id, "kind": "flashcard",
+            "prompt_md": prompt, "answer_md": "an answer",
+        }))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "helper card create failed: {created}");
+    created["id"].as_i64().unwrap()
+}
+
+async fn record_review(app: &common::TestApp, deck_id: i64, card_id: i64) -> i64 {
+    let session_id: i64 = sqlx::query_scalar(
+        "INSERT INTO sessions (mode, deck_ids) VALUES ('practice', ?) RETURNING id",
+    )
+    .bind(format!("[{deck_id}]"))
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    sqlx::query_scalar(
+        "INSERT INTO reviews (card_id, session_id, correct) VALUES (?, ?, 1) RETURNING id",
+    )
+    .bind(card_id)
+    .bind(session_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap()
+}
+
 fn names_of(list: &serde_json::Value) -> Vec<&str> {
     list.as_array()
         .unwrap()
@@ -344,4 +379,102 @@ async fn module_deck_count_reflects_only_its_own_decks() {
         .find(|module| module["id"].as_i64() == Some(module_id))
         .expect("module present");
     assert_eq!(module["deck_count"], 2);
+}
+
+#[tokio::test]
+async fn deleting_a_deck_removes_its_cards_and_their_reviews() {
+    let app = common::spawn_app().await;
+    let module_id = create_module(&app, "COS781").await;
+    let (_, doomed) = app
+        .post("/api/decks", json!({ "module_id": module_id, "name": "Test 1" }))
+        .await;
+    let doomed_deck_id = doomed["id"].as_i64().unwrap();
+    let (_, sibling) = app
+        .post("/api/decks", json!({ "module_id": module_id, "name": "Test 2" }))
+        .await;
+    let sibling_deck_id = sibling["id"].as_i64().unwrap();
+
+    let card_id = create_flashcard(&app, doomed_deck_id, "what is k-means").await;
+    let review_id = record_review(&app, doomed_deck_id, card_id).await;
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        1,
+        "the review must exist before the delete",
+    );
+
+    let (status, body) = app.delete(&format!("/api/decks/{doomed_deck_id}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "body was {body}");
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM decks WHERE id = {doomed_deck_id}")).await,
+        0,
+    );
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM cards WHERE id = {card_id}")).await,
+        0,
+        "the deck's cards must go with it",
+    );
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        0,
+        "the cards' reviews must go with them",
+    );
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM decks WHERE id = {sibling_deck_id}")).await,
+        1,
+        "the other deck in the module must be untouched",
+    );
+}
+
+#[tokio::test]
+async fn deleting_an_unknown_deck_is_404() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.delete("/api/decks/9999").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "deck not found");
+}
+
+#[tokio::test]
+async fn deletion_impact_counts_archived_cards_and_their_reviews() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck_named(&app, "Test 1").await;
+    let visible_card_id = create_flashcard(&app, deck_id, "visible").await;
+    let archived_card_id = create_flashcard(&app, deck_id, "archived").await;
+
+    let (archive_status, archived) = app
+        .post(&format!("/api/cards/{archived_card_id}/archive"), json!({}))
+        .await;
+    assert_eq!(archive_status, StatusCode::OK, "setup failed: {archived}");
+    assert_eq!(archived["archived"], true);
+
+    record_review(&app, deck_id, visible_card_id).await;
+    record_review(&app, deck_id, archived_card_id).await;
+
+    let (status, impact) = app
+        .get(&format!("/api/decks/{deck_id}/deletion-impact"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(impact["card_count"], 2, "the archived card must be counted");
+    assert_eq!(
+        impact["review_count"], 2,
+        "the archived card's review must be counted",
+    );
+
+    let (_, deck) = app.get(&format!("/api/decks/{deck_id}")).await;
+    assert_eq!(
+        deck["card_count"], 1,
+        "the deck's own card_count still excludes archived cards, so the two figures \
+         must differ — if they match, deletion-impact copied the archived filter",
+    );
+}
+
+#[tokio::test]
+async fn deletion_impact_for_an_unknown_deck_is_404() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.get("/api/decks/9999/deletion-impact").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(body["message"], "deck not found");
 }

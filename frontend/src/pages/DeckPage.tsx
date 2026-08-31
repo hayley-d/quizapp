@@ -28,8 +28,10 @@ import {
 } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { ConfirmDeleteDialog } from '@/components/ConfirmDeleteDialog'
 import { CardRow } from '@/components/deck/CardRow'
 import { DeckStatsStrip } from '@/components/deck/DeckStatsStrip'
+import { plainTextPrompt } from '@/lib/format'
 
 type TestTypeOption = {
   mode: SessionMode
@@ -81,6 +83,8 @@ export function DeckPage() {
   const [notFound, setNotFound] = useState(false)
   const [startingMode, setStartingMode] = useState<SessionMode | null>(null)
   const [deckStats, setDeckStats] = useState<DeckStats | null>(null)
+  const [cardPendingDeletion, setCardPendingDeletion] = useState<CardSummary | null>(null)
+  const [deletingCard, setDeletingCard] = useState(false)
 
   const loadDeck = useCallback(
     async (signal: AbortSignal) => {
@@ -99,6 +103,7 @@ export function DeckPage() {
 
   const inFlight = useRef<AbortController | null>(null)
   const deckInFlight = useRef<AbortController | null>(null)
+  const statsInFlight = useRef<AbortController | null>(null)
 
   const loadDeckStats = useCallback(
     async (signal: AbortSignal) => {
@@ -157,6 +162,7 @@ export function DeckPage() {
   useEffect(() => () => {
     inFlight.current?.abort()
     deckInFlight.current?.abort()
+    statsInFlight.current?.abort()
   }, [])
 
   function reloadDeck() {
@@ -166,23 +172,27 @@ export function DeckPage() {
     void loadDeck(controller.signal)
   }
 
-  async function archive(card: CardSummary) {
-    try {
-      await api.archiveCard(card.id)
-      void loadCards()
-      reloadDeck()
-    } catch {
-      toast.error('Could not archive card')
-    }
+  function reloadDeckStats() {
+    statsInFlight.current?.abort()
+    const controller = new AbortController()
+    statsInFlight.current = controller
+    void loadDeckStats(controller.signal)
   }
 
-  async function unarchive(card: CardSummary) {
+  async function deleteCard() {
+    const card = cardPendingDeletion
+    if (card === null) return
+    setDeletingCard(true)
     try {
-      await api.unarchiveCard(card.id)
+      await api.deleteCard(card.id)
+      setCardPendingDeletion(null)
       void loadCards()
       reloadDeck()
+      reloadDeckStats()
     } catch {
-      toast.error('Could not unarchive card')
+      toast.error('Could not delete the card')
+    } finally {
+      setDeletingCard(false)
     }
   }
 
@@ -246,6 +256,18 @@ export function DeckPage() {
     deckStats === null
       ? null
       : new Map(deckStats.cards.map((cardStats) => [cardStats.card_id, cardStats]))
+
+  function cardDeletionLines(card: CardSummary): string[] {
+    const recordedAnswers = statsByCardId?.get(card.id)?.attempt_count ?? null
+    const lines = [`“${plainTextPrompt(card.prompt_md)}” will be removed from this deck.`]
+    if (recordedAnswers !== null && recordedAnswers > 0) {
+      lines.push(
+        `${recordedAnswers} recorded answer${recordedAnswers === 1 ? '' : 's'} will go with it.`,
+      )
+    }
+    lines.push('This cannot be undone.')
+    return lines
+  }
 
   if (notFound) {
     return (
@@ -378,15 +400,25 @@ export function DeckPage() {
                   }
                   loadCard={api.getCard}
                   onEdit={() => navigate(`/cards/${card.id}/edit`)}
-                  onArchiveToggle={() =>
-                    void (card.archived ? unarchive(card) : archive(card))
-                  }
+                  onDelete={() => setCardPendingDeletion(card)}
                 />
               ))}
             </ul>
           </SortableContext>
         </DndContext>
       </div>
+
+      {cardPendingDeletion !== null && (
+        <ConfirmDeleteDialog
+          open
+          onOpenChange={(isOpen) => { if (!isOpen) setCardPendingDeletion(null) }}
+          title="Delete this card?"
+          lines={cardDeletionLines(cardPendingDeletion)}
+          confirmLabel="Delete card"
+          busy={deletingCard}
+          onConfirm={() => void deleteCard()}
+        />
+      )}
     </div>
   )
 }

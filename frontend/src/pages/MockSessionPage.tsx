@@ -114,8 +114,13 @@ export function MockSessionPage() {
       await loadNext()
     } catch (error: unknown) {
       if (error instanceof ApiError) {
-        const messages = Object.values(error.byField())
-        toast.error(messages[0] ?? error.message)
+        if ('card_id' in error.byField()) {
+          toast.error('That card was removed. Moving on.')
+          await loadNext()
+        } else {
+          const messages = Object.values(error.byField())
+          toast.error(messages[0] ?? error.message)
+        }
       } else {
         toast.error('Could not record your answer')
       }

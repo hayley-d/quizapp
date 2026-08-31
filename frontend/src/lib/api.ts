@@ -303,6 +303,8 @@ export type DeckStats = {
   cards: CardStats[]
 }
 
+export type DeckDeletionImpact = { card_count: number; review_count: number }
+
 export const api = {
   listModules: () => request<Module[]>('GET', '/modules'),
   createModule: (name: string) => request<Module>('POST', '/modules', { name }),
@@ -324,10 +326,15 @@ export const api = {
     request<Card>('POST', '/cards', input),
   updateCard: (id: number, input: CardInput) =>
     request<Card>('PATCH', `/cards/${id}`, input),
-  archiveCard: (id: number) => request<Card>('POST', `/cards/${id}/archive`, {}),
-  unarchiveCard: (id: number) => request<Card>('POST', `/cards/${id}/unarchive`, {}),
   moveCard: (id: number, before: number | null) =>
     request<Card>('POST', `/cards/${id}/move`, { before }),
+  deleteCard: (id: number) => request<void>('DELETE', `/cards/${id}`),
+  deleteDeck: (id: number) => request<void>('DELETE', `/decks/${id}`),
+  deleteModule: (id: number) => request<void>('DELETE', `/modules/${id}`),
+  getDeckDeletionImpact: (id: number, signal?: AbortSignal) =>
+    request<DeckDeletionImpact>(
+      'GET', `/decks/${id}/deletion-impact`, undefined, signal,
+    ),
   createSession: (input: CreateSessionInput) =>
     request<Session>('POST', '/sessions', input),
   nextCard: (sessionId: number, signal?: AbortSignal) =>

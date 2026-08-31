@@ -65,6 +65,9 @@ impl TestApp {
     pub async fn patch(&self, uri: &str, body: Value) -> (StatusCode, Value) {
         self.request("PATCH", uri, Some(body)).await
     }
+    pub async fn delete(&self, uri: &str) -> (StatusCode, Value) {
+        self.request("DELETE", uri, None).await
+    }
 
     pub async fn get_response(&self, uri: &str) -> axum::response::Response {
         let request = Request::builder()

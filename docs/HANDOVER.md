@@ -349,10 +349,11 @@ other — do not assume a value carries over.
 - Cargo workspace: root manifest, Rust package in `backend/`, React app in `frontend/`
 - All eight tables from the data model, in one migration (`backend/migrations/0001_init.sql`)
 - `AppError` envelope on every failure, including malformed request bodies
-- `GET|POST /api/modules`; `GET|POST /api/decks`, `GET /api/decks/:id`, `PATCH /api/decks/:id`
+- `GET|POST /api/modules`, `DELETE /api/modules/:id`; `GET|POST /api/decks`,
+  `GET|PATCH|DELETE /api/decks/:id`, `GET /api/decks/:id/deletion-impact`
 - `GET /api/decks` supports server-side name search (`q`), module filter (`module_id`) and
   date sort (`sort`)
-- `GET|POST /api/cards`, `GET|PATCH /api/cards/:id`, `POST /api/cards/:id/archive`,
+- `GET|POST /api/cards`, `GET|PATCH|DELETE /api/cards/:id`, `POST /api/cards/:id/archive`,
   `POST /api/cards/:id/unarchive` — all three card kinds, per-kind validation in Rust, the
   card plus its children plus a `schedule` row written in one transaction, PATCH a full
   replace that clears both child tables first
@@ -367,8 +368,8 @@ other — do not assume a value carries over.
   answer is fetched per row on first flip via `GET /api/cards/:id`. Multiple-choice backs show a
   two-column grid whose options stay uniform until the eye button reveals the correct one. Rows
   drag to reorder by their grip (`@dnd-kit/sortable`, keyboard reorder included), and the order
-  persists. Archiving is unchanged; the show-archived toggle was later removed by
-  `e09e76d`. Design:
+  persists. The per-card archive button was replaced by a delete button, so archiving is no
+  longer reachable from the interface (see the Known-and-accepted entry). Design:
   [`mitis/specs/2026-08-27-deck-card-list-redesign-design.md`](mitis/specs/2026-08-27-deck-card-list-redesign-design.md)
 
   **Manual verification outstanding.** The nine-point browser walkthrough for this screen
@@ -855,8 +856,28 @@ against an existing database — a comment-only edit is enough to trigger it. De
 `data/quizapp.db` and let it regenerate. That is fine while the data is throwaway; it stops
 being fine once real cards exist.
 
-**Archive, never delete.** Cards are archived so their `reviews` rows keep meaning.
-`reviews.card_id` deliberately has no `ON DELETE CASCADE` so a stray delete fails loudly.
+**Deletion is real, and cascades.** Deleting a card removes its `choices`, `accepted`,
+`schedule` and `reviews` rows; deleting a deck removes its cards and everything under
+them. `reviews.card_id` gained `ON DELETE CASCADE` in
+`0004_delete_cascades.sql` — before that it deliberately had none, so that a stray delete
+would fail loudly. Accuracy figures therefore shift retroactively when a card goes.
+Deleting a module removes only the module: `decks.module_id` is `ON DELETE SET NULL`, so
+its decks survive as unparented.
+
+**`sessions` rows outlive their decks.** `sessions.deck_ids` is JSON text with no foreign
+key, so a deleted deck leaves sessions pointing at a gone id. Their reviews cascade away,
+so such a session reads as zero-answered. Left alone deliberately: nothing in the
+interface lists sessions, and a session with no reviews is already a legitimate state.
+
+**`0001_init.sql`'s header comment about `PRAGMA foreign_keys` is wrong, and is left
+wrong on purpose.** It claims the migration runner's connection does not set the pragma,
+and points at `backend/src/db.rs`. The file is `backend/src/database.rs`, and its
+`connect()` sets `.foreign_keys(true)` on the pool options and then runs
+`sqlx::migrate!` on that same pool — so foreign keys are enforced while migrations run.
+Correcting the comment would change an applied migration's checksum, after which sqlx
+refuses to run against an existing database, so it stays as it is. Do not build a
+migration's safety argument on it: `0004_delete_cascades.sql` states the two reasons its
+table rebuild is safe *under* enforcement.
 
 **Session state lives only in `reviews`.** The weights, the staleness, the no-repeat window
 and the progress counts are all derived from it, which is why a mid-session reload resumes
@@ -926,6 +947,29 @@ itself — axum's own 413 is raw `text/plain` and would be the one failure in th
 frontend cannot parse.
 
 ## Outstanding
+
+### Deletion — verification status
+
+Verified by running the full gate from the repo root on the `deletion` branch on
+2026-08-31.
+
+- `cargo test` — **391 passed, 0 failed** (381 recorded after Part 8; +10 new, across the
+  `delete_card` / `delete_deck` / `delete_module` / `deletion-impact` handlers and their
+  cascade tests)
+- `cargo clippy --all-targets -- -D warnings` — clean, including the three new delete
+  handlers
+- `SQLX_OFFLINE=true cargo build` — clean
+- `python3 frontend/scripts/check-contrast.py` — **16 rows, all `ok`, RECORDED tier
+  empty**, the same 16 as before Part 8 and before this plan; deletion introduced no new
+  colour pair, including the confirmation dialogs
+- `pnpm exec tsc -b --noEmit` — clean
+- `pnpm build` — succeeded, **no chunk-size warning this run**, largest chunk `markdown`
+  at 389.69 kB
+- `pnpm exec oxlint` — exit 0, **12 warnings, the same 12 pre-existing ones** (two
+  `only-export-components` in the shadcn-vendored `ui/badge.tsx` and `ui/button.tsx`,
+  eight `set-state-in-effect`, one `purity`), none `no-explicit-any`, none new
+
+Every command passed. Nothing in this run needed a fix.
 
 ### Part 8 — verification status
 
@@ -1414,14 +1458,16 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   where the same split is already documented.
 - **Multi-deck and module-wide mock tests are intact and unreachable**, exactly as for
   practice. The backend accepts both; no button starts one.
-- **Archived cards cannot be reached from the UI, deliberately.** `e09e76d` removed the
-  "Show archived" switch and pinned the deck list to `archived: 'false'`, so archiving is
-  one-way from the interface. Two knock-on facts, both left as they are: `unarchive(card)`
-  in `DeckPage.tsx` is unreachable, because `card.archived` can never be true in a list
-  fetched with that filter; and `POST /api/cards/:id/unarchive` now has no caller in the
-  frontend. Neither was deleted — the endpoint is tested, `GET /api/cards` still takes
-  `archived=all`, and "Archive, never delete" still holds at the data layer, so the
-  capability is intact behind the API whenever a screen wants it back.
+- **Archiving is now unreachable from the interface entirely.** `e09e76d` removed the
+  "Show archived" switch, and the deletion work removed the per-card archive button that
+  was the last control driving it. `archiveCard` and `unarchiveCard` are gone from
+  `frontend/src/lib/api.ts`. What remains, deliberately: the `archived` column, both
+  endpoints with their tests, `GET /api/cards`'s `archived=all` parameter, and every
+  `archived = 0` filter across sessions, stats and the decks list. Two knock-on facts,
+  both left as they are: `CardRow` still renders an `Archived` badge and an `opacity-60`
+  class that no list can now trigger, and `GET /api/decks/:id/deletion-impact` exists
+  precisely because archived cards are invisible yet still get deleted, so the deck
+  confirmation must count them separately from `card_count`.
 - `DecksPage`'s empty state keys on there being no groups, so the onboarding copy does not
   show when unparented decks exist but no modules do. Cosmetic.
 - `AppError::tag_foreign_key_violation` takes `&str` while `AppError::validation` is generic

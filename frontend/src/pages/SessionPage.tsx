@@ -139,7 +139,12 @@ export function SessionPage() {
       )
     } catch (error: unknown) {
       if (error instanceof ApiError) {
-        toast.error(error.message)
+        if ('card_id' in error.byField()) {
+          toast.error('That card was removed. Moving on.')
+          void loadNext()
+        } else {
+          toast.error(error.message)
+        }
       } else {
         toast.error('Could not reach the server')
       }

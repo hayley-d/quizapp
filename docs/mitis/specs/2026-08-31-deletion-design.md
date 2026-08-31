@@ -41,11 +41,21 @@ row, `DROP TABLE reviews`, rename, then recreate `idx_reviews_card_time` and
 Two properties make the rebuild safe, both worth stating because a future reader will
 wonder:
 
-- `PRAGMA foreign_keys` is not set on the migration runner's connection — only on real
-  app connections, via `.foreign_keys(true)`. This is established by the header comment
-  in `0001_init.sql`. So the drop-and-rename cannot trip enforcement mid-flight.
-- Nothing in the schema references `reviews`, so there are no other foreign-key clauses
-  for the rename to rewrite.
+- Nothing in the schema references `reviews`, so `DROP TABLE reviews` violates no foreign
+  key, and the rename has no other foreign-key clauses to rewrite.
+- The `INSERT … SELECT` copies only rows that already satisfied the `cards` and `sessions`
+  foreign keys, so no row can fail a constraint on the way into the rebuilt table.
+
+**Note what is *not* true here.** `0001_init.sql`'s header comment claims `PRAGMA
+foreign_keys` is not set on the migration runner's connection, and cites
+`backend/src/db.rs`. Both halves are wrong: the file is `backend/src/database.rs`, and
+`connect()` there sets `.foreign_keys(true)` on the pool options and then runs
+`sqlx::migrate!` on that same pool — so foreign keys ARE enforced while migrations run.
+The rebuild is safe under enforcement for the two reasons above, not because enforcement
+is off. The stale comment in `0001` is left alone deliberately: editing an applied
+migration changes its checksum and sqlx then refuses to run against an existing database,
+and a comment-only edit is enough to trigger it (`docs/HANDOVER.md:855`). It is recorded
+in the handover instead.
 
 No other migration is needed. Every remaining cascade already exists:
 
