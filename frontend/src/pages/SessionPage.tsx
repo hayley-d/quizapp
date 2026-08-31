@@ -365,6 +365,7 @@ export function SessionPage() {
             onOverride={() => void override()}
             onNext={() => void loadNext()}
             nextButtonRef={nextButton}
+            givenAnswer={card.kind === 'text_answer' ? typedAnswer : null}
           />
         </div>
       ) : (

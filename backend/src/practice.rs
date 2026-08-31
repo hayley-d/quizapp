@@ -135,6 +135,7 @@ pub fn excluded_card_ids(
 pub fn select_card(
     candidates: &[CandidateCard],
     recent_review_card_ids: &[i64],
+    unresolved_miss_card_ids: &[i64],
     roll: f64,
 ) -> Option<i64> {
     if candidates.is_empty() {
@@ -146,16 +147,23 @@ pub fn select_card(
         .filter(|candidate| !excluded.contains(&candidate.card_id))
         .collect();
 
-    let total: f64 = included.iter().map(|candidate| weight_for(candidate)).sum();
+    let unresolved: Vec<&CandidateCard> = included
+        .iter()
+        .copied()
+        .filter(|candidate| unresolved_miss_card_ids.contains(&candidate.card_id))
+        .collect();
+    let selectable = if unresolved.is_empty() { &included } else { &unresolved };
+
+    let total: f64 = selectable.iter().map(|candidate| weight_for(candidate)).sum();
     let target = roll * total;
     let mut cumulative = 0.0;
-    for candidate in &included {
+    for candidate in selectable {
         cumulative += weight_for(candidate);
         if target < cumulative {
             return Some(candidate.card_id);
         }
     }
-    included.last().map(|candidate| candidate.card_id)
+    selectable.last().map(|candidate| candidate.card_id)
 }
 
 #[cfg(test)]
@@ -411,28 +419,28 @@ mod tests {
             reviewed(2, &[ReviewOutcome::Correct], ONE_DAY),
             never_seen(3),
         ];
-        let first = select_card(&candidates, &[], 0.42);
+        let first = select_card(&candidates, &[], &[], 0.42);
         for _ in 0..100 {
-            assert_eq!(select_card(&candidates, &[], 0.42), first);
+            assert_eq!(select_card(&candidates, &[], &[], 0.42), first);
         }
     }
 
     #[test]
     fn a_roll_of_zero_selects_the_first_included_candidate() {
         let candidates = pool_of(4);
-        assert_eq!(select_card(&candidates, &[], 0.0), Some(1));
+        assert_eq!(select_card(&candidates, &[], &[], 0.0), Some(1));
     }
 
     #[test]
     fn a_roll_just_below_one_selects_the_last_included_candidate() {
         let candidates = pool_of(4);
-        assert_eq!(select_card(&candidates, &[], 0.999_999), Some(4));
+        assert_eq!(select_card(&candidates, &[], &[], 0.999_999), Some(4));
     }
 
     #[test]
     fn a_roll_of_exactly_one_still_returns_a_candidate() {
         let candidates = pool_of(4);
-        assert_eq!(select_card(&candidates, &[], 1.0), Some(4));
+        assert_eq!(select_card(&candidates, &[], &[], 1.0), Some(4));
     }
 
     #[test]
@@ -440,7 +448,7 @@ mod tests {
         let candidates = pool_of(4);
         let card_ids = [1, 2, 3, 4];
         for roll in [-5.0, 0.0, 0.25, 0.5, 1.0, 12.0, f64::NAN, f64::INFINITY] {
-            let selected = select_card(&candidates, &[], roll)
+            let selected = select_card(&candidates, &[], &[], roll)
                 .unwrap_or_else(|| panic!("roll {roll} selected nothing"));
             assert!(
                 card_ids.contains(&selected),
@@ -462,7 +470,7 @@ mod tests {
         let mut light_hits = 0;
         for step in 0..steps {
             let roll = step as f64 / steps as f64;
-            match select_card(&candidates, &[], roll) {
+            match select_card(&candidates, &[], &[], roll) {
                 Some(1) => heavy_hits += 1,
                 Some(2) => light_hits += 1,
                 other => panic!("unexpected selection {other:?}"),
@@ -505,7 +513,7 @@ mod tests {
         );
         let candidates = pool_of(3);
         assert!(
-            select_card(&candidates, &[99, 98], 0.0).is_some(),
+            select_card(&candidates, &[99, 98], &[], 0.0).is_some(),
             "ids that are not in the pool must not starve the selector",
         );
     }
@@ -513,14 +521,14 @@ mod tests {
     #[test]
     fn a_single_card_pool_repeats_that_card() {
         let candidates = pool_of(1);
-        assert_eq!(select_card(&candidates, &[1], 0.0), Some(1));
-        assert_eq!(select_card(&candidates, &[1, 1, 1], 0.5), Some(1));
+        assert_eq!(select_card(&candidates, &[1], &[], 0.0), Some(1));
+        assert_eq!(select_card(&candidates, &[1, 1, 1], &[], 0.5), Some(1));
     }
 
     #[test]
     fn an_empty_candidate_list_selects_nothing() {
-        assert_eq!(select_card(&[], &[], 0.0), None);
-        assert_eq!(select_card(&[], &[1, 2, 3], 0.5), None);
+        assert_eq!(select_card(&[], &[], &[], 0.0), None);
+        assert_eq!(select_card(&[], &[1, 2, 3], &[], 0.5), None);
     }
 
     #[test]
@@ -537,7 +545,7 @@ mod tests {
 
                 for roll in [0.0, 0.5, 0.999_999] {
                     assert!(
-                        select_card(&candidates, &history, roll).is_some(),
+                        select_card(&candidates, &history, &[], roll).is_some(),
                         "pool of {pool_size} starved with history {history:?} at roll {roll}",
                     );
                 }
@@ -559,7 +567,7 @@ mod tests {
                         remaining /= pool_size;
                     }
                     assert!(
-                        select_card(&candidates, &history, 0.5).is_some(),
+                        select_card(&candidates, &history, &[], 0.5).is_some(),
                         "pool of {pool_size} starved with history {history:?}",
                     );
                 }
@@ -568,12 +576,109 @@ mod tests {
     }
 
     #[test]
+    fn an_unresolved_miss_outranks_even_a_never_seen_card() {
+        let candidates = vec![
+            never_seen(1),
+            never_seen(2),
+            reviewed(3, &[ReviewOutcome::Incorrect], 0),
+        ];
+        for step in 0..1_000 {
+            let roll = step as f64 / 1_000.0;
+            assert_eq!(
+                select_card(&candidates, &[], &[3], roll),
+                Some(3),
+                "an unresolved miss must be served ahead of the heaviest ordinary card",
+            );
+        }
+    }
+
+    #[test]
+    fn several_unresolved_misses_are_all_reachable() {
+        let candidates = pool_of(4);
+        let mut seen: Vec<i64> = Vec::new();
+        for step in 0..1_000 {
+            let roll = step as f64 / 1_000.0;
+            let selected = select_card(&candidates, &[], &[2, 4], roll).unwrap();
+            assert!(
+                [2, 4].contains(&selected),
+                "selected {selected}, which is not an unresolved miss",
+            );
+            if !seen.contains(&selected) {
+                seen.push(selected);
+            }
+        }
+        seen.sort_unstable();
+        assert_eq!(seen, vec![2, 4], "every unresolved miss must be reachable");
+    }
+
+    #[test]
+    fn an_unresolved_miss_still_waits_out_the_no_repeat_window() {
+        let candidates = pool_of(4);
+        for step in 0..1_000 {
+            let roll = step as f64 / 1_000.0;
+            let selected = select_card(&candidates, &[2], &[2], roll).unwrap();
+            assert_ne!(
+                selected, 2,
+                "a miss inside the no-repeat window must not be served again immediately",
+            );
+        }
+    }
+
+    #[test]
+    fn a_miss_returns_as_soon_as_it_leaves_the_no_repeat_window() {
+        let candidates = pool_of(4);
+        assert_eq!(
+            effective_no_repeat_window(candidates.len()),
+            3,
+            "this test's history is built around a window of three",
+        );
+        for roll in [0.0, 0.5, 0.999_999] {
+            assert_eq!(
+                select_card(&candidates, &[3, 4, 1, 2], &[2], roll),
+                Some(2),
+                "once outside the window the miss must be served at the next opportunity",
+            );
+        }
+    }
+
+    #[test]
+    fn unresolved_ids_outside_the_pool_do_not_starve_the_selector() {
+        let candidates = pool_of(3);
+        for roll in [0.0, 0.5, 0.999_999] {
+            assert!(
+                select_card(&candidates, &[], &[99], roll).is_some(),
+                "an unresolved id that is not in the pool must fall back to ordinary selection",
+            );
+        }
+    }
+
+    #[test]
+    fn a_resolved_miss_returns_to_ordinary_weighting() {
+        let candidates = vec![
+            never_seen(1),
+            reviewed(2, &[ReviewOutcome::Correct, ReviewOutcome::Incorrect], 0),
+        ];
+        let forced = select_card(&candidates, &[], &[2], 0.5);
+        assert_eq!(forced, Some(2));
+        let unforced = select_card(&candidates, &[], &[], 0.5);
+        assert_eq!(
+            unforced,
+            select_card(&candidates, &[], &[], 0.5),
+            "with nothing unresolved, selection must behave exactly as before",
+        );
+        assert_ne!(
+            unforced, forced,
+            "the never-seen card must win at this roll once the miss is resolved",
+        );
+    }
+
+    #[test]
     fn a_card_inside_the_window_is_never_selected() {
         let candidates = pool_of(10);
         let history = vec![10, 9, 8, 7, 6, 5, 4, 3];
         for step in 0..1_000 {
             let roll = step as f64 / 1_000.0;
-            let selected = select_card(&candidates, &history, roll).unwrap();
+            let selected = select_card(&candidates, &history, &[], roll).unwrap();
             assert!(
                 !history.contains(&selected),
                 "selected {selected}, which is inside the no-repeat window",

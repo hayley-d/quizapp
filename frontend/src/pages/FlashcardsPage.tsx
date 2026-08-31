@@ -8,6 +8,7 @@ import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { FlashcardAnswer } from '@/components/flashcards/FlashcardAnswer'
 import { useFlip } from '@/components/deck/useFlip'
+import { useSlide } from '@/components/flashcards/useSlide'
 import { plainTextPrompt } from '@/lib/format'
 
 function shuffled(order: number[]): number[] {
@@ -39,7 +40,8 @@ export function FlashcardsPage() {
   const [position, setPosition] = useState(0)
   const [fullCardsById, setFullCardsById] = useState<Map<number, Card>>(new Map())
 
-  const { face, flip, toFront, rotatorStyle, perspectiveStyle } = useFlip()
+  const { face, flip, resetToFront, rotatorStyle, perspectiveStyle } = useFlip()
+  const { slide, sliderStyle } = useSlide()
 
   const container = useRef<HTMLDivElement>(null)
 
@@ -117,21 +119,27 @@ export function FlashcardsPage() {
 
   const goToNext = useCallback(() => {
     if (order.length === 0) return
-    toFront()
-    setPosition((current) => (current + 1) % order.length)
-  }, [order.length, toFront])
+    slide('next', () => {
+      resetToFront()
+      setPosition((current) => (current + 1) % order.length)
+    })
+  }, [order.length, resetToFront, slide])
 
   const goToPrevious = useCallback(() => {
     if (order.length === 0) return
-    toFront()
-    setPosition((current) => (current - 1 + order.length) % order.length)
-  }, [order.length, toFront])
+    slide('previous', () => {
+      resetToFront()
+      setPosition((current) => (current - 1 + order.length) % order.length)
+    })
+  }, [order.length, resetToFront, slide])
 
   function shuffleCards() {
     if (order.length === 0) return
-    toFront()
-    setOrder((current) => shuffled(current))
-    setPosition(0)
+    slide('next', () => {
+      resetToFront()
+      setOrder((current) => shuffled(current))
+      setPosition(0)
+    })
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -202,6 +210,7 @@ export function FlashcardsPage() {
   const showingAnswer = face === 'back'
   const promptLabel = plainTextPrompt(card.prompt_md)
   const answerReady = !needsFullCard(card) || fullCard !== null
+  const viewedFraction = (position + 1) / order.length
 
   return (
     <div
@@ -213,45 +222,47 @@ export function FlashcardsPage() {
       {header}
 
       <div style={perspectiveStyle} className="sm:pl-11">
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label={`${showingAnswer ? 'Show question' : 'Show answer'}: ${promptLabel}`}
-          style={rotatorStyle}
-          onClick={(clickEvent) => {
-            if ((clickEvent.target as HTMLElement).closest('a,button')) return
-            flip()
-          }}
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              event.stopPropagation()
+        <div style={sliderStyle}>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label={`${showingAnswer ? 'Show question' : 'Show answer'}: ${promptLabel}`}
+            style={rotatorStyle}
+            onClick={(clickEvent) => {
+              if ((clickEvent.target as HTMLElement).closest('a,button')) return
               flip()
-            }
-          }}
-          className="flex min-h-[60vh] cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border bg-card p-8 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {showingAnswer ? (
-            answerReady ? (
-              fullCard !== null ? (
-                <FlashcardAnswer card={fullCard} />
+            }}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                event.stopPropagation()
+                flip()
+              }
+            }}
+            className="flex min-h-[60vh] cursor-pointer flex-col items-center justify-center gap-4 rounded-2xl border bg-card p-8 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {showingAnswer ? (
+              answerReady ? (
+                fullCard !== null ? (
+                  <FlashcardAnswer card={fullCard} />
+                ) : (
+                  <Markdown className="text-center text-2xl">{card.answer_md ?? '—'}</Markdown>
+                )
               ) : (
-                <Markdown className="text-center text-2xl">{card.answer_md ?? '—'}</Markdown>
+                <div className="h-6 w-48 animate-pulse rounded bg-muted" aria-busy="true" />
               )
             ) : (
-              <div className="h-6 w-48 animate-pulse rounded bg-muted" aria-busy="true" />
-            )
-          ) : (
-            <>
-              <Markdown className="text-center text-2xl">{card.prompt_md}</Markdown>
-              {card.image_path !== null && (
-                <div onClick={(event) => event.stopPropagation()}>
-                  <CardImage path={card.image_path} altText={promptLabel} />
-                </div>
-              )}
-            </>
-          )}
+              <>
+                <Markdown className="text-center text-2xl">{card.prompt_md}</Markdown>
+                {card.image_path !== null && (
+                  <div onClick={(event) => event.stopPropagation()}>
+                    <CardImage path={card.image_path} altText={promptLabel} />
+                  </div>
+                )}
+              </>
+            )}
+        </div>
         </div>
       </div>
 
@@ -289,6 +300,13 @@ export function FlashcardsPage() {
         >
           <Shuffle />
         </Button>
+      </div>
+
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary sm:ml-11 sm:w-[calc(100%-2.75rem)]">
+        <div
+          className="h-full rounded-full bg-brand transition-[width]"
+          style={{ width: `${viewedFraction * 100}%` }}
+        />
       </div>
     </div>
   )

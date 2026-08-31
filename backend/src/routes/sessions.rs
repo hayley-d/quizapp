@@ -535,6 +535,33 @@ async fn load_recent_review_card_ids(
     Ok(card_ids)
 }
 
+async fn load_unresolved_miss_card_ids(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+) -> AppResult<Vec<i64>> {
+    let card_ids = sqlx::query_scalar!(
+        r#"
+        WITH latest AS (
+            SELECT card_id,
+                   correct,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY card_id
+                       ORDER BY answered_at DESC, id DESC
+                   ) AS recency_rank
+            FROM reviews
+            WHERE session_id = ?
+        )
+        SELECT card_id AS "card_id!: i64"
+        FROM latest
+        WHERE recency_rank = 1 AND correct = 0
+        "#,
+        session_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(card_ids)
+}
+
 async fn count_progress(pool: &sqlx::SqlitePool, session_id: i64) -> AppResult<(i64, i64)> {
     let row = sqlx::query!(
         r#"
@@ -743,8 +770,15 @@ async fn next(
 
     let candidates = fold_candidate_rows(load_candidates(&state.pool, &session.deck_ids_json).await?);
     let recent_review_card_ids = load_recent_review_card_ids(&state.pool, session.id).await?;
+    let unresolved_miss_card_ids =
+        load_unresolved_miss_card_ids(&state.pool, session.id).await?;
 
-    let card_id = select_card(&candidates, &recent_review_card_ids, rand::random::<f64>())
+    let card_id = select_card(
+        &candidates,
+        &recent_review_card_ids,
+        &unresolved_miss_card_ids,
+        rand::random::<f64>(),
+    )
         .ok_or_else(|| {
             AppError::Conflict("This session has no cards left to practise".to_string())
         })?;

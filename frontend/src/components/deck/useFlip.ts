@@ -78,6 +78,16 @@ export function useFlip() {
     goTo(face === 'front' ? 'back' : 'front')
   }, [face, goTo])
 
+  const resetToFront = useCallback(() => {
+    cleanups.current.forEach((cleanup) => cleanup())
+    cleanups.current = []
+    busy.current = false
+    pending.current = null
+    setInstant(true)
+    setAngle(0)
+    setFace('front')
+  }, [])
+
   const toFront = useCallback(() => {
     if (busy.current) {
       pending.current = 'front'
@@ -90,6 +100,7 @@ export function useFlip() {
     face,
     flip,
     toFront,
+    resetToFront,
     rotatorStyle: {
       transform: `rotateY(${angle}deg)`,
       transition: instant ? 'none' : `transform ${HALF_FLIP_MS}ms ease-in-out`,
