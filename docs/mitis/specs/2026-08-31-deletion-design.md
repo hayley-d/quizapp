@@ -148,7 +148,7 @@ would fail against the wrong implementation — the standing rule from
   asserting only the 204 would pass against a cascade.
 
 `.sqlx` is regenerated against a scratch database, never `data/quizapp.db` — per the
-warning at `docs/HANDOVER.md:855`.
+warning at `docs/HANDOVER.md:789`.
 
 ## Frontend
 
