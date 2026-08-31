@@ -162,6 +162,7 @@ export function DecksPage() {
           open
           onOpenChange={(isOpen) => { if (!isOpen) setEditing(null) }}
           onSaved={() => { void loadDecks() }}
+          onDeleted={() => { void loadDecks(); void loadModules() }}
         />
       )}
     </div>
