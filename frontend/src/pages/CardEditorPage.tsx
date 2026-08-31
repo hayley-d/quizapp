@@ -124,7 +124,7 @@ function CardEditorPageInner() {
     if (explanationMd.trim() !== '') input.explanation_md = explanationMd
     if (kind === 'flashcard') input.answer_md = answerMd
     if (kind === 'mc_single') input.choices = choices
-    if (kind === 'short_answer') input.accepted = accepted
+    if (kind === 'text_answer') input.accepted = accepted
     return input
   }
 
@@ -233,12 +233,12 @@ function CardEditorPageInner() {
   const claimedErrorKeys = new Set(['kind', 'prompt_md', 'explanation_md', 'deck_id',
                                     'image_path', 'file'])
   if (kind === 'mc_single') claimedErrorKeys.add('choices')
-  if (kind === 'short_answer') claimedErrorKeys.add('accepted')
+  if (kind === 'text_answer') claimedErrorKeys.add('accepted')
   if (kind === 'flashcard') claimedErrorKeys.add('answer_md')
   const unclaimedErrors = Object.entries(errors).filter(([field]) => {
     if (claimedErrorKeys.has(field)) return false
     if (kind === 'mc_single' && field.startsWith('choices[')) return false
-    if (kind === 'short_answer' && field.startsWith('accepted[')) return false
+    if (kind === 'text_answer' && field.startsWith('accepted[')) return false
     return true
   })
 
@@ -357,7 +357,7 @@ function CardEditorPageInner() {
         </div>
       )}
 
-      {kind === 'short_answer' && (
+      {kind === 'text_answer' && (
         <div className="space-y-2">
           <Label>Accepted answers</Label>
           <AcceptedEditor value={accepted} onChange={setAccepted} errors={errors} />

@@ -52,13 +52,13 @@ async fn create_multiple_choice(app: &common::TestApp, deck_id: i64, prompt: &st
     card["id"].as_i64().unwrap()
 }
 
-async fn create_short_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
+async fn create_text_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
     let (_, card) = app
         .post(
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": prompt,
                 "accepted": [
                     { "text": "k-means", "is_primary": true },
@@ -469,7 +469,7 @@ async fn a_mock_serve_never_returns_answer_content_for_any_kind() {
     let deck_id = create_deck(&app, "clustering", None).await;
     create_flashcard(&app, deck_id, "flash", "the secret answer").await;
     create_multiple_choice(&app, deck_id, "choice").await;
-    create_short_answer(&app, deck_id, "short").await;
+    create_text_answer(&app, deck_id, "short").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     for _ in 0..3 {
@@ -555,7 +555,7 @@ async fn a_mock_reveal_refusal_does_not_disclose_the_card_kind() {
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "an answer").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     let mut responses = Vec::new();
@@ -575,7 +575,7 @@ async fn a_mock_reveal_refusal_does_not_disclose_the_card_kind() {
     );
     assert_eq!(
         responses[0], responses[2],
-        "a flashcard and a short-answer card must refuse identically",
+        "a flashcard and a text-answer card must refuse identically",
     );
 }
 
@@ -754,7 +754,7 @@ async fn a_mock_multiple_choice_still_rejects_typed_text() {
     assert!(
         field_errors(&body).contains(&(
             "given".to_string(),
-            "Only a short-answer or flashcard takes typed text".to_string()
+            "Only a text-answer or flashcard takes typed text".to_string()
         )),
         "{body}",
     );
@@ -766,7 +766,7 @@ async fn a_mock_answer_response_carries_no_verdict() {
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "the secret answer").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     let (_, choices) = app.get(&format!("/api/cards/{choice_card}")).await;
@@ -829,7 +829,7 @@ async fn a_mock_card_cannot_be_answered_twice() {
 async fn a_practice_card_can_still_be_answered_twice() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_practice_session(&app, deck_id).await;
 
     for _ in 0..2 {
@@ -876,7 +876,7 @@ async fn a_practice_flashcard_still_rejects_typed_text() {
     assert!(
         field_errors(&body).contains(&(
             "given".to_string(),
-            "Only a short-answer card takes typed text".to_string()
+            "Only a text-answer card takes typed text".to_string()
         )),
         "practice keeps its own wording: {body}",
     );
@@ -912,7 +912,7 @@ async fn results_are_refused_while_the_session_is_active() {
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "the secret answer").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     let (_, choices) = app.get(&format!("/api/cards/{choice_card}")).await;
@@ -1034,7 +1034,7 @@ async fn results_carry_the_expected_answer_for_each_kind() {
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "a measure of disorder").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     let (_, choices) = app.get(&format!("/api/cards/{choice_card}")).await;
@@ -1062,7 +1062,7 @@ async fn results_carry_the_expected_answer_for_each_kind() {
     assert_eq!(by_kind("flashcard")["expected"], json!(["a measure of disorder"]));
     assert_eq!(by_kind("mc_single")["expected"], json!(["complete linkage"]));
     assert_eq!(
-        by_kind("short_answer")["expected"],
+        by_kind("text_answer")["expected"],
         json!(["k-means", "lloyd's algorithm"]),
         "accepted wordings, primary first",
     );
@@ -1142,7 +1142,7 @@ async fn results_can_override_is_true_only_where_the_override_applies() {
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "a measure of disorder").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let right_card = create_flashcard(&app, deck_id, "right", "an answer").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
@@ -1178,7 +1178,7 @@ async fn results_can_override_is_true_only_where_the_override_applies() {
     };
 
     assert!(can_override_of(flashcard), "a wrong mock flashcard is overridable");
-    assert!(can_override_of(short_card), "a wrong short answer is overridable");
+    assert!(can_override_of(short_card), "a wrong text answer is overridable");
     assert!(!can_override_of(choice_card), "a multiple-choice answer is never overridable");
     assert!(!can_override_of(right_card), "a correct answer is not overridable");
 }
@@ -1206,7 +1206,7 @@ async fn results_put_the_primary_accepted_wording_first_even_when_it_was_added_l
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": "name the algorithm",
                 "accepted": [
                     { "text": "lloyd's algorithm", "is_primary": false },
@@ -1285,7 +1285,7 @@ async fn overriding_is_refused_while_a_mock_test_is_unsubmitted() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
     let flashcard = create_flashcard(&app, deck_id, "flash", "the secret answer").await;
-    let short_card = create_short_answer(&app, deck_id, "short").await;
+    let short_card = create_text_answer(&app, deck_id, "short").await;
     let right_card = create_flashcard(&app, deck_id, "right", "an answer").await;
     let choice_card = create_multiple_choice(&app, deck_id, "choice").await;
     let session_id = start_mock_session(&app, deck_id).await;
@@ -1323,7 +1323,7 @@ async fn overriding_is_refused_while_a_mock_test_is_unsubmitted() {
 
     assert_eq!(
         refusals[0], refusals[1],
-        "a flashcard and a short answer must refuse identically during a live mock",
+        "a flashcard and a text answer must refuse identically during a live mock",
     );
     assert_eq!(
         refusals[0], refusals[2],
@@ -1384,10 +1384,10 @@ async fn a_mock_multiple_choice_still_cannot_be_overridden() {
 }
 
 #[tokio::test]
-async fn overriding_a_mock_short_answer_still_teaches_the_card() {
+async fn overriding_a_mock_text_answer_still_teaches_the_card() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
     answer_typed(&app, session_id, card_id, "Lloyd Algorithm").await;
@@ -1395,7 +1395,7 @@ async fn overriding_a_mock_short_answer_still_teaches_the_card() {
 
     let (status, body) = override_review(&app, review_id_for(&app, card_id).await).await;
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["accepted_added"], true, "a short answer teaches the card");
+    assert_eq!(body["accepted_added"], true, "a text answer teaches the card");
     assert!(
         body["expected"].as_array().unwrap().len() == 3,
         "the new wording joins the accepted list: {body}",

@@ -19,9 +19,9 @@ fn multiple_choice_card(deck_id: i64) -> Value {
     })
 }
 
-fn short_answer_card(deck_id: i64) -> Value {
+fn text_answer_card(deck_id: i64) -> Value {
     json!({
-        "deck_id": deck_id, "kind": "short_answer",
+        "deck_id": deck_id, "kind": "text_answer",
         "prompt_md": "Name the linkage that merges the two closest points",
         "accepted": [{ "text": "single", "is_primary": true }]
     })
@@ -95,13 +95,13 @@ async fn creates_an_mc_single_card() {
 }
 
 #[tokio::test]
-async fn creates_a_short_answer_card_and_normalises_accepted() {
+async fn creates_a_text_answer_card_and_normalises_accepted() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "Test 1").await;
 
     let (status, card) = app
         .post("/api/cards", json!({
-            "deck_id": deck_id, "kind": "short_answer",
+            "deck_id": deck_id, "kind": "text_answer",
             "prompt_md": "Name the partitioning algorithm.",
             "accepted": [
                 { "text": "K-Means",   "is_primary": true  },
@@ -183,13 +183,13 @@ async fn empty_choice_text_names_its_row() {
 }
 
 #[tokio::test]
-async fn short_answer_needs_one_primary() {
+async fn text_answer_needs_one_primary() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "Test 1").await;
 
     let (status, body) = app
         .post("/api/cards", json!({
-            "deck_id": deck_id, "kind": "short_answer", "prompt_md": "p",
+            "deck_id": deck_id, "kind": "text_answer", "prompt_md": "p",
             "accepted": [ { "text": "a", "is_primary": true },
                           { "text": "b", "is_primary": true } ]
         }))
@@ -199,13 +199,13 @@ async fn short_answer_needs_one_primary() {
 }
 
 #[tokio::test]
-async fn short_answer_needs_at_least_one_accepted_answer() {
+async fn text_answer_needs_at_least_one_accepted_answer() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "Test 1").await;
 
     let (status, body) = app
         .post("/api/cards", json!({
-            "deck_id": deck_id, "kind": "short_answer", "prompt_md": "p",
+            "deck_id": deck_id, "kind": "text_answer", "prompt_md": "p",
             "accepted": []
         }))
         .await;
@@ -220,7 +220,7 @@ async fn empty_accepted_text_names_its_row() {
 
     let (status, body) = app
         .post("/api/cards", json!({
-            "deck_id": deck_id, "kind": "short_answer", "prompt_md": "p",
+            "deck_id": deck_id, "kind": "text_answer", "prompt_md": "p",
             "accepted": [ { "text": "a", "is_primary": true },
                           { "text": "   ", "is_primary": false } ]
         }))
@@ -509,7 +509,7 @@ async fn changing_kind_clears_the_other_kind_s_children() {
 
     let (_, short) = app
         .patch(&format!("/api/cards/{id}"), json!({
-            "kind": "short_answer", "prompt_md": "p",
+            "kind": "text_answer", "prompt_md": "p",
             "accepted": [ { "text": "Single-Linkage", "is_primary": true } ]
         }))
         .await;
@@ -674,7 +674,7 @@ async fn image_path_round_trips_through_create_and_get() {
 
     let (status, card) = app
         .post("/api/cards", json!({
-            "deck_id": deck_id, "kind": "short_answer",
+            "deck_id": deck_id, "kind": "text_answer",
             "prompt_md": "Name the linkage shown in the dendrogram.",
             "image_path": UPLOADED,
             "accepted": [{ "text": "single linkage", "is_primary": true }]
@@ -1099,10 +1099,10 @@ async fn deletes_a_multiple_choice_card_with_its_choices_schedule_and_reviews() 
 }
 
 #[tokio::test]
-async fn deletes_a_short_answer_card_with_its_accepted_answers() {
+async fn deletes_a_text_answer_card_with_its_accepted_answers() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "Test 1").await;
-    let (created_status, card) = app.post("/api/cards", short_answer_card(deck_id)).await;
+    let (created_status, card) = app.post("/api/cards", text_answer_card(deck_id)).await;
     assert_eq!(created_status, StatusCode::CREATED, "setup failed: {card}");
     let card_id = card["id"].as_i64().unwrap();
 

@@ -62,7 +62,7 @@ export function ResultRow({ question, position, onOverride, overriding }: Result
               {question.self_grade === null ? 'Nothing typed' : `Self-graded ${question.self_grade}`}
             </p>
           ) : (
-            <p className="text-sm">{question.given}</p>
+            <p className="text-sm whitespace-pre-wrap">{question.given}</p>
           )}
         </div>
         <div className="space-y-1">

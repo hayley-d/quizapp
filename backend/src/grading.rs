@@ -47,7 +47,7 @@ pub fn grade_multiple_choice(
         .map(|choice| choice.is_correct)
 }
 
-pub fn grade_short_answer(given: &str, accepted_normalised: &[String]) -> bool {
+pub fn grade_text_answer(given: &str, accepted_normalised: &[String]) -> bool {
     let comparison_key = normalise(given);
     if comparison_key.is_empty() {
         return false;
@@ -120,7 +120,7 @@ pub fn grade_flashcard_typed(given: &str, answer_md: &str) -> bool {
 mod tests {
     use super::{
         correctness_of_self_grade, fuzzy_tolerance, grade_flashcard_typed, grade_multiple_choice,
-        grade_short_answer, levenshtein_distance, normalise, parse_self_grade, self_grade_as_text,
+        grade_text_answer, levenshtein_distance, normalise, parse_self_grade, self_grade_as_text,
         GradableChoice, SelfGrade, FUZZY_MAX_LENGTH,
     };
 
@@ -187,49 +187,49 @@ mod tests {
     }
 
     #[test]
-    fn short_answer_matching_is_normalised() {
+    fn text_answer_matching_is_normalised() {
         let keys = accepted(&["k means"]);
-        assert!(grade_short_answer("k-means", &keys));
-        assert!(grade_short_answer("K-Means!", &keys));
-        assert!(grade_short_answer("  K   MEANS  ", &keys));
-        assert!(grade_short_answer("k means", &keys));
+        assert!(grade_text_answer("k-means", &keys));
+        assert!(grade_text_answer("K-Means!", &keys));
+        assert!(grade_text_answer("  K   MEANS  ", &keys));
+        assert!(grade_text_answer("k means", &keys));
     }
 
     #[test]
     fn an_empty_or_punctuation_only_answer_is_incorrect_even_when_an_accepted_key_is_empty() {
         let keys = accepted(&[""]);
         assert!(
-            !grade_short_answer("", &keys),
+            !grade_text_answer("", &keys),
             "a blank answer must not match an accepted row that normalised to empty",
         );
-        assert!(!grade_short_answer("   ", &keys));
+        assert!(!grade_text_answer("   ", &keys));
         assert!(
-            !grade_short_answer("!!!", &keys),
+            !grade_text_answer("!!!", &keys),
             "punctuation normalises to empty and must not match either",
         );
     }
 
     #[test]
-    fn short_answer_matching_is_equality_not_substring() {
+    fn text_answer_matching_is_equality_not_substring() {
         let keys = accepted(&["k means clustering"]);
-        assert!(!grade_short_answer("k", &keys));
-        assert!(!grade_short_answer("clustering", &keys));
-        assert!(!grade_short_answer("k means", &keys));
-        assert!(grade_short_answer("k means clustering", &keys));
+        assert!(!grade_text_answer("k", &keys));
+        assert!(!grade_text_answer("clustering", &keys));
+        assert!(!grade_text_answer("k means", &keys));
+        assert!(grade_text_answer("k means clustering", &keys));
     }
 
     #[test]
     fn any_accepted_key_matches_not_just_the_first() {
         let keys = accepted(&["k means", "lloyd s algorithm", "kmeans"]);
-        assert!(grade_short_answer("k-means", &keys));
-        assert!(grade_short_answer("Lloyd's algorithm", &keys));
-        assert!(grade_short_answer("kmeans", &keys));
-        assert!(!grade_short_answer("hierarchical", &keys));
+        assert!(grade_text_answer("k-means", &keys));
+        assert!(grade_text_answer("Lloyd's algorithm", &keys));
+        assert!(grade_text_answer("kmeans", &keys));
+        assert!(!grade_text_answer("hierarchical", &keys));
     }
 
     #[test]
     fn an_empty_accepted_list_never_matches() {
-        assert!(!grade_short_answer("anything", &[]));
+        assert!(!grade_text_answer("anything", &[]));
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn a_short_answer_gets_no_tolerance() {
+    fn a_text_answer_gets_no_tolerance() {
         assert!(!grade_flashcard_typed("ridge", "bridge"));
         assert!(!grade_flashcard_typed("cot", "cat"));
         assert!(!grade_flashcard_typed("bias", "bras"));

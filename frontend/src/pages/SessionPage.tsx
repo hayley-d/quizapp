@@ -11,7 +11,7 @@ import { StreakBadge } from '@/components/session/StreakBadge'
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   api,
   ApiError,
@@ -58,7 +58,7 @@ export function SessionPage() {
   const inFlight = useRef<AbortController | null>(null)
   const servedAt = useRef<number>(0)
   const container = useRef<HTMLDivElement>(null)
-  const answerInput = useRef<HTMLInputElement>(null)
+  const answerInput = useRef<HTMLTextAreaElement>(null)
   const revealButton = useRef<HTMLButtonElement>(null)
   const nextButton = useRef<HTMLButtonElement>(null)
 
@@ -112,7 +112,7 @@ export function SessionPage() {
       nextButton.current?.focus()
       return
     }
-    if (card?.kind === 'short_answer') {
+    if (card?.kind === 'text_answer') {
       answerInput.current?.focus()
     } else if (card?.kind === 'flashcard' && !revealed) {
       revealButton.current?.focus()
@@ -158,7 +158,7 @@ export function SessionPage() {
     if (card.kind === 'mc_single') {
       if (selectedChoiceId === null) return
       void send({ card_id: card.id, choice_id: selectedChoiceId, ms: elapsedSince(servedAt.current) })
-    } else if (card.kind === 'short_answer') {
+    } else if (card.kind === 'text_answer') {
       if (typedAnswer.trim() === '') return
       void send({ card_id: card.id, given: typedAnswer, ms: elapsedSince(servedAt.current) })
     }
@@ -219,6 +219,7 @@ export function SessionPage() {
     const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
 
     if (event.key === 'Enter') {
+      if (event.shiftKey && target.tagName === 'TEXTAREA') return
       event.preventDefault()
       if (graded) {
         void loadNext()
@@ -315,13 +316,12 @@ export function SessionPage() {
         />
       )}
 
-      {card.kind === 'short_answer' && !graded && (
-        <Input
+      {card.kind === 'text_answer' && !graded && (
+        <Textarea
           ref={answerInput}
           value={typedAnswer}
           onChange={(event) => setTypedAnswer(event.target.value)}
           placeholder="Type your answer"
-          autoComplete="off"
           aria-label="Your answer"
         />
       )}
@@ -376,7 +376,7 @@ export function SessionPage() {
             <span className="text-sm text-muted-foreground">
               {card.kind === 'mc_single'
                 ? '1–9 to choose · Enter to check'
-                : 'Enter to check'}
+                : 'Enter to check · Shift+Enter for a new line'}
             </span>
           </div>
         )

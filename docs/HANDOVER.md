@@ -359,7 +359,7 @@ other — do not assume a value carries over.
   replace that clears both child tables first
 - `accepted.normalised` computed on write (`backend/src/normalise.rs`): NFKC, lowercase,
   non-alphanumerics to spaces, whitespace collapsed and trimmed — the comparison key for
-  short-answer grading
+  text-answer grading
 - `/decks` screen: flat card list with module badges, a search/filter/sort toolbar,
   debounced input and a stale-response guard
 - `/decks/:id` screen: the deck as a list of flippable cards. Click or Enter on a card body flips
@@ -580,7 +580,7 @@ other — do not assume a value carries over.
     *normalised expected* answer, applying only while both sides are ≤ 120 characters.
     The divisor is 8 rather than 6 because the errors are asymmetric — a false reject is
     one click from fixed, a false accept is permanent — and divisor 6 concretely graded
-    `ridge` correct against `bridge`. `grade_short_answer` is untouched, because it is
+    `ridge` correct against `bridge`. `grade_text_answer` is untouched, because it is
     shared with practice and nobody asked for practice grading to change.
   - **`GET /api/sessions/:id/results`** serves the post-run record: every question in
     answer order, not only the missed ones. It is gated on `ended_at IS NOT NULL` — 409
@@ -1112,7 +1112,7 @@ nine points; **none were driven.** This is a complete gap, itemised rather than 
 5. A mid-session reload: the same card, counts intact.
 6. Emptying the due pool: the summary screen; starting another SM-2 session is refused, naming
    the next due date; the tile is disabled with the same date.
-7. A short-answer miss, then an override: the schedule is recomputed, not left at the lapse.
+7. A text-answer miss, then an override: the schedule is recomputed, not left at the lapse.
 8. The strip shows three figures; a mode with no reviews reads `—`, not `0%`.
 9. Both palettes; hand-editing `/mock/:id` to an sm2 session id and confirming the redirect.
 
@@ -1294,7 +1294,7 @@ this project to get one. Verified in a browser on 2026-08-28, against the UI as 
 then — `/study` has since been deleted, so the first item below no longer describes a
 screen that exists, though the session it started is unchanged: the `/study` picker and its
 live card count; the multiple-choice loop by keyboard (`2`, Enter); the flashcard loop (Space to
-reveal via `/reveal`, `3` to grade); short-answer normalisation, where `  K-MEANS!  ` graded
+reveal via `/reveal`, `3` to grade); text-answer normalisation, where `  K-MEANS!  ` graded
 correct against accepted `k-means`; the override, where a wrong answer flipped to "Counted as
 correct" and the *same wording in different case and punctuation* then graded correct on the
 next serve; a mid-session reload preserving the answered/correct counts; the finish summary
@@ -1418,7 +1418,7 @@ non-blocking, and deliberately left. They are real; none is a mystery.
 
 - **A flashcard whose answer is a sentence will auto-grade wrong in a mock test, nearly every
   time.** `answer_md` is markdown prose — card validation requires it non-blank and nothing
-  more — and the whole reason to author a flashcard rather than a short-answer card is that the
+  more — and the whole reason to author a flashcard rather than a text-answer card is that the
   answer was not reducible to a key. No distance metric fixes this; it is what grading free
   text against prose costs, and no authoring restriction was added because the card model is
   not the problem. Two mitigations, neither a cleverer matcher: the override is the correction
@@ -1426,7 +1426,7 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   one-line note whenever a run contained a flashcard — without it, 30% on a deck of prose
   flashcards reads as either a broken feature or a bad night's revision, and it is neither.
   **The practical advice: for cards you intend to sit a mock test on, keep flashcard answers
-  short and keyword-ish, or author them as short-answer cards**, which have an `accepted` list
+  short and keyword-ish, or author them as text-answer cards**, which have an `accepted` list
   built for exactly this.
 - **Fuzzy matching can only ever mark a wrong answer right, and there is no reverse
   override.** `type i error` and `type ii error` are distance 1 within a tolerance of 1, so one
@@ -1437,7 +1437,7 @@ non-blocking, and deliberately left. They are real; none is a mystery.
   because "I was right" has no opposite. The follow-up, if it proves annoying in practice, is a
   "mark wrong" action — deliberately not built, because it is a second write path to a
   `reviews` row and Part 3 left the override as the only one.
-- **Overriding a mock flashcard fixes the row but does not teach the card.** A short-answer
+- **Overriding a mock flashcard fixes the row but does not teach the card.** A text-answer
   override inserts an `accepted` row, so the same wording grades correct next time. Flashcard
   grading compares against `answer_md`, and card validation forbids `accepted` rows on a
   flashcard, so wiring flashcards into `accepted` would be a card-model change. Out of scope,

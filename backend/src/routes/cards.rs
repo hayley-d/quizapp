@@ -9,7 +9,7 @@ use crate::extract::AppJson;
 use crate::normalise::normalise;
 use crate::state::AppState;
 
-const KINDS: [&str; 3] = ["mc_single", "short_answer", "flashcard"];
+const KINDS: [&str; 3] = ["mc_single", "text_answer", "flashcard"];
 
 #[derive(Serialize)]
 pub struct ChoiceResponse {
@@ -119,7 +119,7 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
     if !KINDS.contains(&input.kind.as_str()) {
         return Err(AppError::validation([(
             "kind",
-            "kind must be mc_single, short_answer or flashcard",
+            "kind must be mc_single, text_answer or flashcard",
         )]));
     }
 
@@ -165,13 +165,13 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
                 }
             }
             if !accepted.is_empty() {
-                push_error("accepted", "Accepted answers belong to short-answer cards");
+                push_error("accepted", "Accepted answers belong to text-answer cards");
             }
             if answer_md.is_some() {
                 push_error("answer_md", "An answer belongs to a flashcard");
             }
         }
-        "short_answer" => {
+        "text_answer" => {
             if accepted.is_empty() {
                 push_error("accepted", "Add at least one accepted answer");
             }
@@ -203,7 +203,7 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
                 push_error("choices", "Options belong to multiple-choice cards");
             }
             if !accepted.is_empty() {
-                push_error("accepted", "Accepted answers belong to short-answer cards");
+                push_error("accepted", "Accepted answers belong to text-answer cards");
             }
         }
         _ => unreachable!("kind was checked above"),
@@ -432,7 +432,7 @@ async fn list(
     if kind != "all" && !KINDS.contains(&kind.as_str()) {
         return Err(AppError::validation([(
             "kind",
-            "kind must be mc_single, short_answer, flashcard or \"all\"",
+            "kind must be mc_single, text_answer, flashcard or \"all\"",
         )]));
     }
 

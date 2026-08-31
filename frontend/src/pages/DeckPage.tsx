@@ -366,17 +366,7 @@ export function DeckPage() {
         {deckStats !== null && <DeckStatsStrip summary={deckStats.summary} />}
 
         {cards.length === 0 && !loading && (
-          <div className="space-y-2">
-            <p className="text-muted-foreground">No cards yet.</p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
-            >
-              <Plus className="size-4" />
-              Add card
-            </Button>
-          </div>
+          <p className="text-muted-foreground">No cards yet.</p>
         )}
 
         <DndContext

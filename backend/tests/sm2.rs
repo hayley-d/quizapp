@@ -54,13 +54,13 @@ async fn create_multiple_choice(app: &common::TestApp, deck_id: i64, prompt: &st
     card["id"].as_i64().unwrap()
 }
 
-async fn create_short_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
+async fn create_text_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
     let (_, card) = app
         .post(
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": prompt,
                 "accepted": [
                     { "text": "k-means", "is_primary": true },
@@ -118,7 +118,7 @@ async fn answer_whatever_was_served(
     let card_id = card["id"].as_i64().unwrap();
     let body = match card["kind"].as_str().unwrap() {
         "flashcard" => json!({ "card_id": card_id, "self_grade": "good" }),
-        "short_answer" => json!({ "card_id": card_id, "given": "anything" }),
+        "text_answer" => json!({ "card_id": card_id, "given": "anything" }),
         _ => json!({
             "card_id": card_id,
             "choice_id": card["choices"][0]["id"].as_i64().unwrap(),
@@ -279,7 +279,7 @@ async fn the_serve_carries_no_answer_content() {
     let deck_id = create_deck(&app, "clustering", None).await;
     create_flashcard(&app, deck_id, "flash", "the secret answer").await;
     create_multiple_choice(&app, deck_id, "choice").await;
-    create_short_answer(&app, deck_id, "short").await;
+    create_text_answer(&app, deck_id, "short").await;
 
     let session_id = start_sm2_session(&app, deck_id).await;
 
@@ -492,7 +492,7 @@ async fn answer_typed(
 async fn an_override_recomputes_the_schedule_rather_than_leaving_the_lapse() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "short").await;
+    let card_id = create_text_answer(&app, deck_id, "short").await;
 
     let session_id = start_sm2_session(&app, deck_id).await;
     let answered = answer_typed(&app, session_id, card_id, "hopelessly wrong").await;
@@ -519,7 +519,7 @@ async fn an_override_recomputes_the_schedule_rather_than_leaving_the_lapse() {
 async fn the_replay_ignores_reviews_from_other_modes() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "short").await;
+    let card_id = create_text_answer(&app, deck_id, "short").await;
 
     let (_, practice) = app
         .post("/api/sessions", json!({ "mode": "practice", "deck_ids": [deck_id] }))
@@ -542,7 +542,7 @@ async fn the_replay_ignores_reviews_from_other_modes() {
 async fn overriding_a_practice_review_leaves_the_schedule_alone() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "short").await;
+    let card_id = create_text_answer(&app, deck_id, "short").await;
 
     let (_, practice) = app
         .post("/api/sessions", json!({ "mode": "practice", "deck_ids": [deck_id] }))

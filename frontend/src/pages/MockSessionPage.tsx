@@ -8,7 +8,7 @@ import { MockRunHeader } from '@/components/session/MockRunHeader'
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   ApiError,
   api,
@@ -39,7 +39,7 @@ export function MockSessionPage() {
   const inFlight = useRef<AbortController | null>(null)
   const servedAt = useRef<number>(Date.now())
   const container = useRef<HTMLDivElement | null>(null)
-  const answerInput = useRef<HTMLInputElement | null>(null)
+  const answerInput = useRef<HTMLTextAreaElement | null>(null)
 
   const showResults = useCallback(async () => {
     if (sessionId === null) return
@@ -165,7 +165,10 @@ export function MockSessionPage() {
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (busy || results !== null || card === null) return
 
+    const target = event.target as HTMLElement
+
     if (event.key === 'Enter') {
+      if (event.shiftKey && target.tagName === 'TEXTAREA') return
       event.preventDefault()
       submit()
       return
@@ -246,12 +249,11 @@ export function MockSessionPage() {
       )}
 
       {card.kind !== 'mc_single' && (
-        <Input
+        <Textarea
           ref={answerInput}
           value={typedAnswer}
           onChange={(event) => setTypedAnswer(event.target.value)}
           placeholder="Type your answer"
-          autoComplete="off"
           aria-label="Your answer"
         />
       )}
@@ -261,7 +263,9 @@ export function MockSessionPage() {
           Submit
         </Button>
         <span className="text-sm text-muted-foreground">
-          {card.kind === 'mc_single' ? '1–9 to choose · Enter to submit' : 'Enter to submit'}
+          {card.kind === 'mc_single'
+            ? '1–9 to choose · Enter to submit'
+            : 'Enter to submit · Shift+Enter for a new line'}
         </span>
       </div>
     </div>

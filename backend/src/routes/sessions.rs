@@ -9,7 +9,7 @@ use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
 use crate::normalise::normalise;
 use crate::grading::{
-    correctness_of_self_grade, grade_flashcard_typed, grade_multiple_choice, grade_short_answer,
+    correctness_of_self_grade, grade_flashcard_typed, grade_multiple_choice, grade_text_answer,
     parse_self_grade, self_grade_as_text, GradableChoice,
 };
 use crate::mock::{first_unanswered, mock_order};
@@ -359,13 +359,13 @@ pub fn expected_for_kind(
 ) -> Vec<String> {
     match kind {
         "mc_single" => correct_choices.to_vec(),
-        "short_answer" => accepted.to_vec(),
+        "text_answer" => accepted.to_vec(),
         _ => answer_md.clone().into_iter().collect(),
     }
 }
 
 pub fn can_override_result(kind: &str, correct: bool) -> bool {
-    !correct && matches!(kind, "short_answer" | "flashcard")
+    !correct && matches!(kind, "text_answer" | "flashcard")
 }
 
 pub fn assemble_results(
@@ -838,9 +838,9 @@ fn reject_fields_for_other_kinds(
 ) {
     if allowed != "given" && body.given.is_some() {
         let message = if mode == "mock" {
-            "Only a short-answer or flashcard takes typed text"
+            "Only a text-answer or flashcard takes typed text"
         } else {
-            "Only a short-answer card takes typed text"
+            "Only a text-answer card takes typed text"
         };
         errors.push(FieldError { field: "given".to_string(), message: message.to_string() });
     }
@@ -928,7 +928,7 @@ async fn grade_answer(
                 stored_self_grade: None,
             })
         }
-        "short_answer" => {
+        "text_answer" => {
             reject_fields_for_other_kinds(&mut errors, body, "given", mode);
             let trimmed = body.given.as_deref().map(str::trim).unwrap_or_default();
             if body.given.is_none() {
@@ -957,7 +957,7 @@ async fn grade_answer(
             .await?;
 
             let keys: Vec<String> = rows.iter().map(|row| row.normalised.clone()).collect();
-            let correct = grade_short_answer(trimmed, &keys);
+            let correct = grade_text_answer(trimmed, &keys);
             let expected = rows.iter().map(|row| row.text.clone()).collect();
 
             Ok(GradedAnswer {
@@ -1111,7 +1111,7 @@ async fn answer(
         correct: graded.correct,
         expected: graded.expected,
         explanation_md: card.explanation_md,
-        can_override: card.kind == "short_answer" && !graded.correct,
+        can_override: card.kind == "text_answer" && !graded.correct,
     })))
 }
 

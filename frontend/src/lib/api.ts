@@ -79,11 +79,11 @@ function deckQueryString({ search, moduleId, sort }: DeckQuery): string {
   return queryString === '' ? '' : `?${queryString}`
 }
 
-export type CardKind = 'mc_single' | 'short_answer' | 'flashcard'
+export type CardKind = 'mc_single' | 'text_answer' | 'flashcard'
 
 export const KIND_LABEL: Record<CardKind, string> = {
   mc_single: 'Multiple choice',
-  short_answer: 'Short answer',
+  text_answer: 'Text answer',
   flashcard: 'Flashcard',
 }
 

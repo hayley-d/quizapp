@@ -51,7 +51,7 @@ export function CardPreview({
         </Section>
       )}
 
-      {kind === 'short_answer' && (
+      {kind === 'text_answer' && (
         <Section title="Accepted answers">
           <ul className="space-y-1">
             {accepted.map((answer, answerIndex) => (

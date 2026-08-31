@@ -347,13 +347,13 @@ async fn create_multiple_choice(app: &common::TestApp, deck_id: i64, prompt: &st
     card["id"].as_i64().unwrap()
 }
 
-async fn create_short_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
+async fn create_text_answer(app: &common::TestApp, deck_id: i64, prompt: &str) -> i64 {
     let (_, card) = app
         .post(
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": prompt,
                 "explanation_md": "an explanation",
                 "accepted": [
@@ -388,7 +388,7 @@ async fn next_never_returns_answer_data_for_any_kind() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "all kinds", None).await;
     create_multiple_choice(&app, deck_id, "which linkage").await;
-    create_short_answer(&app, deck_id, "name the algorithm").await;
+    create_text_answer(&app, deck_id, "name the algorithm").await;
     create_flashcard(&app, deck_id, "define entropy").await;
     let session_id = start_session(&app, deck_id).await;
 
@@ -694,10 +694,10 @@ async fn refuses_to_reveal_a_graded_card() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "graded kinds", None).await;
     let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
-    let short_answer = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let text_answer = create_text_answer(&app, deck_id, "name the algorithm").await;
     let session_id = start_session(&app, deck_id).await;
 
-    for card_id in [multiple_choice, short_answer] {
+    for card_id in [multiple_choice, text_answer] {
         let (status, body) = app
             .post(&format!("/api/sessions/{session_id}/reveal"), json!({ "card_id": card_id }))
             .await;
@@ -880,10 +880,10 @@ async fn rejects_a_choice_id_from_another_card() {
 }
 
 #[tokio::test]
-async fn grades_a_short_answer_by_normalised_match() {
+async fn grades_a_text_answer_by_normalised_match() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let card_id = create_text_answer(&app, deck_id, "name the algorithm").await;
     let session_id = start_session(&app, deck_id).await;
 
     let (status, body) = app
@@ -899,10 +899,10 @@ async fn grades_a_short_answer_by_normalised_match() {
 }
 
 #[tokio::test]
-async fn a_wrong_short_answer_can_be_overridden() {
+async fn a_wrong_text_answer_can_be_overridden() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let card_id = create_text_answer(&app, deck_id, "name the algorithm").await;
     let session_id = start_session(&app, deck_id).await;
 
     let (status, body) = app
@@ -918,10 +918,10 @@ async fn a_wrong_short_answer_can_be_overridden() {
 }
 
 #[tokio::test]
-async fn stores_the_submitted_wording_verbatim_for_a_short_answer() {
+async fn stores_the_submitted_wording_verbatim_for_a_text_answer() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let card_id = create_text_answer(&app, deck_id, "name the algorithm").await;
     let session_id = start_session(&app, deck_id).await;
 
     app.post(
@@ -950,7 +950,7 @@ async fn a_punctuation_only_answer_is_incorrect_even_when_an_accepted_key_normal
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": "a dash card",
                 "accepted": [{ "text": "---", "is_primary": true }],
             }),
@@ -982,10 +982,10 @@ async fn a_punctuation_only_answer_is_incorrect_even_when_an_accepted_key_normal
 }
 
 #[tokio::test]
-async fn rejects_a_blank_short_answer() {
+async fn rejects_a_blank_text_answer() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name the algorithm").await;
+    let card_id = create_text_answer(&app, deck_id, "name the algorithm").await;
     let session_id = start_session(&app, deck_id).await;
 
     let (status, body) = app
@@ -1076,14 +1076,14 @@ async fn rejects_the_wrong_answer_field_for_each_kind() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "all kinds", None).await;
     let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
-    let short_answer = create_short_answer(&app, deck_id, "name it").await;
+    let text_answer = create_text_answer(&app, deck_id, "name it").await;
     let flashcard = create_flashcard(&app, deck_id, "define entropy").await;
     let session_id = start_session(&app, deck_id).await;
     let choice_id = correct_choice_id(&app, multiple_choice).await;
 
     let cases = [
         (multiple_choice, json!({ "card_id": multiple_choice, "given": "text" }), "given"),
-        (short_answer, json!({ "card_id": short_answer, "choice_id": choice_id }), "choice_id"),
+        (text_answer, json!({ "card_id": text_answer, "choice_id": choice_id }), "choice_id"),
         (flashcard, json!({ "card_id": flashcard, "given": "text" }), "given"),
         (
             multiple_choice,
@@ -1267,24 +1267,24 @@ async fn answering_on_an_unknown_session_is_not_found() {
 }
 
 #[tokio::test]
-async fn can_override_is_true_only_for_an_incorrect_short_answer() {
+async fn can_override_is_true_only_for_an_incorrect_text_answer() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "all kinds", None).await;
     let multiple_choice = create_multiple_choice(&app, deck_id, "which linkage").await;
-    let short_answer = create_short_answer(&app, deck_id, "name it").await;
+    let text_answer = create_text_answer(&app, deck_id, "name it").await;
     let flashcard = create_flashcard(&app, deck_id, "define entropy").await;
     let session_id = start_session(&app, deck_id).await;
     let wrong_choice = wrong_choice_id(&app, multiple_choice).await;
 
     let cases = [
         (
-            "a correct short answer",
-            json!({ "card_id": short_answer, "given": "k-means" }),
+            "a correct text answer",
+            json!({ "card_id": text_answer, "given": "k-means" }),
             false,
         ),
         (
-            "an incorrect short answer",
-            json!({ "card_id": short_answer, "given": "something else" }),
+            "an incorrect text answer",
+            json!({ "card_id": text_answer, "given": "something else" }),
             true,
         ),
         (
@@ -1325,7 +1325,7 @@ async fn answer_short(app: &common::TestApp, session_id: i64, card_id: i64, give
 async fn overriding_flips_the_targeted_review_and_adds_an_accepted_row() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "Centroid Clustering").await;
@@ -1367,7 +1367,7 @@ async fn overriding_flips_the_targeted_review_and_adds_an_accepted_row() {
 async fn the_overridden_wording_is_accepted_on_the_next_answer() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1387,7 +1387,7 @@ async fn the_overridden_wording_is_accepted_on_the_next_answer() {
 async fn overriding_does_not_add_a_duplicate_normalised_accepted_row() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1425,7 +1425,7 @@ async fn overriding_does_not_add_a_duplicate_normalised_accepted_row() {
 async fn overriding_leaves_other_reviews_of_the_same_card_alone() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let first = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1454,7 +1454,7 @@ async fn overriding_leaves_other_reviews_of_the_same_card_alone() {
 async fn overriding_inserts_no_new_review_row() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1505,7 +1505,7 @@ async fn refuses_to_override_a_multiple_choice_or_flashcard_review() {
 async fn refuses_to_override_an_already_correct_review_and_adds_nothing() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1530,7 +1530,7 @@ async fn refuses_to_override_an_already_correct_review_and_adds_nothing() {
 async fn refuses_to_override_a_review_with_no_usable_wording() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "!!!").await;
@@ -1552,7 +1552,7 @@ async fn refuses_to_override_a_review_with_no_usable_wording() {
 async fn overriding_after_the_session_finished_still_works() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;
@@ -1579,7 +1579,7 @@ async fn overriding_an_unknown_review_is_not_found() {
 async fn finishing_sets_ended_at_and_returns_the_summary() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     answer_short(&app, session_id, card_id, "k-means").await;
@@ -1602,7 +1602,7 @@ async fn finishing_sets_ended_at_and_returns_the_summary() {
 async fn finishing_twice_returns_the_same_ended_at() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    create_short_answer(&app, deck_id, "name it").await;
+    create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let (first_status, first) = app
@@ -1624,7 +1624,7 @@ async fn finishing_twice_returns_the_same_ended_at() {
 async fn accuracy_is_null_for_a_session_with_no_answers() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    create_short_answer(&app, deck_id, "name it").await;
+    create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let (_, body) = app
@@ -1643,7 +1643,7 @@ async fn accuracy_is_null_for_a_session_with_no_answers() {
 async fn the_summary_counts_an_override_as_correct() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "short", None).await;
-    let card_id = create_short_answer(&app, deck_id, "name it").await;
+    let card_id = create_text_answer(&app, deck_id, "name it").await;
     let session_id = start_session(&app, deck_id).await;
 
     let answered = answer_short(&app, session_id, card_id, "centroid clustering").await;

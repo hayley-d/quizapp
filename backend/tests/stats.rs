@@ -16,7 +16,7 @@ async fn deck_with_cards(app: &TestApp, name: &str, card_count: usize) -> (i64, 
                 "/api/cards",
                 json!({
                     "deck_id": deck_id,
-                    "kind": "short_answer",
+                    "kind": "text_answer",
                     "prompt_md": format!("Question {card_index}"),
                     "answer_md": null,
                     "explanation_md": null,
@@ -56,13 +56,13 @@ async fn create_flashcard(app: &TestApp, deck_id: i64, prompt: &str, answer: &st
     card["id"].as_i64().unwrap()
 }
 
-async fn create_short_answer(app: &TestApp, deck_id: i64, prompt: &str) -> i64 {
+async fn create_text_answer(app: &TestApp, deck_id: i64, prompt: &str) -> i64 {
     let (_, card) = app
         .post(
             "/api/cards",
             json!({
                 "deck_id": deck_id,
-                "kind": "short_answer",
+                "kind": "text_answer",
                 "prompt_md": prompt,
                 "accepted": [
                     { "text": "k-means", "is_primary": true },
@@ -385,7 +385,7 @@ async fn sm2_accuracy_is_null_and_not_zero_without_reviews() {
 async fn an_overridden_sm2_review_counts_as_correct() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "clustering", None).await;
-    let card_id = create_short_answer(&app, deck_id, "short").await;
+    let card_id = create_text_answer(&app, deck_id, "short").await;
 
     let session_id = start_sm2_session(&app, deck_id).await;
     let answered = answer_typed(&app, session_id, card_id, "wrong").await;

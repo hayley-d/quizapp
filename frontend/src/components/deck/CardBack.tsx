@@ -39,7 +39,7 @@ export function CardBack({ card, revealed }: CardBackProps) {
         </ul>
       )}
 
-      {card.kind === 'short_answer' && <ShortAnswer card={card} />}
+      {card.kind === 'text_answer' && <TextAnswer card={card} />}
 
       {card.kind === 'flashcard' && <Markdown>{card.answer_md ?? ''}</Markdown>}
 
@@ -52,7 +52,7 @@ export function CardBack({ card, revealed }: CardBackProps) {
   )
 }
 
-function ShortAnswer({ card }: { card: Card }) {
+function TextAnswer({ card }: { card: Card }) {
   const [primary, ...alternates] = card.accepted
   return (
     <div className="space-y-2">
