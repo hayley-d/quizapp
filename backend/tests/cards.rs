@@ -30,6 +30,25 @@ async fn create_flashcard(app: &common::TestApp, deck_id: i64, prompt: &str) -> 
     created["id"].as_i64().unwrap()
 }
 
+async fn record_review(app: &common::TestApp, deck_id: i64, card_id: i64) -> i64 {
+    let session_id: i64 = sqlx::query_scalar(
+        "INSERT INTO sessions (mode, deck_ids) VALUES ('practice', ?) RETURNING id",
+    )
+    .bind(format!("[{deck_id}]"))
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    sqlx::query_scalar(
+        "INSERT INTO reviews (card_id, session_id, correct) VALUES (?, ?, 1) RETURNING id",
+    )
+    .bind(card_id)
+    .bind(session_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap()
+}
+
 async fn card_ids_in_order(app: &common::TestApp, deck_id: i64) -> Vec<i64> {
     let (_, rows) = app.get(&format!("/api/cards?deck_id={deck_id}&archived=all")).await;
     rows.as_array()
@@ -999,4 +1018,30 @@ async fn a_move_keeps_interleaved_archived_cards_in_place() {
     app.post(&format!("/api/cards/{third_card_id}/move"), json!({ "before": first_card_id })).await;
     assert_eq!(card_ids_in_order(&app, deck_id).await, vec![third_card_id, first_card_id, hidden]);
     assert_eq!(card_positions(&app, deck_id).await, vec![0, 1, 2]);
+}
+
+#[tokio::test]
+async fn deleting_a_card_row_cascades_to_its_reviews() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "Test 1").await;
+    let card_id = create_flashcard(&app, deck_id, "what is k-means").await;
+    let review_id = record_review(&app, deck_id, card_id).await;
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        1,
+        "the review must exist before the delete, or the cascade proves nothing",
+    );
+
+    sqlx::query("DELETE FROM cards WHERE id = ?")
+        .bind(card_id)
+        .execute(&app.pool)
+        .await
+        .expect("the delete must succeed rather than be refused by a foreign key");
+
+    assert_eq!(
+        app.count(&format!("SELECT COUNT(*) FROM reviews WHERE id = {review_id}")).await,
+        0,
+        "the card's review must be gone with it",
+    );
 }
