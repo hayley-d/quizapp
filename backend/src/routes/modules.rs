@@ -1,4 +1,4 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
@@ -23,7 +23,25 @@ pub struct CreateModule {
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/modules", get(list).post(create))
+    Router::new()
+        .route("/modules", get(list).post(create))
+        .route("/modules/{id}", axum::routing::delete(delete_module))
+}
+
+async fn fetch_one(pool: &sqlx::SqlitePool, id: i64) -> AppResult<ModuleResponse> {
+    sqlx::query_as!(
+        ModuleResponse,
+        r#"SELECT m.id AS "id!: i64",
+                  m.name,
+                  m.created_at,
+                  (SELECT COUNT(*) FROM decks d WHERE d.module_id = m.id)
+                      AS "deck_count!: i64"
+           FROM modules m WHERE m.id = ?"#,
+        id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound("module"))
 }
 
 async fn list(State(state): State<AppState>) -> AppResult<Json<Vec<ModuleResponse>>> {
@@ -55,14 +73,18 @@ async fn create(
         .fetch_one(&state.pool)
         .await?;
 
-    let created = sqlx::query_as!(
-        ModuleResponse,
-        r#"SELECT m.id AS "id!: i64", m.name, m.created_at, 0 AS "deck_count!: i64"
-           FROM modules m WHERE m.id = ?"#,
-        id
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    Ok((StatusCode::CREATED, Json(fetch_one(&state.pool, id).await?)))
+}
 
-    Ok((StatusCode::CREATED, Json(created)))
+async fn delete_module(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    fetch_one(&state.pool, id).await?;
+
+    sqlx::query!("DELETE FROM modules WHERE id = ?", id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

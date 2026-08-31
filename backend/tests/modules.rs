@@ -158,3 +158,42 @@ async fn list_is_ordered_by_name_case_insensitively() {
         .collect();
     assert_eq!(names, vec!["apple", "Banana"]);
 }
+
+#[tokio::test]
+async fn deleting_a_module_keeps_its_decks_and_unparents_them() {
+    let app = common::spawn_app().await;
+    let (_, module) = app.post("/api/modules", json!({ "name": "COS781" })).await;
+    let module_id = module["id"].as_i64().unwrap();
+    let (_, deck) = app
+        .post("/api/decks", json!({ "module_id": module_id, "name": "Test 1" }))
+        .await;
+    let deck_id = deck["id"].as_i64().unwrap();
+
+    let (status, body) = app.delete(&format!("/api/modules/{module_id}")).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "body was {body}");
+
+    let (_, list) = app.get("/api/modules").await;
+    assert_eq!(list.as_array().unwrap().len(), 0, "the module must be gone");
+
+    let (deck_status, surviving_deck) = app.get(&format!("/api/decks/{deck_id}")).await;
+    assert_eq!(
+        deck_status,
+        StatusCode::OK,
+        "the deck must survive its module, not cascade with it",
+    );
+    assert_eq!(surviving_deck["name"], "Test 1");
+    assert!(surviving_deck["module_id"].is_null());
+    assert!(surviving_deck["module_name"].is_null());
+}
+
+#[tokio::test]
+async fn deleting_an_unknown_module_is_404() {
+    let app = common::spawn_app().await;
+    let (status, body) = app.delete("/api/modules/9999").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(
+        body["message"], "module not found",
+        "must be the handler's own 404, not the router's endpoint fallback",
+    );
+}

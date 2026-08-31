@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT m.id AS \"id!: i64\", m.name, m.created_at, 0 AS \"deck_count!: i64\"\n           FROM modules m WHERE m.id = ?",
+  "query": "SELECT m.id AS \"id!: i64\",\n                  m.name,\n                  m.created_at,\n                  (SELECT COUNT(*) FROM decks d WHERE d.module_id = m.id)\n                      AS \"deck_count!: i64\"\n           FROM modules m WHERE m.id = ?",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "53caa65c761f7cbcaa0deb45b54c4be1ff4cd07e92917af2e8c932961c880bdb"
+  "hash": "b693c8cf1a220d9cd9799f9831035774857dc9ede6364ca1f02d67231be2bd20"
 }
