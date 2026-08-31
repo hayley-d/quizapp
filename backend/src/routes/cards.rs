@@ -330,6 +330,19 @@ async fn set_archived(
     Ok(Json(fetch_full(&state.pool, id).await?))
 }
 
+async fn delete_card(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    fetch_summary(&state.pool, id).await?;
+
+    sqlx::query!("DELETE FROM cards WHERE id = ?", id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn move_card(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -529,7 +542,7 @@ async fn write_children(
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/cards", get(list).post(create))
-        .route("/cards/{id}", get(get_one).patch(patch))
+        .route("/cards/{id}", get(get_one).patch(patch).delete(delete_card))
         .route("/cards/{id}/archive", axum::routing::post(archive))
         .route("/cards/{id}/unarchive", axum::routing::post(unarchive))
         .route("/cards/{id}/move", axum::routing::post(move_card))
