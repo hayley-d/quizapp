@@ -511,7 +511,7 @@ async fn create(
     Ok((StatusCode::CREATED, Json(fetch_full(&state.pool, id).await?)))
 }
 
-async fn write_children(
+pub async fn write_children(
     transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     card_id: i64,
     valid: &ValidCard,

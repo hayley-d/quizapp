@@ -88,6 +88,12 @@ Cards API, added in Part 2a:
     POST  /api/cards/:id/archive       archive
     POST  /api/cards/:id/unarchive     restore
 
+Moving content between devices:
+
+    GET   /api/decks/:id/export        one deck as a transfer file
+    GET   /api/modules/:id/export      every deck in a module
+    POST  /api/import                  create decks from a transfer file
+
 Full API and the data model are in `docs/mitis/specs/2026-08-26-quiz-study-app-design.md`.
 
 ## Environment
@@ -169,6 +175,31 @@ Nine tables: the eight from the data model (`modules`, `decks`, `cards`, `choice
 `accepted`, `sessions`, `reviews`, `schedule`) plus sqlx's own `_sqlx_migrations`.
 The schema is `backend/migrations/0001_init.sql`; the data model is documented in
 `docs/mitis/specs/2026-08-26-quiz-study-app-design.md`.
+
+## Moving decks between devices
+
+A deck authored on one machine reaches another as a single `.quizapp.json` file.
+**Export** on a deck page writes that deck; the download button beside a module in
+the Modules dialog writes every deck in it. **Import** on `/decks` reads one back.
+
+The file carries content only — prompts, choices, accepted answers, explanations,
+card order, the archived flag, and any uploaded images inlined as base64. It
+deliberately does not carry review history, sessions or spaced-repetition
+schedules, so an imported deck starts unstudied and each device keeps its own
+progress.
+
+Import never modifies or deletes anything. A module named in the file is reused if
+one of that name exists and created if not; a deck whose name is already taken in
+that module arrives as `… (2)`, and the toast says so. Re-importing the same file
+therefore makes another copy rather than overwriting the first, and an unwanted
+import is undone by deleting the deck it created.
+
+Because image names are the SHA-256-derived names uploads already use, an image
+that is already on the destination is not written twice.
+
+The format is plain, pretty-printed JSON and stable at `format_version: 1`, so
+writing a deck's worth of cards by hand in an editor and importing it works.
+Only `format`, `format_version`, `decks`, and each deck's `name` are required.
 
 ## Backups
 

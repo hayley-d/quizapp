@@ -13,6 +13,7 @@ pub mod routes;
 pub mod scheduler;
 pub mod state;
 pub mod stats;
+pub mod transfer;
 
 use std::convert::Infallible;
 

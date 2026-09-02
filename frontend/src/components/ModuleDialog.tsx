@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Download, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, ApiError, type Module } from '@/lib/api'
+import { api, ApiError, moduleExportUrl, type Module } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -108,6 +108,17 @@ export function ModuleDialog({ modules, onChanged }: ModuleDialogProps) {
                   <span className="text-muted-foreground">
                     {module.deck_count} deck{module.deck_count === 1 ? '' : 's'}
                   </span>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label={`Export module ${module.name}`}
+                    title="Export module"
+                  >
+                    <a href={moduleExportUrl(module.id)}>
+                      <Download />
+                    </a>
+                  </Button>
                   <Button
                     variant="destructive"
                     size="icon-sm"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Layers, Plus, Repeat, Zap } from 'lucide-react'
+import { ArrowLeft, Download, FileText, Layers, Plus, Repeat, Zap } from 'lucide-react'
 import {
   closestCenter,
   DndContext,
@@ -21,6 +21,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   api,
   ApiError,
+  deckExportUrl,
   type CardSummary,
   type Deck,
   type DeckStats,
@@ -373,14 +374,22 @@ export function DeckPage() {
             </p>
           </div>
         </div>
-        <Button
-          variant="brand"
-          className="h-10 px-4"
-          onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
-        >
-          <Plus className="size-4" />
-          Add card
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" className="h-10 px-4">
+            <a href={deckExportUrl(deck.id)}>
+              <Download className="size-4" />
+              Export
+            </a>
+          </Button>
+          <Button
+            variant="brand"
+            className="h-10 px-4"
+            onClick={() => navigate(`/cards/new?deck_id=${deck.id}`)}
+          >
+            <Plus className="size-4" />
+            Add card
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-6 sm:pl-11">

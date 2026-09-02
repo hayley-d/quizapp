@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!: i64\", kind, prompt_md, image_path,\n                      answer_md, explanation_md, archived AS \"archived!: bool\"\n               FROM cards\n               WHERE deck_id = ?\n               ORDER BY position, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "kind",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "prompt_md",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "image_path",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "answer_md",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "explanation_md",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "archived!: bool",
+        "ordinal": 6,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "177bc434032446f5073a4d667a62830bdfeef9e45cc52cd80aedcd7a9db4f12e"
+}

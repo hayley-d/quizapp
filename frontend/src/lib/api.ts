@@ -304,6 +304,35 @@ async function uploadImage(file: File, signal?: AbortSignal): Promise<UploadedIm
   return (await response.json()) as UploadedImage
 }
 
+export type ImportedDeck = {
+  id: number
+  name: string
+  original_name: string
+  card_count: number
+}
+
+export type TransferImportResult = {
+  decks: ImportedDeck[]
+  image_count: number
+}
+
+export const deckExportUrl = (deckId: number) => `/api/decks/${deckId}/export`
+export const moduleExportUrl = (moduleId: number) => `/api/modules/${moduleId}/export`
+
+async function importTransfer(
+  file: File,
+  signal?: AbortSignal,
+): Promise<TransferImportResult> {
+  const response = await fetch('/api/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: file,
+    signal,
+  })
+  if (!response.ok) await throwApiError(response)
+  return (await response.json()) as TransferImportResult
+}
+
 export type MasteryLevel = 'unseen' | 'shaky' | 'learning' | 'solid' | 'mastered'
 
 export const MASTERY_LEVELS: readonly MasteryLevel[] = [
@@ -400,4 +429,5 @@ export const api = {
   finishSession: (sessionId: number) =>
     request<SessionSummary>('POST', `/sessions/${sessionId}/finish`, {}),
   uploadImage,
+  importTransfer,
 }

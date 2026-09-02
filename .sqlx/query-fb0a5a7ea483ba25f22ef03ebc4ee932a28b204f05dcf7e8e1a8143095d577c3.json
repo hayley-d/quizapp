@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT text, is_primary AS \"is_primary!: bool\"\n                   FROM accepted WHERE card_id = ? ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "name": "text",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_primary!: bool",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "fb0a5a7ea483ba25f22ef03ebc4ee932a28b204f05dcf7e8e1a8143095d577c3"
+}

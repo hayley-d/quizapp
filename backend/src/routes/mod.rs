@@ -4,6 +4,7 @@ pub mod health;
 pub mod images;
 pub mod modules;
 pub mod sessions;
+pub mod transfer;
 
 use axum::response::{IntoResponse, Response};
 use axum::Router;
@@ -19,6 +20,7 @@ pub fn api_router() -> Router<AppState> {
         .merge(cards::router())
         .merge(images::router())
         .merge(sessions::router())
+        .merge(transfer::router())
         .fallback(unknown_endpoint)
 }
 

@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import {
+	type ChangeEvent,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import { Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
+	ApiError,
 	api,
 	type Deck,
 	type DeckSort,
 	type Module,
 	type ModuleFilter,
+	type TransferImportResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +42,7 @@ export function DecksPage() {
 	const [moduleFilter, setModuleFilter] = useState<ModuleFilter>(ALL);
 	const [sort, setSort] = useState<DeckSort>("newest");
 	const [loading, setLoading] = useState(false);
+	const [importing, setImporting] = useState(false);
 
 	const filtersActive = debouncedSearch.trim() !== "" || moduleFilter !== ALL;
 
@@ -87,6 +96,53 @@ export function DecksPage() {
 		setModuleFilter(ALL);
 	}
 
+	function describeImport(result: TransferImportResult) {
+		const deckCount = result.decks.length;
+		const cardCount = result.decks.reduce(
+			(total, deck) => total + deck.card_count,
+			0,
+		);
+		const parts = [
+			`${deckCount} ${deckCount === 1 ? "deck" : "decks"}`,
+			`${cardCount} ${cardCount === 1 ? "card" : "cards"}`,
+		];
+		if (result.image_count > 0) {
+			parts.push(
+				`${result.image_count} ${result.image_count === 1 ? "image" : "images"}`,
+			);
+		}
+		const renamed = result.decks.filter(
+			(deck) => deck.name !== deck.original_name,
+		);
+		const description = renamed.length
+			? renamed
+					.map((deck) => `“${deck.original_name}” came in as “${deck.name}”`)
+					.join("; ")
+			: undefined;
+		return { message: `Imported ${parts.join(", ")}`, description };
+	}
+
+	async function importFile(event: ChangeEvent<HTMLInputElement>) {
+		const file = event.target.files?.[0];
+		event.target.value = "";
+		if (!file) return;
+
+		setImporting(true);
+		try {
+			const result = await api.importTransfer(file);
+			const { message, description } = describeImport(result);
+			toast.success(message, { description });
+			void loadModules();
+			void loadDecks();
+		} catch (error) {
+			toast.error(
+				error instanceof ApiError ? error.message : "Could not import that file",
+			);
+		} finally {
+			setImporting(false);
+		}
+	}
+
 	const moduleName = (filter: ModuleFilter) =>
 		filter === ALL
 			? "All modules"
@@ -100,6 +156,24 @@ export function DecksPage() {
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="font-display text-2xl font-bold">Decks</h1>
 				<div className="flex gap-2">
+					<input
+						id="import-transfer-file"
+						type="file"
+						className="sr-only"
+						accept=".json,application/json"
+						disabled={importing}
+						onChange={(event) => void importFile(event)}
+					/>
+					<Button
+						asChild
+						variant="outline"
+						className={`h-10 px-4 ${importing ? "pointer-events-none opacity-50" : ""}`}
+					>
+						<label htmlFor="import-transfer-file">
+							<Upload className="size-4" />
+							{importing ? "Importing…" : "Import"}
+						</label>
+					</Button>
 					<ModuleDialog
 						modules={modules}
 						onChanged={(deletedModuleId) => {

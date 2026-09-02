@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT strftime('%Y-%m-%dT%H:%M:%SZ','now') AS \"now!: String\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "now!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9eee4818d3cba9e123c59c1c6528c3fce1b5fcffea432ea6d903179fc185371a"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT d.id AS \"id!: i64\", m.name AS \"module_name?: String\",\n                  d.name, d.description\n           FROM decks d\n           LEFT JOIN modules m ON m.id = d.module_id\n           WHERE d.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "module_name?: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 3,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c301ee8ff72cc43a0eb45bad58118cb654b1d74a3033d343d6b746843abc6a85"
+}

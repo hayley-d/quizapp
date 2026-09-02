@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT 1 AS \"taken!: i64\" FROM decks\n               WHERE ifnull(module_id, -1) = ifnull(?, -1) AND name = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "taken!: i64",
+        "ordinal": 0,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c605167a70dd2a05a6e23f41ce0733d317cceccdb7b9e8d51370dfedf6276758"
+}

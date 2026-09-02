@@ -17,6 +17,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 unicode-normalization = "0.1"
 anyhow = "1"
+base64 = "0.22"
 serde_path_to_error = "0.1"
 sha2 = "0.10"
 rand = "0.8"
