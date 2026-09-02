@@ -594,6 +594,53 @@ async fn the_no_repeat_window_survives_a_reload() {
 }
 
 #[tokio::test]
+async fn a_missed_card_is_served_again_immediately_until_it_is_answered_correctly() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "ten cards", None).await;
+    for index in 0..10 {
+        create_flashcard(&app, deck_id, &format!("card {index}")).await;
+    }
+    let session_id = start_session(&app, deck_id).await;
+
+    let (_, first) = app.get(&format!("/api/sessions/{session_id}/next")).await;
+    let missed_card_id = first["card"]["id"].as_i64().unwrap();
+
+    for attempt in 0..4 {
+        let (status, answer) = app
+            .post(
+                &format!("/api/sessions/{session_id}/answer"),
+                json!({ "card_id": missed_card_id, "self_grade": "again" }),
+            )
+            .await;
+        assert_eq!(status, 200, "attempt {attempt} was rejected: {answer}");
+        assert_eq!(answer["correct"], json!(false));
+
+        let (_, body) = app.get(&format!("/api/sessions/{session_id}/next")).await;
+        assert_eq!(
+            body["card"]["id"].as_i64(),
+            Some(missed_card_id),
+            "a card answered wrong must come straight back, not after the window",
+        );
+    }
+
+    let (status, answer) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": missed_card_id, "self_grade": "good" }),
+        )
+        .await;
+    assert_eq!(status, 200, "{answer}");
+    assert_eq!(answer["correct"], json!(true));
+
+    let (_, body) = app.get(&format!("/api/sessions/{session_id}/next")).await;
+    assert_ne!(
+        body["card"]["id"].as_i64(),
+        Some(missed_card_id),
+        "once answered correctly the card must rejoin the ordinary rotation",
+    );
+}
+
+#[tokio::test]
 async fn a_three_card_deck_still_serves_a_card() {
     let app = common::spawn_app().await;
     let deck_id = create_deck(&app, "three cards", None).await;

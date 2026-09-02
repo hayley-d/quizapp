@@ -141,17 +141,17 @@ pub fn select_card(
     if candidates.is_empty() {
         return None;
     }
+    let unresolved: Vec<&CandidateCard> = candidates
+        .iter()
+        .filter(|candidate| unresolved_miss_card_ids.contains(&candidate.card_id))
+        .collect();
+
     let excluded = excluded_card_ids(recent_review_card_ids, candidates.len());
     let included: Vec<&CandidateCard> = candidates
         .iter()
         .filter(|candidate| !excluded.contains(&candidate.card_id))
         .collect();
 
-    let unresolved: Vec<&CandidateCard> = included
-        .iter()
-        .copied()
-        .filter(|candidate| unresolved_miss_card_ids.contains(&candidate.card_id))
-        .collect();
     let selectable = if unresolved.is_empty() { &included } else { &unresolved };
 
     let total: f64 = selectable.iter().map(|candidate| weight_for(candidate)).sum();
@@ -612,33 +612,53 @@ mod tests {
     }
 
     #[test]
-    fn an_unresolved_miss_still_waits_out_the_no_repeat_window() {
+    fn an_unresolved_miss_ignores_the_no_repeat_window() {
         let candidates = pool_of(4);
         for step in 0..1_000 {
             let roll = step as f64 / 1_000.0;
-            let selected = select_card(&candidates, &[2], &[2], roll).unwrap();
-            assert_ne!(
-                selected, 2,
-                "a miss inside the no-repeat window must not be served again immediately",
+            assert_eq!(
+                select_card(&candidates, &[2], &[2], roll),
+                Some(2),
+                "a card just answered wrong must be served again immediately",
             );
         }
     }
 
     #[test]
-    fn a_miss_returns_as_soon_as_it_leaves_the_no_repeat_window() {
-        let candidates = pool_of(4);
+    fn an_unresolved_miss_is_served_again_however_long_the_history() {
+        let candidates = pool_of(12);
         assert_eq!(
             effective_no_repeat_window(candidates.len()),
-            3,
-            "this test's history is built around a window of three",
+            NO_REPEAT_WINDOW,
+            "this test's history is built around the full window",
         );
+        let history = [2, 5, 6, 7, 8, 9, 10, 11];
         for roll in [0.0, 0.5, 0.999_999] {
             assert_eq!(
-                select_card(&candidates, &[3, 4, 1, 2], &[2], roll),
+                select_card(&candidates, &history, &[2], roll),
                 Some(2),
-                "once outside the window the miss must be served at the next opportunity",
+                "an unresolved miss must outrank every exclusion in the window",
             );
         }
+    }
+
+    #[test]
+    fn every_unresolved_miss_stays_reachable_inside_the_window() {
+        let candidates = pool_of(4);
+        let mut seen: Vec<i64> = Vec::new();
+        for step in 0..1_000 {
+            let roll = step as f64 / 1_000.0;
+            let selected = select_card(&candidates, &[2, 4], &[2, 4], roll).unwrap();
+            assert!(
+                [2, 4].contains(&selected),
+                "selected {selected}, which is not an unresolved miss",
+            );
+            if !seen.contains(&selected) {
+                seen.push(selected);
+            }
+        }
+        seen.sort_unstable();
+        assert_eq!(seen, vec![2, 4], "every unresolved miss must stay reachable");
     }
 
     #[test]

@@ -53,7 +53,7 @@ const TEST_TYPE_OPTIONS: TestTypeOption[] = [
     key: 'practice',
     launch: { kind: 'session', mode: 'practice' },
     label: 'Practice',
-    note: 'Weighted towards what you keep getting wrong. No end — stop when you like.',
+    note: 'A card you get wrong comes straight back until you get it right. No end — stop when you like.',
     available: true,
     Icon: Zap,
   },
