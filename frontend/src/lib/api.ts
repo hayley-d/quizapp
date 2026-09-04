@@ -87,6 +87,14 @@ export const KIND_LABEL: Record<CardKind, string> = {
   flashcard: 'Flashcard',
 }
 
+export type MultiPointMode = 'auto' | 'on' | 'off'
+
+export const MULTI_POINT_MODE_LABEL: Record<MultiPointMode, string> = {
+  auto: 'Automatic',
+  on: 'Always a list',
+  off: 'Never a list',
+}
+
 export type Choice = { id: number; text_md: string; is_correct: boolean; position: number }
 export type Accepted = { id: number; text: string; normalised: string; is_primary: boolean }
 
@@ -100,6 +108,7 @@ export type CardSummary = {
   explanation_md: string | null
   archived: boolean
   position: number
+  multi_point_mode: MultiPointMode
   created_at: string
   updated_at: string
 }
@@ -117,6 +126,20 @@ export type CardInput = {
   explanation_md?: string | null
   choices?: ChoiceInput[]
   accepted?: AcceptedInput[]
+  multi_point_mode?: MultiPointMode
+}
+
+export type AnswerPointPreview = {
+  key: string
+  text: string
+  first_word: string
+  first_letter: string
+}
+
+export type AnswerPointsPreview = {
+  multi_point: boolean
+  points: AnswerPointPreview[]
+  notes: string[]
 }
 
 export type CardQuery = {
@@ -167,12 +190,28 @@ export type CreateSessionInput =
 
 export type NextChoice = { id: number; text_md: string }
 
+export type CueTier = 'word' | 'letter' | 'none'
+
+export type AnswerCues = {
+  tier: CueTier
+  visible: string[]
+  behind_the_hint: string[]
+}
+
+export type NextAnswerPoints = {
+  total: number
+  full_total: number
+  focused: boolean
+  cues: AnswerCues
+}
+
 export type NextCard = {
   id: number
   kind: CardKind
   prompt_md: string
   image_path: string | null
   choices: NextChoice[]
+  answer_points: NextAnswerPoints | null
 }
 
 export type PracticeNextResponse = {
@@ -207,17 +246,44 @@ export type Sm2NextResponse = {
 
 export type NextResponse = PracticeNextResponse | MockNextResponse | Sm2NextResponse
 
+export type RevealPoint = {
+  key: string
+  text_md: string
+  matched_what_you_typed: boolean
+}
+
+export type RevealAnswerPoints = {
+  points: RevealPoint[]
+  notes: string[]
+  focused: boolean
+  full_total: number
+}
+
 export type RevealedAnswer = {
   card_id: number
   answer_md: string | null
   explanation_md: string | null
+  answer_points: RevealAnswerPoints | null
 }
 
 export type SubmitAnswerInput = { card_id: number; ms?: number } & (
-  | { given: string; choice_id?: never; self_grade?: never }
-  | { given?: never; choice_id: number; self_grade?: never }
-  | { given?: never; choice_id?: never; self_grade: SelfGrade }
+  | { given: string; choice_id?: never; self_grade?: never; recalled_point_keys?: never; hints_used?: never }
+  | { given?: never; choice_id: number; self_grade?: never; recalled_point_keys?: never; hints_used?: never }
+  | { given?: never; choice_id?: never; self_grade: SelfGrade; recalled_point_keys?: never; hints_used?: never }
+  | {
+      given?: string
+      choice_id?: never
+      self_grade?: never
+      recalled_point_keys: string[]
+      hints_used?: boolean
+    }
 )
+
+export type AnswerPointScore = {
+  recalled: number
+  total: number
+  missed: string[]
+}
 
 export type AnswerResult = {
   mode: 'practice' | 'sm2'
@@ -230,6 +296,7 @@ export type AnswerResult = {
   level_after: MasteryLevel
   mastery_direction: MovementDirection
   mastery_moved_up_count: number
+  answer_points: AnswerPointScore | null
 }
 
 export type OverrideResult = {
@@ -285,6 +352,7 @@ export type ResultQuestion = {
   can_override: boolean
   ms: number | null
   answered_at: string
+  answer_points: AnswerPointScore | null
 }
 
 export type SessionResults = {
@@ -416,8 +484,23 @@ export const api = {
     request<Session>('POST', '/sessions', input),
   nextCard: (sessionId: number, signal?: AbortSignal) =>
     request<NextResponse>('GET', `/sessions/${sessionId}/next`, undefined, signal),
-  revealCard: (sessionId: number, cardId: number) =>
-    request<RevealedAnswer>('POST', `/sessions/${sessionId}/reveal`, { card_id: cardId }),
+  previewAnswerPoints: (
+    source: string,
+    multiPointMode: MultiPointMode,
+    signal?: AbortSignal,
+  ) =>
+    request<AnswerPointsPreview>(
+      'POST',
+      '/cards/answer-points-preview',
+      { source, multi_point_mode: multiPointMode },
+      signal,
+    ),
+
+  revealCard: (sessionId: number, cardId: number, given?: string) =>
+    request<RevealedAnswer>('POST', `/sessions/${sessionId}/reveal`, {
+      card_id: cardId,
+      given: given ?? null,
+    }),
   submitAnswer: (sessionId: number, input: SubmitAnswerInput) =>
     request<AnswerResult>('POST', `/sessions/${sessionId}/answer`, input),
   recordAnswer: (sessionId: number, input: SubmitAnswerInput) =>

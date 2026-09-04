@@ -14,12 +14,12 @@ function primaryAcceptedText(card: Card): string {
 }
 
 export function FlashcardAnswer({ card }: { card: Card }) {
-  if (card.kind === 'text_answer') {
-    return <p className="text-center text-2xl font-medium">{primaryAcceptedText(card)}</p>
-  }
-
   const answerMarkdown =
-    card.kind === 'mc_single' ? correctChoiceText(card) : (card.answer_md ?? MISSING_ANSWER)
+    card.kind === 'text_answer'
+      ? primaryAcceptedText(card)
+      : card.kind === 'mc_single'
+        ? correctChoiceText(card)
+        : (card.answer_md ?? MISSING_ANSWER)
 
   return <Markdown className="text-center text-2xl">{answerMarkdown}</Markdown>
 }

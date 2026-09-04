@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
+import { AnswerPointCues } from '@/components/session/AnswerPointCues'
+import { AnswerPointsChecklist } from '@/components/session/AnswerPointsChecklist'
 import { AnswerVerdict } from '@/components/session/AnswerVerdict'
 import { ChoiceList } from '@/components/session/ChoiceList'
 import { SessionExhausted } from '@/components/session/SessionExhausted'
@@ -51,6 +53,8 @@ export function SessionPage() {
   const [overridden, setOverridden] = useState(false)
   const [consecutiveCorrect, setConsecutiveCorrect] = useState(0)
   const [overriding, setOverriding] = useState(false)
+  const [recalledPointKeys, setRecalledPointKeys] = useState<string[]>([])
+  const [hintShown, setHintShown] = useState(false)
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [exhausted, setExhausted] = useState<string | null>(null)
@@ -80,6 +84,8 @@ export function SessionPage() {
       setSelectedChoiceId(null)
       setTypedAnswer('')
       setOverridden(false)
+      setRecalledPointKeys([])
+      setHintShown(false)
       setExhausted(null)
       servedAt.current = Date.now()
     } catch (error: unknown) {
@@ -105,6 +111,8 @@ export function SessionPage() {
 
   const card = served?.card ?? null
   const graded = verdict !== null
+  const answerPoints = card?.answer_points ?? null
+  const revealedPoints = revealed?.answer_points ?? null
 
   useEffect(() => {
     if (summary || !loaded) return
@@ -112,14 +120,16 @@ export function SessionPage() {
       nextButton.current?.focus()
       return
     }
-    if (card?.kind === 'text_answer') {
+    if (answerPoints !== null && revealed) {
+      container.current?.focus()
+    } else if (card?.kind === 'text_answer' || answerPoints !== null) {
       answerInput.current?.focus()
     } else if (card?.kind === 'flashcard' && !revealed) {
       revealButton.current?.focus()
     } else {
       container.current?.focus()
     }
-  }, [graded, card?.id, card?.kind, revealed, summary, loaded])
+  }, [graded, card?.id, card?.kind, answerPoints, revealed, summary, loaded])
 
   async function send(input: SubmitAnswerInput) {
     if (sessionId === null || busy) return
@@ -154,8 +164,29 @@ export function SessionPage() {
     }
   }
 
+  function togglePoint(key: string) {
+    setRecalledPointKeys((current) =>
+      current.includes(key) ? current.filter((existing) => existing !== key) : [...current, key],
+    )
+  }
+
+  function scorePoints() {
+    if (!card || graded || revealedPoints === null) return
+    void send({
+      card_id: card.id,
+      recalled_point_keys: recalledPointKeys,
+      hints_used: hintShown,
+      ...(typedAnswer.trim() === '' ? {} : { given: typedAnswer }),
+      ms: elapsedSince(servedAt.current),
+    })
+  }
+
   function submit() {
     if (!card || graded) return
+    if (answerPoints !== null) {
+      void reveal()
+      return
+    }
     if (card.kind === 'mc_single') {
       if (selectedChoiceId === null) return
       void send({ card_id: card.id, choice_id: selectedChoiceId, ms: elapsedSince(servedAt.current) })
@@ -174,7 +205,13 @@ export function SessionPage() {
     if (sessionId === null || !card || revealed || busy) return
     setBusy(true)
     try {
-      setRevealed(await api.revealCard(sessionId, card.id))
+      const response = await api.revealCard(sessionId, card.id, typedAnswer)
+      setRevealed(response)
+      setRecalledPointKeys(
+        response.answer_points?.points
+          .filter((point) => point.matched_what_you_typed)
+          .map((point) => point.key) ?? [],
+      )
     } catch {
       toast.error('Could not load the answer')
     } finally {
@@ -230,6 +267,8 @@ export function SessionPage() {
       event.preventDefault()
       if (graded) {
         void loadNext()
+      } else if (revealedPoints !== null) {
+        scorePoints()
       } else if (card?.kind === 'flashcard' && !revealed) {
         void reveal()
       } else {
@@ -239,6 +278,12 @@ export function SessionPage() {
     }
 
     if (typing) return
+
+    if (answerPoints !== null && !revealed && event.key === ' ') {
+      event.preventDefault()
+      void reveal()
+      return
+    }
 
     if (card?.kind === 'flashcard' && !revealed && event.key === ' ') {
       event.preventDefault()
@@ -251,7 +296,13 @@ export function SessionPage() {
     const digit = Number(event.key)
     if (!Number.isInteger(digit) || digit < 1 || digit > 9) return
 
-    if (card.kind === 'mc_single') {
+    if (revealedPoints !== null) {
+      const point = revealedPoints.points[digit - 1]
+      if (point) {
+        event.preventDefault()
+        togglePoint(point.key)
+      }
+    } else if (card.kind === 'mc_single') {
       const choice = card.choices[digit - 1]
       if (choice) {
         event.preventDefault()
@@ -318,7 +369,37 @@ export function SessionPage() {
         {card.image_path && <CardImage path={card.image_path} altText="Card image" />}
       </div>
 
-      {card.kind === 'mc_single' && (
+      {answerPoints !== null && !graded && (
+        <div className="space-y-4">
+          {revealedPoints === null ? (
+            <>
+              <AnswerPointCues
+                answerPoints={answerPoints}
+                hintShown={hintShown}
+                onShowHint={() => setHintShown(true)}
+              />
+              <Textarea
+                ref={answerInput}
+                value={typedAnswer}
+                onChange={(event) => setTypedAnswer(event.target.value)}
+                placeholder="One point per line, in any order — or leave this blank and recall them in your head"
+                aria-label="Your answer"
+                rows={Math.min(answerPoints.total + 1, 8)}
+              />
+            </>
+          ) : (
+            <AnswerPointsChecklist
+              answerPoints={revealedPoints}
+              recalledKeys={recalledPointKeys}
+              onToggle={togglePoint}
+              onSubmit={scorePoints}
+              disabled={busy}
+            />
+          )}
+        </div>
+      )}
+
+      {answerPoints === null && card.kind === 'mc_single' && (
         <ChoiceList
           choices={card.choices}
           selectedChoiceId={selectedChoiceId}
@@ -327,7 +408,7 @@ export function SessionPage() {
         />
       )}
 
-      {card.kind === 'text_answer' && !graded && (
+      {answerPoints === null && card.kind === 'text_answer' && !graded && (
         <Textarea
           ref={answerInput}
           value={typedAnswer}
@@ -337,7 +418,7 @@ export function SessionPage() {
         />
       )}
 
-      {card.kind === 'flashcard' && (
+      {answerPoints === null && card.kind === 'flashcard' && (
         <div className="space-y-4">
           {revealed ? (
             <Markdown className="rounded-xl border bg-card px-4 py-3 shadow-sm">
@@ -376,9 +457,22 @@ export function SessionPage() {
             onOverride={() => void override()}
             onNext={() => void loadNext()}
             nextButtonRef={nextButton}
-            givenAnswer={card.kind === 'text_answer' ? typedAnswer : null}
+            givenAnswer={
+              answerPoints === null && card.kind === 'text_answer' ? typedAnswer : null
+            }
           />
         </div>
+      ) : answerPoints !== null ? (
+        revealedPoints === null && (
+          <div className="flex items-center gap-3">
+            <Button variant="brand" className="h-10 px-6" onClick={() => void reveal()}>
+              Show the points
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Enter to see them · Shift+Enter for a new line
+            </span>
+          </div>
+        )
       ) : (
         card.kind !== 'flashcard' && (
           <div className="flex items-center gap-3">

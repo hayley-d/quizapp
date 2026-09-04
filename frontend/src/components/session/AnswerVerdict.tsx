@@ -25,6 +25,7 @@ export function AnswerVerdict({
   givenAnswer,
 }: AnswerVerdictProps) {
   const correct = verdict.correct || overridden
+  const score = verdict.answer_points
   const [primaryExpected, ...alternateExpected] = verdict.expected
   const comparableAnswer =
     givenAnswer !== null && givenAnswer.trim() !== '' && !verdict.correct ? givenAnswer : null
@@ -41,11 +42,36 @@ export function AnswerVerdict({
         )}
       >
         <p className="font-display font-semibold">
-          {correct ? (overridden ? 'Counted as correct' : 'Correct') : 'Not quite'}
+          {score !== null
+            ? `${score.recalled} of ${score.total} recalled`
+            : correct
+              ? overridden
+                ? 'Counted as correct'
+                : 'Correct'
+              : 'Not quite'}
         </p>
       </div>
 
-      {primaryExpected !== undefined &&
+      {score !== null && score.missed.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-muted-foreground">
+            {score.missed.length === 1 ? 'The point you missed' : 'The points you missed'}
+          </p>
+          <ul className="space-y-1">
+            {score.missed.map((point) => (
+              <li
+                key={point}
+                className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2"
+              >
+                <Markdown>{point}</Markdown>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {score === null &&
+        primaryExpected !== undefined &&
         (comparableAnswer === null ? (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-muted-foreground">

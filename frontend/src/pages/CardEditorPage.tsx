@@ -11,6 +11,7 @@ import {
   KIND_LABEL,
   type AcceptedInput,
   type CardInput,
+  type MultiPointMode,
   type CardKind,
   type ChoiceInput,
 } from '@/lib/api'
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/tooltip'
 import { ChoicesEditor } from '@/components/card-editor/ChoicesEditor'
 import { AcceptedEditor } from '@/components/card-editor/AcceptedEditor'
+import { MultiPointEditor } from '@/components/card-editor/MultiPointEditor'
 import { CardImage } from '@/components/CardImage'
 import { CardPreview } from '@/components/card-editor/CardPreview'
 
@@ -116,6 +118,7 @@ function CardEditorPageInner() {
   const [explanationMd, setExplanationMd] = useState('')
   const [choices, setChoices] = useState<ChoiceInput[]>(emptyChoices())
   const [accepted, setAccepted] = useState<AcceptedInput[]>(emptyAccepted())
+  const [multiPointMode, setMultiPointMode] = useState<MultiPointMode>('auto')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState(mode === 'create' && queryDeckId === null)
@@ -141,6 +144,7 @@ function CardEditorPageInner() {
         setPromptMd(card.prompt_md)
         setImagePath(card.image_path)
         setAnswerMd(card.answer_md ?? '')
+        setMultiPointMode(card.multi_point_mode)
         setExplanationMd(card.explanation_md ?? '')
         setChoices(
           card.choices.length > 0
@@ -181,6 +185,7 @@ function CardEditorPageInner() {
     if (kind === 'flashcard') input.answer_md = answerMd
     if (kind === 'mc_single') input.choices = choices
     if (kind === 'text_answer') input.accepted = accepted
+    if (kind !== 'mc_single') input.multi_point_mode = multiPointMode
     return input
   }
 
@@ -291,6 +296,7 @@ function CardEditorPageInner() {
   if (kind === 'mc_single') claimedErrorKeys.add('choices')
   if (kind === 'text_answer') claimedErrorKeys.add('accepted')
   if (kind === 'flashcard') claimedErrorKeys.add('answer_md')
+  if (kind !== 'mc_single') claimedErrorKeys.add('multi_point_mode')
   const unclaimedErrors = Object.entries(errors).filter(([field]) => {
     if (claimedErrorKeys.has(field)) return false
     if (kind === 'mc_single' && field.startsWith('choices[')) return false
@@ -446,7 +452,18 @@ function CardEditorPageInner() {
             <ChoicesEditor value={choices} onChange={setChoices} errors={errors} />
           )}
           {kind === 'text_answer' && (
-            <AcceptedEditor value={accepted} onChange={setAccepted} errors={errors} />
+            <>
+              <AcceptedEditor value={accepted} onChange={setAccepted} errors={errors} />
+              <MultiPointEditor
+                source={accepted.find((answer) => answer.is_primary)?.text ?? ''}
+                value={multiPointMode}
+                onChange={(mode) => {
+                  clearError('multi_point_mode')
+                  setMultiPointMode(mode)
+                }}
+                error={errors.multi_point_mode}
+              />
+            </>
           )}
           {kind === 'flashcard' && (
             <>
@@ -462,6 +479,15 @@ function CardEditorPageInner() {
               {errors.answer_md && (
                 <p className="text-sm text-destructive">{errors.answer_md}</p>
               )}
+              <MultiPointEditor
+                source={answerMd}
+                value={multiPointMode}
+                onChange={(mode) => {
+                  clearError('multi_point_mode')
+                  setMultiPointMode(mode)
+                }}
+                error={errors.multi_point_mode}
+              />
             </>
           )}
         </EditorSection>
