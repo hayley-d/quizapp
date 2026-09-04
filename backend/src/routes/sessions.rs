@@ -5,6 +5,10 @@ use axum::{Json, Router};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
+use crate::answer_points::{
+    breakdown_of, cue_tier_for, cues_for, match_typed_points, parse_multi_point_mode,
+    self_grade_from_point_score, AnswerBreakdown, AnswerCues, AnswerPoint,
+};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
 use crate::normalise::normalise;
@@ -283,6 +287,15 @@ pub struct NextCardResponse {
     pub prompt_md: String,
     pub image_path: Option<String>,
     pub choices: Vec<NextChoiceResponse>,
+    pub answer_points: Option<NextAnswerPoints>,
+}
+
+#[derive(Serialize)]
+pub struct NextAnswerPoints {
+    pub total: i64,
+    pub full_total: i64,
+    pub focused: bool,
+    pub cues: AnswerCues,
 }
 
 #[derive(Serialize)]
@@ -330,6 +343,8 @@ pub enum NextResponse {
 #[serde(deny_unknown_fields)]
 pub struct RevealRequest {
     pub card_id: i64,
+    #[serde(default)]
+    pub given: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -337,6 +352,22 @@ pub struct RevealResponse {
     pub card_id: i64,
     pub answer_md: Option<String>,
     pub explanation_md: Option<String>,
+    pub answer_points: Option<RevealAnswerPoints>,
+}
+
+#[derive(Serialize)]
+pub struct RevealAnswerPoints {
+    pub points: Vec<RevealPoint>,
+    pub notes: Vec<String>,
+    pub focused: bool,
+    pub full_total: i64,
+}
+
+#[derive(Serialize)]
+pub struct RevealPoint {
+    pub key: String,
+    pub text_md: String,
+    pub matched_what_you_typed: bool,
 }
 
 #[derive(Serialize)]
@@ -355,6 +386,14 @@ pub struct ResultQuestion {
     pub can_override: bool,
     pub ms: Option<i64>,
     pub answered_at: String,
+    pub answer_points: Option<ResultAnswerPoints>,
+}
+
+#[derive(Serialize)]
+pub struct ResultAnswerPoints {
+    pub recalled: i64,
+    pub total: i64,
+    pub missed: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -364,6 +403,8 @@ pub struct ResultsResponse {
 }
 
 pub struct ResultReviewRow {
+    pub points_total: Option<i64>,
+    pub points_recalled: Option<i64>,
     pub review_id: i64,
     pub card_id: i64,
     pub kind: String,
@@ -392,14 +433,19 @@ pub fn expected_for_kind(
     }
 }
 
-pub fn can_override_result(kind: &str, correct: bool) -> bool {
-    !correct && matches!(kind, "text_answer" | "flashcard")
+// A multi-point review is never overridden. Ticking the checklist already said which points
+// were recalled, so there is nothing left for "I was right" to add -- and for a text answer it
+// would write the whole typed list back as a new accepted wording, which is the pollution this
+// feature exists to remove.
+pub fn can_override_result(kind: &str, correct: bool, points_total: Option<i64>) -> bool {
+    points_total.is_none() && !correct && matches!(kind, "text_answer" | "flashcard")
 }
 
 pub fn assemble_results(
     rows: Vec<ResultReviewRow>,
     correct_choices_by_card: &std::collections::HashMap<i64, Vec<String>>,
     accepted_by_card: &std::collections::HashMap<i64, Vec<String>>,
+    missed_points_by_review: &std::collections::HashMap<i64, Vec<String>>,
 ) -> Vec<ResultQuestion> {
     let empty: Vec<String> = Vec::new();
     rows.into_iter()
@@ -412,7 +458,15 @@ pub fn assemble_results(
             ResultQuestion {
                 review_id: row.review_id,
                 card_id: row.card_id,
-                can_override: can_override_result(&row.kind, row.correct),
+                can_override: can_override_result(&row.kind, row.correct, row.points_total),
+                answer_points: row.points_total.map(|total| ResultAnswerPoints {
+                    recalled: row.points_recalled.unwrap_or(0),
+                    total,
+                    missed: missed_points_by_review
+                        .get(&row.review_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                }),
                 kind: row.kind,
                 prompt_md: row.prompt_md,
                 image_path: row.image_path,
@@ -443,6 +497,7 @@ pub struct PoolCard {
     pub kind: String,
     pub answer_md: Option<String>,
     pub explanation_md: Option<String>,
+    pub multi_point_mode: String,
 }
 
 pub async fn load_active_session(
@@ -481,7 +536,7 @@ pub async fn load_pool_card(
     sqlx::query_as!(
         PoolCard,
         r#"
-        SELECT id AS "id!: i64", kind, answer_md, explanation_md
+        SELECT id AS "id!: i64", kind, answer_md, explanation_md, multi_point_mode
         FROM cards
         WHERE id = ?
           AND archived = 0
@@ -574,6 +629,8 @@ async fn load_unresolved_miss_card_ids(
         WITH latest AS (
             SELECT card_id,
                    correct,
+                   points_total,
+                   points_recalled,
                    ROW_NUMBER() OVER (
                        PARTITION BY card_id
                        ORDER BY answered_at DESC, id DESC
@@ -583,7 +640,8 @@ async fn load_unresolved_miss_card_ids(
         )
         SELECT card_id AS "card_id!: i64"
         FROM latest
-        WHERE recency_rank = 1 AND correct = 0
+        WHERE recency_rank = 1
+          AND (correct = 0 OR (points_total IS NOT NULL AND points_recalled < points_total))
         "#,
         session_id,
     )
@@ -708,13 +766,93 @@ async fn next_due_at(
     Ok(next_due)
 }
 
+async fn load_answer_source(
+    pool: &sqlx::SqlitePool,
+    card_id: i64,
+    kind: &str,
+    answer_md: &Option<String>,
+) -> AppResult<Option<String>> {
+    match kind {
+        "flashcard" => Ok(answer_md.clone()),
+        "text_answer" => Ok(sqlx::query_scalar!(
+            r#"SELECT text AS "text!: String" FROM accepted WHERE card_id = ? AND is_primary = 1"#,
+            card_id,
+        )
+        .fetch_optional(pool)
+        .await?),
+        _ => Ok(None),
+    }
+}
+
+async fn load_answer_breakdown(
+    pool: &sqlx::SqlitePool,
+    card_id: i64,
+    kind: &str,
+    answer_md: &Option<String>,
+    multi_point_mode: &str,
+) -> AppResult<Option<AnswerBreakdown>> {
+    let Some(mode) = parse_multi_point_mode(multi_point_mode) else {
+        return Ok(None);
+    };
+    let Some(source) = load_answer_source(pool, card_id, kind, answer_md).await? else {
+        return Ok(None);
+    };
+    Ok(breakdown_of(&source, mode))
+}
+
+// The points a repetition asks about. Ordinarily that is every point in the answer; after a
+// partial attempt earlier in the same session it narrows to the points that attempt missed,
+// so the card comes back asking only for what was forgotten. A point key that no longer
+// appears in the answer -- the card was edited mid-session -- drops out rather than being
+// asked for and never satisfiable.
+async fn focused_points(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+    card_id: i64,
+    points: &[AnswerPoint],
+) -> AppResult<Option<Vec<AnswerPoint>>> {
+    let missed_keys = sqlx::query_scalar!(
+        r#"
+        SELECT point_key AS "point_key!: String"
+        FROM review_answer_points
+        WHERE recalled = 0
+          AND review_id = (
+              SELECT id FROM reviews
+              WHERE session_id = ? AND card_id = ?
+              ORDER BY answered_at DESC, id DESC
+              LIMIT 1
+          )
+        "#,
+        session_id,
+        card_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let focused: Vec<AnswerPoint> = points
+        .iter()
+        .filter(|point| missed_keys.contains(&point.key))
+        .cloned()
+        .collect();
+
+    if focused.is_empty() || focused.len() == points.len() {
+        return Ok(None);
+    }
+    Ok(Some(focused))
+}
+
 async fn load_served_card(
     pool: &sqlx::SqlitePool,
+    session_id: i64,
     card_id: i64,
     choice_order_seed: Option<u64>,
 ) -> AppResult<NextCardResponse> {
     let card = sqlx::query!(
-        r#"SELECT id AS "id!: i64", kind, prompt_md, image_path FROM cards WHERE id = ?"#,
+        r#"
+        SELECT id AS "id!: i64", kind, prompt_md, image_path, answer_md,
+               multi_point_mode AS "multi_point_mode!: String"
+        FROM cards WHERE id = ?
+        "#,
         card_id,
     )
     .fetch_one(pool)
@@ -739,12 +877,33 @@ async fn load_served_card(
         None => choices.shuffle(&mut rand::thread_rng()),
     }
 
+    let breakdown =
+        load_answer_breakdown(pool, card_id, &card.kind, &card.answer_md, &card.multi_point_mode)
+            .await?;
+
+    let answer_points = match breakdown {
+        None => None,
+        Some(breakdown) => {
+            let full_total = breakdown.points.len() as i64;
+            let focused = focused_points(pool, session_id, card_id, &breakdown.points).await?;
+            let asked = focused.clone().unwrap_or(breakdown.points);
+            let tier = cue_tier_for(mastery::card_level(pool, card_id).await?);
+            Some(NextAnswerPoints {
+                total: asked.len() as i64,
+                full_total,
+                focused: focused.is_some(),
+                cues: cues_for(&asked, tier),
+            })
+        }
+    };
+
     Ok(NextCardResponse {
         id: card.id,
         kind: card.kind,
         prompt_md: card.prompt_md,
         image_path: card.image_path,
         choices,
+        answer_points,
     })
 }
 
@@ -763,7 +922,7 @@ async fn next(
         })?;
 
         let card =
-            load_served_card(&state.pool, card_id, Some(seed ^ (card_id as u64))).await?;
+            load_served_card(&state.pool, session.id, card_id, Some(seed ^ (card_id as u64))).await?;
         let pool_count = count_pool(&state.pool, &session.deck_ids_json).await?;
         let (answered_count, _) = count_progress(&state.pool, session.id).await?;
 
@@ -784,7 +943,7 @@ async fn next(
                 AppError::Conflict("Everything due in this session has been answered".to_string())
             })?;
 
-        let card = load_served_card(&state.pool, card_id, None).await?;
+        let card = load_served_card(&state.pool, session.id, card_id, None).await?;
         let pool_count = count_due(&state.pool, &session.deck_ids_json).await?;
         let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
 
@@ -818,7 +977,7 @@ async fn next(
             AppError::Conflict("This session has no cards left to practise".to_string())
         })?;
 
-    let card = load_served_card(&state.pool, card_id, None).await?;
+    let card = load_served_card(&state.pool, session.id, card_id, None).await?;
     let (answered_count, correct_count) = count_progress(&state.pool, session.id).await?;
 
     let movements = mastery::session_movements(&state.pool, session.id, &session.started_at).await?;
@@ -847,14 +1006,52 @@ async fn reveal(
 
     let card = load_pool_card(&state.pool, &session.deck_ids_json, body.card_id).await?;
 
-    if card.kind != "flashcard" {
-        return Err(AppError::Conflict("Only a flashcard can be revealed".to_string()));
+    let breakdown = load_answer_breakdown(
+        &state.pool,
+        card.id,
+        &card.kind,
+        &card.answer_md,
+        &card.multi_point_mode,
+    )
+    .await?;
+
+    if card.kind != "flashcard" && breakdown.is_none() {
+        return Err(AppError::Conflict(
+            "Only a flashcard or a multi-point answer can be revealed".to_string(),
+        ));
     }
+
+    let answer_points = match breakdown {
+        None => None,
+        Some(breakdown) => {
+            let full_total = breakdown.points.len() as i64;
+            let focused =
+                focused_points(&state.pool, session.id, card.id, &breakdown.points).await?;
+            let asked = focused.clone().unwrap_or_else(|| breakdown.points.clone());
+            let typed = body.given.as_deref().unwrap_or_default();
+            let matched = match_typed_points(typed, &asked);
+            Some(RevealAnswerPoints {
+                points: asked
+                    .into_iter()
+                    .zip(matched)
+                    .map(|(point, matched_what_you_typed)| RevealPoint {
+                        key: point.key,
+                        text_md: point.text,
+                        matched_what_you_typed,
+                    })
+                    .collect(),
+                notes: breakdown.notes,
+                focused: focused.is_some(),
+                full_total,
+            })
+        }
+    };
 
     Ok(Json(RevealResponse {
         card_id: card.id,
         answer_md: card.answer_md,
         explanation_md: card.explanation_md,
+        answer_points,
     }))
 }
 
@@ -868,6 +1065,10 @@ pub struct SubmitAnswer {
     pub choice_id: Option<i64>,
     #[serde(default)]
     pub self_grade: Option<String>,
+    #[serde(default)]
+    pub recalled_point_keys: Option<Vec<String>>,
+    #[serde(default)]
+    pub hints_used: Option<bool>,
     #[serde(default)]
     pub ms: Option<i64>,
 }
@@ -884,6 +1085,7 @@ pub struct PracticeAnswerResponse {
     pub level_after: MasteryLevel,
     pub mastery_direction: MovementDirection,
     pub mastery_moved_up_count: i64,
+    pub answer_points: Option<ResultAnswerPoints>,
 }
 
 #[derive(Serialize)]
@@ -905,6 +1107,13 @@ struct GradedAnswer {
     expected: Vec<String>,
     stored_given: Option<String>,
     stored_self_grade: Option<&'static str>,
+    points: Option<GradedPoints>,
+}
+
+struct GradedPoints {
+    recalled_count: i64,
+    total: i64,
+    outcomes: Vec<(String, String, bool)>,
 }
 
 fn reject_fields_for_other_kinds(
@@ -913,7 +1122,19 @@ fn reject_fields_for_other_kinds(
     allowed: &str,
     mode: &str,
 ) {
-    if allowed != "given" && body.given.is_some() {
+    if allowed != "points" && body.recalled_point_keys.is_some() {
+        errors.push(FieldError {
+            field: "recalled_point_keys".to_string(),
+            message: "Only a multi-point answer is ticked off point by point".to_string(),
+        });
+    }
+    if allowed != "points" && body.hints_used.is_some() {
+        errors.push(FieldError {
+            field: "hints_used".to_string(),
+            message: "Only a multi-point answer offers cue hints".to_string(),
+        });
+    }
+    if allowed != "given" && allowed != "points" && body.given.is_some() {
         let message = if mode == "mock" {
             "Only a text-answer or flashcard takes typed text"
         } else {
@@ -937,8 +1158,82 @@ fn reject_fields_for_other_kinds(
     }
 }
 
+fn grade_answer_points(
+    body: &SubmitAnswer,
+    breakdown: &AnswerBreakdown,
+    asked: Vec<AnswerPoint>,
+    mode: &str,
+    mut errors: Vec<FieldError>,
+) -> AppResult<GradedAnswer> {
+    let typed = body.given.as_deref().map(str::trim).unwrap_or_default();
+
+    let recalled = if mode == "mock" {
+        if body.recalled_point_keys.is_some() {
+            errors.push(FieldError {
+                field: "recalled_point_keys".to_string(),
+                message: "A mock test scores the points it can match itself".to_string(),
+            });
+        }
+        if typed.is_empty() {
+            errors.push(FieldError {
+                field: "given".to_string(),
+                message: "Type an answer".to_string(),
+            });
+        }
+        if !errors.is_empty() {
+            return Err(AppError::Validation(errors));
+        }
+        match_typed_points(typed, &asked)
+    } else {
+        let Some(keys) = body.recalled_point_keys.as_ref() else {
+            errors.push(FieldError {
+                field: "recalled_point_keys".to_string(),
+                message: "This field is required".to_string(),
+            });
+            return Err(AppError::Validation(errors));
+        };
+        for key in keys {
+            if !asked.iter().any(|point| point.key == *key) {
+                errors.push(FieldError {
+                    field: "recalled_point_keys".to_string(),
+                    message: "That point is not one this card asked for".to_string(),
+                });
+                break;
+            }
+        }
+        if !errors.is_empty() {
+            return Err(AppError::Validation(errors));
+        }
+        asked.iter().map(|point| keys.contains(&point.key)).collect()
+    };
+
+    let recalled_count = recalled.iter().filter(|was_recalled| **was_recalled).count();
+    let self_grade = self_grade_from_point_score(
+        recalled_count,
+        asked.len(),
+        body.hints_used.unwrap_or(false),
+    );
+
+    Ok(GradedAnswer {
+        correct: correctness_of_self_grade(self_grade),
+        expected: breakdown.points.iter().map(|point| point.text.clone()).collect(),
+        stored_given: (!typed.is_empty()).then(|| typed.to_string()),
+        stored_self_grade: Some(self_grade_as_text(self_grade)),
+        points: Some(GradedPoints {
+            recalled_count: recalled_count as i64,
+            total: asked.len() as i64,
+            outcomes: asked
+                .into_iter()
+                .zip(recalled)
+                .map(|(point, was_recalled)| (point.key, point.text, was_recalled))
+                .collect(),
+        }),
+    })
+}
+
 async fn grade_answer(
     pool: &sqlx::SqlitePool,
+    session_id: i64,
     card: &PoolCard,
     body: &SubmitAnswer,
     mode: &str,
@@ -950,6 +1245,23 @@ async fn grade_answer(
             field: "ms".to_string(),
             message: "ms must not be negative".to_string(),
         });
+    }
+
+    let breakdown = load_answer_breakdown(
+        pool,
+        card.id,
+        &card.kind,
+        &card.answer_md,
+        &card.multi_point_mode,
+    )
+    .await?;
+
+    if let Some(breakdown) = breakdown {
+        reject_fields_for_other_kinds(&mut errors, body, "points", mode);
+        let asked = focused_points(pool, session_id, card.id, &breakdown.points)
+            .await?
+            .unwrap_or_else(|| breakdown.points.clone());
+        return grade_answer_points(body, &breakdown, asked, mode, errors);
     }
 
     match card.kind.as_str() {
@@ -1003,6 +1315,7 @@ async fn grade_answer(
                 expected,
                 stored_given: chosen_text,
                 stored_self_grade: None,
+                points: None,
             })
         }
         "text_answer" => {
@@ -1042,6 +1355,7 @@ async fn grade_answer(
                 expected,
                 stored_given: Some(trimmed.to_string()),
                 stored_self_grade: None,
+                points: None,
             })
         }
         "flashcard" if mode == "mock" => {
@@ -1075,6 +1389,7 @@ async fn grade_answer(
                 expected: card.answer_md.clone().into_iter().collect(),
                 stored_given: Some(trimmed.to_string()),
                 stored_self_grade: None,
+                points: None,
             })
         }
         "flashcard" => {
@@ -1108,6 +1423,7 @@ async fn grade_answer(
                 expected: card.answer_md.clone().into_iter().collect(),
                 stored_given: None,
                 stored_self_grade: Some(self_grade_as_text(self_grade)),
+                points: None,
             })
         }
         _ => Err(AppError::Internal),
@@ -1141,14 +1457,18 @@ async fn answer(
         }
     }
 
-    let graded = grade_answer(&state.pool, &card, &body, &session.mode).await?;
+    let graded = grade_answer(&state.pool, session.id, &card, &body, &session.mode).await?;
 
     let mut transaction = state.pool.begin().await?;
 
+    let points_total = graded.points.as_ref().map(|points| points.total);
+    let points_recalled = graded.points.as_ref().map(|points| points.recalled_count);
+
     let review = sqlx::query!(
         r#"
-        INSERT INTO reviews (card_id, session_id, given, correct, self_grade, ms)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO reviews
+            (card_id, session_id, given, correct, self_grade, ms, points_total, points_recalled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id AS "id!: i64", answered_at AS "answered_at!: String"
         "#,
         card.id,
@@ -1157,10 +1477,29 @@ async fn answer(
         graded.correct,
         graded.stored_self_grade,
         body.ms,
+        points_total,
+        points_recalled,
     )
     .fetch_one(&mut *transaction)
     .await?;
     let review_id = review.id;
+
+    if let Some(points) = &graded.points {
+        for (point_key, point_text, recalled) in &points.outcomes {
+            sqlx::query!(
+                r#"
+                INSERT INTO review_answer_points (review_id, point_key, point_text, recalled)
+                VALUES (?, ?, ?, ?)
+                "#,
+                review_id,
+                point_key,
+                point_text,
+                recalled,
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
 
     if session.mode == "sm2" {
         let self_grade = graded.stored_self_grade.and_then(parse_self_grade);
@@ -1190,11 +1529,21 @@ async fn answer(
         correct: graded.correct,
         expected: graded.expected,
         explanation_md: card.explanation_md,
-        can_override: card.kind == "text_answer" && !graded.correct,
+        can_override: graded.points.is_none() && card.kind == "text_answer" && !graded.correct,
         level_before: progress.level_before,
         level_after: progress.level_after,
         mastery_direction: progress.direction,
         mastery_moved_up_count: progress.moved_up_count,
+        answer_points: graded.points.as_ref().map(|points| ResultAnswerPoints {
+            recalled: points.recalled_count,
+            total: points.total,
+            missed: points
+                .outcomes
+                .iter()
+                .filter(|(_, _, recalled)| !recalled)
+                .map(|(_, text, _)| text.clone())
+                .collect(),
+        }),
     })))
 }
 
@@ -1360,6 +1709,7 @@ async fn override_review(
                reviews.card_id AS "card_id!: i64",
                reviews.given,
                reviews.correct AS "correct!: bool",
+               reviews.points_total,
                cards.kind,
                cards.answer_md,
                sessions.id AS "session_id!: i64",
@@ -1386,6 +1736,11 @@ async fn override_review(
     if review.kind == "mc_single" {
         return Err(AppError::Conflict(
             "A multiple-choice answer cannot be overridden".to_string(),
+        ));
+    }
+    if review.points_total.is_some() {
+        return Err(AppError::Conflict(
+            "Tick the points you recalled instead of overriding a multi-point answer".to_string(),
         ));
     }
     if review.kind == "flashcard" && review.mode != "mock" {
@@ -1601,6 +1956,8 @@ async fn results(
                reviews.correct    AS "correct!: bool",
                reviews.overridden AS "overridden!: bool",
                reviews.ms,
+               reviews.points_total,
+               reviews.points_recalled,
                cards.kind,
                cards.prompt_md,
                cards.image_path,
@@ -1653,7 +2010,32 @@ async fn results(
         accepted_by_card.entry(row.card_id).or_default().push(row.text);
     }
 
-    let questions = assemble_results(rows, &correct_choices_by_card, &accepted_by_card);
+    let missed_point_rows = sqlx::query!(
+        r#"
+        SELECT review_answer_points.review_id AS "review_id!: i64",
+               review_answer_points.point_text AS "point_text!: String"
+        FROM review_answer_points
+        JOIN reviews ON reviews.id = review_answer_points.review_id
+        WHERE reviews.session_id = ? AND review_answer_points.recalled = 0
+        ORDER BY review_answer_points.rowid
+        "#,
+        session_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut missed_points_by_review: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in missed_point_rows {
+        missed_points_by_review.entry(row.review_id).or_default().push(row.point_text);
+    }
+
+    let questions = assemble_results(
+        rows,
+        &correct_choices_by_card,
+        &accepted_by_card,
+        &missed_points_by_review,
+    );
     let summary = summarise(&state.pool, session_id).await?;
 
     Ok(Json(ResultsResponse { summary, questions }))

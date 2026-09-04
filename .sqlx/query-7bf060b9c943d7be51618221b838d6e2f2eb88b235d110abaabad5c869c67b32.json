@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO reviews\n            (card_id, session_id, given, correct, self_grade, ms, points_total, points_recalled)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n        RETURNING id AS \"id!: i64\", answered_at AS \"answered_at!: String\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "answered_at!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "7bf060b9c943d7be51618221b838d6e2f2eb88b235d110abaabad5c869c67b32"
+}

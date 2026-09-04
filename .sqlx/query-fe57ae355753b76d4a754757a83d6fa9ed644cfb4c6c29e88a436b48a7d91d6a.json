@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        WITH latest AS (\n            SELECT card_id,\n                   correct,\n                   points_total,\n                   points_recalled,\n                   ROW_NUMBER() OVER (\n                       PARTITION BY card_id\n                       ORDER BY answered_at DESC, id DESC\n                   ) AS recency_rank\n            FROM reviews\n            WHERE session_id = ?\n        )\n        SELECT card_id AS \"card_id!: i64\"\n        FROM latest\n        WHERE recency_rank = 1\n          AND (correct = 0 OR (points_total IS NOT NULL AND points_recalled < points_total))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "card_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fe57ae355753b76d4a754757a83d6fa9ed644cfb4c6c29e88a436b48a7d91d6a"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT INTO review_answer_points (review_id, point_key, point_text, recalled)\n                VALUES (?, ?, ?, ?)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "ed0a4cd09522307377f4320c852b7f165314434c12846876b8be191c2c3de2d4"
+}

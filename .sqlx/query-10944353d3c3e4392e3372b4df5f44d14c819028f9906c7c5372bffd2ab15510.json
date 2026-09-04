@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", deck_id AS \"deck_id!: i64\", kind,\n                  prompt_md, image_path, answer_md, explanation_md,\n                  archived AS \"archived!: bool\", position AS \"position!: i64\",\n                  created_at, updated_at\n           FROM cards\n           WHERE (? IS NULL OR deck_id = ?)\n             AND (? = 'all' OR kind = ?)\n             AND (? = 'all'\n                  OR (? = 'true'  AND archived = 1)\n                  OR (? = 'false' AND archived = 0))\n           ORDER BY position ASC, id ASC",
+  "query": "SELECT id AS \"id!: i64\", deck_id AS \"deck_id!: i64\", kind,\n                  prompt_md, image_path, answer_md, explanation_md,\n                  archived AS \"archived!: bool\", position AS \"position!: i64\",\n                  multi_point_mode AS \"multi_point_mode!: String\",\n                  created_at, updated_at\n           FROM cards\n           WHERE (? IS NULL OR deck_id = ?)\n             AND (? = 'all' OR kind = ?)\n             AND (? = 'all'\n                  OR (? = 'true'  AND archived = 1)\n                  OR (? = 'false' AND archived = 0))\n           ORDER BY position ASC, id ASC",
   "describe": {
     "columns": [
       {
@@ -49,13 +49,18 @@
         "type_info": "Integer"
       },
       {
-        "name": "created_at",
+        "name": "multi_point_mode!: String",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "updated_at",
+        "name": "created_at",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 11,
         "type_info": "Text"
       }
     ],
@@ -73,8 +78,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "0779640475256a4484a2da5be89718fcffc9c0dd66aca167c8cb22d488b11f6e"
+  "hash": "10944353d3c3e4392e3372b4df5f44d14c819028f9906c7c5372bffd2ab15510"
 }

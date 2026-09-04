@@ -662,3 +662,77 @@ async fn an_empty_module_exports_a_file_with_no_decks_which_import_then_refuses(
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["fields"][0]["field"], "decks");
 }
+
+#[tokio::test]
+async fn the_multi_point_mode_round_trips_through_an_export_and_import() {
+    let app = spawn_app().await;
+    let deck_id = create_deck(&app, None, "mining").await;
+    for (prompt, mode) in [("auto", "auto"), ("forced on", "on"), ("forced off", "off")] {
+        create_card(
+            &app,
+            json!({
+                "deck_id": deck_id,
+                "kind": "text_answer",
+                "prompt_md": prompt,
+                "accepted": [{ "text": "1. Volume\n2. Velocity", "is_primary": true }],
+                "multi_point_mode": mode,
+            }),
+        )
+        .await;
+    }
+
+    let exported = export_deck(&app, deck_id).await;
+    let modes: Vec<&str> = exported["decks"][0]["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|card| card["multi_point_mode"].as_str().unwrap())
+        .collect();
+    assert_eq!(modes, ["auto", "on", "off"], "{exported}");
+
+    let imported = import_expecting_success(&app, exported).await;
+    let new_deck_id = imported["decks"][0]["id"].as_i64().unwrap();
+    let stored = sqlx::query_scalar!(
+        r#"SELECT multi_point_mode AS "multi_point_mode!: String" FROM cards
+           WHERE deck_id = ? ORDER BY position"#,
+        new_deck_id,
+    )
+    .fetch_all(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, ["auto", "on", "off"]);
+}
+
+#[tokio::test]
+async fn a_file_exported_before_multi_point_answers_existed_still_imports() {
+    let app = spawn_app().await;
+    let file = json!({
+        "format": "quizapp-transfer",
+        "format_version": 1,
+        "exported_at": "2026-01-01T00:00:00Z",
+        "decks": [{
+            "name": "mining",
+            "description": "",
+            "cards": [{
+                "kind": "text_answer",
+                "prompt_md": "the 2 v's",
+                "archived": false,
+                "accepted": [{ "text": "1. Volume\n2. Velocity", "is_primary": true }],
+            }],
+        }],
+    });
+
+    let imported = import_expecting_success(&app, file).await;
+    let deck_id = imported["decks"][0]["id"].as_i64().unwrap();
+    let mode = sqlx::query_scalar!(
+        r#"SELECT multi_point_mode AS "multi_point_mode!: String" FROM cards WHERE deck_id = ?"#,
+        deck_id,
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        mode, "auto",
+        "a card written before the field existed must land on the automatic behaviour",
+    );
+}

@@ -8,6 +8,7 @@ use base64::Engine;
 use serde::Serialize;
 use sqlx::{Sqlite, Transaction};
 
+use crate::answer_points::{multi_point_mode_as_text, parse_multi_point_mode};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
 use crate::images::{sniff, stored_name, ImageType, MAX_IMAGE_BYTES};
@@ -59,6 +60,7 @@ struct CardRow {
     answer_md: Option<String>,
     explanation_md: Option<String>,
     archived: bool,
+    multi_point_mode: String,
 }
 
 async fn export_deck(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Response> {
@@ -118,7 +120,8 @@ async fn build_file(state: &AppState, deck_rows: Vec<DeckRow>) -> AppResult<Tran
         let card_rows = sqlx::query_as!(
             CardRow,
             r#"SELECT id AS "id!: i64", kind, prompt_md, image_path,
-                      answer_md, explanation_md, archived AS "archived!: bool"
+                      answer_md, explanation_md, archived AS "archived!: bool",
+                      multi_point_mode AS "multi_point_mode!: String"
                FROM cards
                WHERE deck_id = ?
                ORDER BY position, id"#,
@@ -166,6 +169,8 @@ async fn build_file(state: &AppState, deck_rows: Vec<DeckRow>) -> AppResult<Tran
                 image_base64,
                 choices,
                 accepted,
+                multi_point_mode: parse_multi_point_mode(&card_row.multi_point_mode)
+                    .unwrap_or_default(),
             });
         }
 
@@ -362,6 +367,7 @@ fn prepare_card(card: TransferCard) -> Result<PreparedCard, Vec<FieldError>> {
                 is_primary: answer.is_primary,
             })
             .collect(),
+        multi_point_mode: card.multi_point_mode,
     };
 
     match validate(input) {
@@ -444,10 +450,11 @@ async fn insert_deck(
     for (card_index, card) in deck.cards.iter().enumerate() {
         let position = card_index as i64;
 
+        let multi_point_mode = multi_point_mode_as_text(card.valid.multi_point_mode);
         let card_id = sqlx::query_scalar!(
             r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md,
-                                  explanation_md, archived, position)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+                                  explanation_md, archived, position, multi_point_mode)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
             deck_id,
             card.valid.kind,
             card.valid.prompt_md,
@@ -455,7 +462,8 @@ async fn insert_deck(
             card.valid.answer_md,
             card.valid.explanation_md,
             card.archived,
-            position
+            position,
+            multi_point_mode
         )
         .fetch_one(&mut **transaction)
         .await?;

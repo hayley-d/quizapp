@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT correct                                          AS \"correct!: bool\",\n               CAST(strftime('%s', answered_at) AS INTEGER)     AS \"answered_at_seconds!: i64\"\n        FROM reviews\n        WHERE card_id = ?\n        ORDER BY answered_at DESC, id DESC\n        LIMIT ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "correct!: bool",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "answered_at_seconds!: i64",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "857d86a48ddeeb91046428106120aececb5979b203677d0480100c84577453fa"
+}

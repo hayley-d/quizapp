@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT text AS \"text!: String\" FROM accepted WHERE card_id = ? AND is_primary = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "text!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e4db3bfe9733c3e0b21f3bc64d21fe532e0d8afcd45d3b60b1a0076a397b2fa4"
+}

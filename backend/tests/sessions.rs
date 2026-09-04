@@ -403,8 +403,12 @@ async fn next_never_returns_answer_data_for_any_kind() {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            vec!["choices", "id", "image_path", "kind", "prompt_md"],
+            vec!["answer_points", "choices", "id", "image_path", "kind", "prompt_md"],
             "the served card must carry exactly these keys and no others",
+        );
+        assert!(
+            body["card"]["answer_points"].is_null(),
+            "none of these answers is a list, so none may be served as points: {body}",
         );
 
         for choice in body["card"]["choices"].as_array().unwrap() {

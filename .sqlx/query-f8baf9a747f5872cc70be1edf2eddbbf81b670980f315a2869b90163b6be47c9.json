@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT point_key AS \"point_key!: String\"\n        FROM review_answer_points\n        WHERE recalled = 0\n          AND review_id = (\n              SELECT id FROM reviews\n              WHERE session_id = ? AND card_id = ?\n              ORDER BY answered_at DESC, id DESC\n              LIMIT 1\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "point_key!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f8baf9a747f5872cc70be1edf2eddbbf81b670980f315a2869b90163b6be47c9"
+}

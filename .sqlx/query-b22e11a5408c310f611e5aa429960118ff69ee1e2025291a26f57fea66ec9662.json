@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md,\n                                  explanation_md, archived, position, multi_point_mode)\n               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id AS \"id!: i64\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b22e11a5408c310f611e5aa429960118ff69ee1e2025291a26f57fea66ec9662"
+}

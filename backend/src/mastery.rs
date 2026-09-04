@@ -111,6 +111,32 @@ pub fn level_for(reviews_newest_first: &[MasteryReview]) -> MasteryLevel {
 }
 
 
+pub async fn card_level(pool: &sqlx::SqlitePool, card_id: i64) -> AppResult<MasteryLevel> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT correct                                          AS "correct!: bool",
+               CAST(strftime('%s', answered_at) AS INTEGER)     AS "answered_at_seconds!: i64"
+        FROM reviews
+        WHERE card_id = ?
+        ORDER BY answered_at DESC, id DESC
+        LIMIT ?
+        "#,
+        card_id,
+        RECENT_REVIEW_LIMIT,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let history: Vec<MasteryReview> = rows
+        .iter()
+        .map(|row| MasteryReview {
+            outcome: if row.correct { ReviewOutcome::Correct } else { ReviewOutcome::Incorrect },
+            answered_at_seconds: row.answered_at_seconds,
+        })
+        .collect();
+    Ok(level_for(&history))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MovementDirection {

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT multi_point_mode AS \"multi_point_mode!: String\" FROM cards\n           WHERE deck_id = ? ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "multi_point_mode!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b40f0ebdae81a62026eef98699ecc2677739ce0320b1c60dca44156170a62a97"
+}

@@ -470,16 +470,21 @@ async fn a_mock_serve_never_returns_answer_content_for_any_kind() {
     create_flashcard(&app, deck_id, "flash", "the secret answer").await;
     create_multiple_choice(&app, deck_id, "choice").await;
     create_text_answer(&app, deck_id, "short").await;
+    create_flashcard(&app, deck_id, "listy", "- alpha ultrasecret\n- beta ultrasecret").await;
     let session_id = start_mock_session(&app, deck_id).await;
 
-    for _ in 0..3 {
+    for _ in 0..4 {
         let (status, body) = serve(&app, session_id).await;
         assert_eq!(status, 200, "{body}");
 
         let mut card_keys: Vec<&str> =
             body["card"].as_object().unwrap().keys().map(String::as_str).collect();
         card_keys.sort_unstable();
-        assert_eq!(card_keys, vec!["choices", "id", "image_path", "kind", "prompt_md"], "{body}");
+        assert_eq!(
+            card_keys,
+            vec!["answer_points", "choices", "id", "image_path", "kind", "prompt_md"],
+            "{body}",
+        );
 
         let serialised = body.to_string();
         for forbidden in [
@@ -491,8 +496,22 @@ async fn a_mock_serve_never_returns_answer_content_for_any_kind() {
             "correct",
             "the secret answer",
             "lloyd",
+            "ultrasecret",
         ] {
             assert!(!serialised.contains(forbidden), "{forbidden} leaked: {serialised}");
+        }
+
+        if !body["card"]["answer_points"].is_null() {
+            let cues = &body["card"]["answer_points"]["cues"];
+            assert!(
+                cues["behind_the_hint"].as_array().unwrap().is_empty(),
+                "a card the learner has never seen must not be hiding a further hint: {body}",
+            );
+            assert_eq!(
+                body["card"]["answer_points"]["total"].as_i64().unwrap(),
+                2,
+                "the point count is the only thing a serve may say about the list: {body}",
+            );
         }
 
         let card_id = body["card"]["id"].as_i64().unwrap();

@@ -1,3 +1,4 @@
+pub mod answer_points;
 pub mod assets;
 pub mod configuration;
 pub mod database;

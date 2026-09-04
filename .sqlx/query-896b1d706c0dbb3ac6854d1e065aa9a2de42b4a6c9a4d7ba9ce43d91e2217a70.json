@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT self_grade AS \"self_grade!: String\" FROM reviews WHERE card_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "self_grade!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "896b1d706c0dbb3ac6854d1e065aa9a2de42b4a6c9a4d7ba9ce43d91e2217a70"
+}

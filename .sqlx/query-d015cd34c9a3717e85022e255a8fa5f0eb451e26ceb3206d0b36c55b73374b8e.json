@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", kind, prompt_md, image_path FROM cards WHERE id = ?",
+  "query": "\n        SELECT id AS \"id!: i64\", kind, prompt_md, image_path, answer_md,\n               multi_point_mode AS \"multi_point_mode!: String\"\n        FROM cards WHERE id = ?\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,16 @@
         "name": "image_path",
         "ordinal": 3,
         "type_info": "Text"
+      },
+      {
+        "name": "answer_md",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "multi_point_mode!: String",
+        "ordinal": 5,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -31,8 +41,10 @@
       false,
       false,
       false,
-      true
+      true,
+      true,
+      false
     ]
   },
-  "hash": "f09714176fa71a379b86e8d09759c277691c1bb8e902451e8773c17c55ff0b5d"
+  "hash": "d015cd34c9a3717e85022e255a8fa5f0eb451e26ceb3206d0b36c55b73374b8e"
 }

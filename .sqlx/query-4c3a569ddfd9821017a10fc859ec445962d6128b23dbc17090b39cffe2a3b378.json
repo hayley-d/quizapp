@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT review_answer_points.review_id AS \"review_id!: i64\",\n               review_answer_points.point_text AS \"point_text!: String\"\n        FROM review_answer_points\n        JOIN reviews ON reviews.id = review_answer_points.review_id\n        WHERE reviews.session_id = ? AND review_answer_points.recalled = 0\n        ORDER BY review_answer_points.rowid\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "review_id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "point_text!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4c3a569ddfd9821017a10fc859ec445962d6128b23dbc17090b39cffe2a3b378"
+}

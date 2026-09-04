@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT reviews.id         AS \"review_id!: i64\",\n               reviews.card_id    AS \"card_id!: i64\",\n               reviews.answered_at,\n               reviews.given,\n               reviews.self_grade,\n               reviews.correct    AS \"correct!: bool\",\n               reviews.overridden AS \"overridden!: bool\",\n               reviews.ms,\n               cards.kind,\n               cards.prompt_md,\n               cards.image_path,\n               cards.answer_md,\n               cards.explanation_md\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        WHERE reviews.session_id = ?\n        ORDER BY reviews.answered_at, reviews.id\n        ",
+  "query": "\n        SELECT reviews.id         AS \"review_id!: i64\",\n               reviews.card_id    AS \"card_id!: i64\",\n               reviews.answered_at,\n               reviews.given,\n               reviews.self_grade,\n               reviews.correct    AS \"correct!: bool\",\n               reviews.overridden AS \"overridden!: bool\",\n               reviews.ms,\n               reviews.points_total,\n               reviews.points_recalled,\n               cards.kind,\n               cards.prompt_md,\n               cards.image_path,\n               cards.answer_md,\n               cards.explanation_md\n        FROM reviews\n        JOIN cards ON cards.id = reviews.card_id\n        WHERE reviews.session_id = ?\n        ORDER BY reviews.answered_at, reviews.id\n        ",
   "describe": {
     "columns": [
       {
@@ -44,28 +44,38 @@
         "type_info": "Integer"
       },
       {
-        "name": "kind",
+        "name": "points_total",
         "ordinal": 8,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "prompt_md",
+        "name": "points_recalled",
         "ordinal": 9,
-        "type_info": "Text"
+        "type_info": "Integer"
       },
       {
-        "name": "image_path",
+        "name": "kind",
         "ordinal": 10,
         "type_info": "Text"
       },
       {
-        "name": "answer_md",
+        "name": "prompt_md",
         "ordinal": 11,
         "type_info": "Text"
       },
       {
-        "name": "explanation_md",
+        "name": "image_path",
         "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "answer_md",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "explanation_md",
+        "ordinal": 14,
         "type_info": "Text"
       }
     ],
@@ -81,6 +91,8 @@
       false,
       false,
       true,
+      true,
+      true,
       false,
       false,
       true,
@@ -88,5 +100,5 @@
       true
     ]
   },
-  "hash": "cfab9508e9466ece153b15d88ded3894a3120d19dad9cb4d9c0eec8d68d60a96"
+  "hash": "d2a945d734c52344607db113a9aaec512473a4d167e052842c27cafc3e339b2e"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!: i64\", kind, prompt_md, image_path,\n                      answer_md, explanation_md, archived AS \"archived!: bool\"\n               FROM cards\n               WHERE deck_id = ?\n               ORDER BY position, id",
+  "query": "SELECT id AS \"id!: i64\", kind, prompt_md, image_path,\n                      answer_md, explanation_md, archived AS \"archived!: bool\",\n                      multi_point_mode AS \"multi_point_mode!: String\"\n               FROM cards\n               WHERE deck_id = ?\n               ORDER BY position, id",
   "describe": {
     "columns": [
       {
@@ -37,6 +37,11 @@
         "name": "archived!: bool",
         "ordinal": 6,
         "type_info": "Integer"
+      },
+      {
+        "name": "multi_point_mode!: String",
+        "ordinal": 7,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -49,8 +54,9 @@
       true,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "177bc434032446f5073a4d667a62830bdfeef9e45cc52cd80aedcd7a9db4f12e"
+  "hash": "549bec4df5d86e26db4c2e42d74ecb395e169f2d7858e65772014f6e539140c1"
 }

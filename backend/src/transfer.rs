@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::answer_points::MultiPointMode;
+
 pub const TRANSFER_FORMAT: &str = "quizapp-transfer";
 pub const TRANSFER_FORMAT_VERSION: i64 = 1;
 pub const MAX_TRANSFER_BYTES: usize = 32 * 1024 * 1024;
@@ -46,6 +48,11 @@ pub struct TransferCard {
     pub choices: Vec<TransferChoice>,
     #[serde(default)]
     pub accepted: Vec<TransferAccepted>,
+    // Defaulted rather than required, because `deny_unknown_fields` above is only half the
+    // compatibility story: a field with no default would reject every file exported before
+    // multi-point answers existed. 'auto' is what those cards already behave as.
+    #[serde(default)]
+    pub multi_point_mode: MultiPointMode,
 }
 
 #[derive(Serialize, Deserialize)]

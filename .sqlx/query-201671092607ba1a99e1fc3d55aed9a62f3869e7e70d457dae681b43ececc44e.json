@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT id AS \"id!: i64\", kind, answer_md, explanation_md\n        FROM cards\n        WHERE id = ?\n          AND archived = 0\n          AND deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n        ",
+  "query": "\n        SELECT id AS \"id!: i64\", kind, answer_md, explanation_md, multi_point_mode\n        FROM cards\n        WHERE id = ?\n          AND archived = 0\n          AND deck_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "name": "explanation_md",
         "ordinal": 3,
         "type_info": "Text"
+      },
+      {
+        "name": "multi_point_mode",
+        "ordinal": 4,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -31,8 +36,9 @@
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "a89f39eb9b9e7a9d3b8724ad03146c675184138e5b33f2d632952b4c75e9373b"
+  "hash": "201671092607ba1a99e1fc3d55aed9a62f3869e7e70d457dae681b43ececc44e"
 }

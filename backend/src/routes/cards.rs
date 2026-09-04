@@ -4,6 +4,9 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
+use crate::answer_points::{
+    breakdown_of, is_multi_point, multi_point_mode_as_text, AnswerPoint, MultiPointMode,
+};
 use crate::error::{AppError, AppResult, FieldError};
 use crate::extract::AppJson;
 use crate::normalise::normalise;
@@ -38,6 +41,7 @@ pub struct CardSummaryResponse {
     pub explanation_md: Option<String>,
     pub archived: bool,
     pub position: i64,
+    pub multi_point_mode: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -81,6 +85,8 @@ pub struct CardInput {
     pub choices: Vec<ChoiceInput>,
     #[serde(default)]
     pub accepted: Vec<AcceptedInput>,
+    #[serde(default)]
+    pub multi_point_mode: MultiPointMode,
 }
 
 #[derive(Deserialize)]
@@ -99,6 +105,7 @@ pub struct ValidCard {
     pub image_path: Option<String>,
     pub choices: Vec<ChoiceInput>,
     pub accepted: Vec<AcceptedInput>,
+    pub multi_point_mode: MultiPointMode,
 }
 
 fn is_uploaded_image_path(path: &str) -> bool {
@@ -209,12 +216,32 @@ pub fn validate(input: CardInput) -> AppResult<ValidCard> {
         _ => unreachable!("kind was checked above"),
     }
 
+    if input.multi_point_mode == MultiPointMode::On {
+        let answer_source = match input.kind.as_str() {
+            "flashcard" => answer_md.clone(),
+            "text_answer" => accepted
+                .iter()
+                .find(|answer| answer.is_primary)
+                .map(|answer| answer.text.clone()),
+            _ => None,
+        };
+        let splits = answer_source
+            .is_some_and(|source| is_multi_point(&source, MultiPointMode::On));
+        if !splits {
+            push_error(
+                "multi_point_mode",
+                "This answer has only one point, so it cannot be scored as a list",
+            );
+        }
+    }
+
     if !errors.is_empty() {
         return Err(AppError::Validation(errors));
     }
 
     Ok(ValidCard {
         kind: input.kind, prompt_md, image_path, answer_md, explanation_md, choices, accepted,
+        multi_point_mode: input.multi_point_mode,
     })
 }
 
@@ -224,6 +251,7 @@ async fn fetch_summary(pool: &sqlx::SqlitePool, id: i64) -> AppResult<CardSummar
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
                   archived AS "archived!: bool", position AS "position!: i64",
+                  multi_point_mode AS "multi_point_mode!: String",
                   created_at, updated_at
            FROM cards WHERE id = ?"#,
         id
@@ -272,16 +300,18 @@ async fn patch(
 ) -> AppResult<Json<CardResponse>> {
     fetch_summary(&state.pool, id).await?;
     let valid = validate(body)?;
+    let multi_point_mode = multi_point_mode_as_text(valid.multi_point_mode);
 
     let mut transaction = state.pool.begin().await?;
 
     sqlx::query!(
         r#"UPDATE cards
               SET kind = ?, prompt_md = ?, image_path = ?, answer_md = ?, explanation_md = ?,
+                  multi_point_mode = ?,
                   updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')
             WHERE id = ?"#,
         valid.kind, valid.prompt_md, valid.image_path, valid.answer_md, valid.explanation_md,
-        id
+        multi_point_mode, id
     )
     .execute(&mut *transaction)
     .await?;
@@ -449,6 +479,7 @@ async fn list(
         r#"SELECT id AS "id!: i64", deck_id AS "deck_id!: i64", kind,
                   prompt_md, image_path, answer_md, explanation_md,
                   archived AS "archived!: bool", position AS "position!: i64",
+                  multi_point_mode AS "multi_point_mode!: String",
                   created_at, updated_at
            FROM cards
            WHERE (? IS NULL OR deck_id = ?)
@@ -482,12 +513,13 @@ async fn create(
     .fetch_one(&mut *transaction)
     .await?;
 
+    let multi_point_mode = multi_point_mode_as_text(valid.multi_point_mode);
     let id = sqlx::query_scalar!(
         r#"INSERT INTO cards (deck_id, kind, prompt_md, image_path, answer_md,
-                              explanation_md, position)
-           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
+                              explanation_md, position, multi_point_mode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id AS "id!: i64""#,
         deck_id, valid.kind, valid.prompt_md, valid.image_path, valid.answer_md,
-        valid.explanation_md, position
+        valid.explanation_md, position, multi_point_mode
     )
     .fetch_one(&mut *transaction)
     .await
@@ -539,8 +571,44 @@ pub async fn write_children(
     Ok(())
 }
 
+// The editor previews how an answer will be split so a bad split is visible while writing the
+// card rather than mid-revision. It asks the server rather than splitting in the browser, so
+// there is exactly one implementation of the rule and it is the one that grades.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnswerPointsPreviewRequest {
+    pub source: String,
+    #[serde(default)]
+    pub multi_point_mode: MultiPointMode,
+}
+
+#[derive(Serialize)]
+pub struct AnswerPointsPreviewResponse {
+    pub multi_point: bool,
+    pub points: Vec<AnswerPoint>,
+    pub notes: Vec<String>,
+}
+
+async fn preview_answer_points(
+    AppJson(body): AppJson<AnswerPointsPreviewRequest>,
+) -> Json<AnswerPointsPreviewResponse> {
+    match breakdown_of(&body.source, body.multi_point_mode) {
+        None => Json(AnswerPointsPreviewResponse {
+            multi_point: false,
+            points: Vec::new(),
+            notes: Vec::new(),
+        }),
+        Some(breakdown) => Json(AnswerPointsPreviewResponse {
+            multi_point: true,
+            points: breakdown.points,
+            notes: breakdown.notes,
+        }),
+    }
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/cards/answer-points-preview", axum::routing::post(preview_answer_points))
         .route("/cards", get(list).post(create))
         .route("/cards/{id}", get(get_one).patch(patch).delete(delete_card))
         .route("/cards/{id}/archive", axum::routing::post(archive))

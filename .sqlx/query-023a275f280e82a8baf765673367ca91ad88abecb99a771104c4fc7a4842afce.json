@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE cards\n              SET kind = ?, prompt_md = ?, image_path = ?, answer_md = ?, explanation_md = ?,\n                  multi_point_mode = ?,\n                  updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')\n            WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "023a275f280e82a8baf765673367ca91ad88abecb99a771104c4fc7a4842afce"
+}
