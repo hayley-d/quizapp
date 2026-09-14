@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE review_answer_points\n        SET recalled = 1\n        WHERE review_id = ?\n          AND point_key IN (SELECT value FROM json_each(?))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "4c29054840a95be86201b72d6a09429580d7eaab14bfa9dd61a7ca9c7ffbc8d0"
+}

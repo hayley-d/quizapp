@@ -26,6 +26,7 @@ export function AnswerVerdict({
 }: AnswerVerdictProps) {
   const correct = verdict.correct || overridden
   const score = verdict.answer_points
+  const missedPoints = score?.points.filter((point) => !point.recalled) ?? []
   const [primaryExpected, ...alternateExpected] = verdict.expected
   const comparableAnswer =
     givenAnswer !== null && givenAnswer.trim() !== '' && !verdict.correct ? givenAnswer : null
@@ -52,18 +53,18 @@ export function AnswerVerdict({
         </p>
       </div>
 
-      {score !== null && score.missed.length > 0 && (
+      {missedPoints.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm font-semibold text-muted-foreground">
-            {score.missed.length === 1 ? 'The point you missed' : 'The points you missed'}
+            {missedPoints.length === 1 ? 'The point you missed' : 'The points you missed'}
           </p>
           <ul className="space-y-1">
-            {score.missed.map((point) => (
+            {missedPoints.map((point) => (
               <li
-                key={point}
+                key={point.key}
                 className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2"
               >
-                <Markdown>{point}</Markdown>
+                <Markdown>{point.text_md}</Markdown>
               </li>
             ))}
           </ul>

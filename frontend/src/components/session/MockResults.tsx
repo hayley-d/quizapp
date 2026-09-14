@@ -10,9 +10,17 @@ type MockResultsProps = {
   results: SessionResults
   onOverride: (reviewId: number) => void
   overridingReviewId: number | null
+  onCorrectPoints: (reviewId: number, newlyRecalledPointKeys: string[]) => void
+  correctingReviewId: number | null
 }
 
-export function MockResults({ results, onOverride, overridingReviewId }: MockResultsProps) {
+export function MockResults({
+  results,
+  onOverride,
+  overridingReviewId,
+  onCorrectPoints,
+  correctingReviewId,
+}: MockResultsProps) {
   const hasFlashcards = results.questions.some((question) => question.kind === 'flashcard')
 
   return (
@@ -49,6 +57,8 @@ export function MockResults({ results, onOverride, overridingReviewId }: MockRes
               position={questionIndex + 1}
               onOverride={onOverride}
               overriding={overridingReviewId === question.review_id}
+              onCorrectPoints={onCorrectPoints}
+              correctingPoints={correctingReviewId === question.review_id}
             />
           ))}
         </ol>

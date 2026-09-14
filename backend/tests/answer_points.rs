@@ -430,10 +430,14 @@ async fn the_results_screen_reports_the_score_and_what_was_missed() {
     let question = &results["questions"][0];
     assert_eq!(question["answer_points"]["recalled"].as_i64().unwrap(), 3);
     assert_eq!(question["answer_points"]["total"].as_i64().unwrap(), 4);
-    assert_eq!(
-        question["answer_points"]["missed"].as_array().unwrap(),
-        &vec![Value::from("Veracity")],
-    );
+    let missed: Vec<&str> = question["answer_points"]["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|point| !point["recalled"].as_bool().unwrap())
+        .map(|point| point["text_md"].as_str().unwrap())
+        .collect();
+    assert_eq!(missed, vec!["Veracity"]);
     assert!(!question["can_override"].as_bool().unwrap());
 }
 
@@ -487,4 +491,209 @@ async fn the_editor_can_preview_how_an_answer_will_split() {
         &vec![Value::from("A data warehouse.")],
         "prose around the list previews as an unscored note: {with_notes}",
     );
+}
+
+async fn start_mock(app: &common::TestApp, deck_id: i64) -> i64 {
+    let (status, session) = app
+        .post("/api/sessions", json!({ "mode": "mock", "deck_ids": [deck_id] }))
+        .await;
+    assert_eq!(status, 201, "{session}");
+    session["id"].as_i64().unwrap()
+}
+
+async fn answer_mock_by_typing(app: &common::TestApp, session_id: i64, card_id: i64, given: &str) {
+    let (status, body) = app
+        .post(
+            &format!("/api/sessions/{session_id}/answer"),
+            json!({ "card_id": card_id, "given": given }),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+}
+
+async fn finish_and_read_results(app: &common::TestApp, session_id: i64) -> Value {
+    let (status, body) = app.post(&format!("/api/sessions/{session_id}/finish"), json!({})).await;
+    assert_eq!(status, 200, "{body}");
+    let (status, results) = app.get(&format!("/api/sessions/{session_id}/results")).await;
+    assert_eq!(status, 200, "{results}");
+    results
+}
+
+async fn correct_points(
+    app: &common::TestApp,
+    review_id: i64,
+    newly_recalled_point_keys: Vec<String>,
+) -> (axum::http::StatusCode, Value) {
+    app.post(
+        &format!("/api/reviews/{review_id}/points"),
+        json!({ "newly_recalled_point_keys": newly_recalled_point_keys }),
+    )
+    .await
+}
+
+fn only_question(results: &Value) -> &Value {
+    &results["questions"][0]
+}
+
+async fn a_mock_answer_matching_one_of_two_points(
+    app: &common::TestApp,
+) -> (i64, i64, Vec<String>) {
+    let deck_id = create_deck(app, "mining").await;
+    let card_id = create_list_card(app, deck_id, "the 2 types", "- alpha one\n- beta two").await;
+    let session_id = start_mock(app, deck_id).await;
+    let served = serve(app, session_id).await;
+    assert_eq!(served["card"]["id"].as_i64().unwrap(), card_id);
+
+    answer_mock_by_typing(app, session_id, card_id, "alpha one").await;
+    let results = finish_and_read_results(app, session_id).await;
+    let question = only_question(&results);
+
+    assert!(
+        !question["correct"].as_bool().unwrap(),
+        "one of two points is below the partial credit floor: {question}",
+    );
+    assert_eq!(question["answer_points"]["recalled"].as_i64().unwrap(), 1);
+    assert_eq!(question["answer_points"]["total"].as_i64().unwrap(), 2);
+
+    let keys: Vec<String> = question["answer_points"]["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|point| point["key"].as_str().unwrap().to_string())
+        .collect();
+    let review_id = question["review_id"].as_i64().unwrap();
+    (session_id, review_id, keys)
+}
+
+#[tokio::test]
+async fn a_mock_answer_the_matcher_underscored_is_rescored_by_ticking_the_missed_point() {
+    let app = common::spawn_app().await;
+    let (session_id, review_id, keys) = a_mock_answer_matching_one_of_two_points(&app).await;
+
+    let (status, correction) = correct_points(&app, review_id, vec![keys[1].clone()]).await;
+    assert_eq!(status, 200, "{correction}");
+    assert!(correction["correct"].as_bool().unwrap());
+    assert!(correction["overridden"].as_bool().unwrap());
+    assert_eq!(correction["answer_points"]["recalled"].as_i64().unwrap(), 2);
+    assert_eq!(correction["answer_points"]["total"].as_i64().unwrap(), 2);
+
+    let self_grade = sqlx::query_scalar!(
+        r#"SELECT self_grade AS "self_grade!: String" FROM reviews WHERE id = ?"#,
+        review_id,
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(self_grade, "easy", "a corrected clean sweep grades as a clean sweep");
+
+    let (status, results) = app.get(&format!("/api/sessions/{session_id}/results")).await;
+    assert_eq!(status, 200, "{results}");
+    let question = only_question(&results);
+    assert!(question["correct"].as_bool().unwrap());
+    assert!(question["overridden"].as_bool().unwrap());
+    assert_eq!(question["answer_points"]["recalled"].as_i64().unwrap(), 2);
+    assert!(
+        question["answer_points"]["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|point| point["recalled"].as_bool().unwrap()),
+        "every point now reads as recalled: {question}",
+    );
+    assert_eq!(
+        results["summary"]["overridden_count"].as_i64().unwrap(),
+        1,
+        "a rescored answer is counted as one the person judged themselves",
+    );
+}
+
+#[tokio::test]
+async fn correcting_a_mock_answer_keeps_the_points_the_matcher_already_credited() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mining").await;
+    let card_id =
+        create_list_card(&app, deck_id, "the 4 v's", "1. Volume\n2. Velocity\n3. Variety\n4. Veracity")
+            .await;
+    let session_id = start_mock(&app, deck_id).await;
+    serve(&app, session_id).await;
+    answer_mock_by_typing(&app, session_id, card_id, "Volume").await;
+
+    let results = finish_and_read_results(&app, session_id).await;
+    let question = only_question(&results);
+    let review_id = question["review_id"].as_i64().unwrap();
+    let keys: Vec<String> = question["answer_points"]["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|point| point["key"].as_str().unwrap().to_string())
+        .collect();
+
+    let (status, correction) = correct_points(&app, review_id, vec![keys[2].clone()]).await;
+    assert_eq!(status, 200, "{correction}");
+    assert_eq!(
+        correction["answer_points"]["recalled"].as_i64().unwrap(),
+        2,
+        "the matched point survives alongside the ticked one: {correction}",
+    );
+    assert!(
+        !correction["correct"].as_bool().unwrap(),
+        "two of four is still below the partial credit floor",
+    );
+}
+
+#[tokio::test]
+async fn a_point_the_answer_never_recorded_is_refused() {
+    let app = common::spawn_app().await;
+    let (_, review_id, _) = a_mock_answer_matching_one_of_two_points(&app).await;
+
+    let (status, body) = correct_points(&app, review_id, vec!["gamma three".to_string()]).await;
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(body["fields"][0]["field"].as_str().unwrap(), "newly_recalled_point_keys");
+}
+
+#[tokio::test]
+async fn a_correction_that_ticks_nothing_is_refused() {
+    let app = common::spawn_app().await;
+    let (_, review_id, _) = a_mock_answer_matching_one_of_two_points(&app).await;
+
+    let (status, body) = correct_points(&app, review_id, vec![]).await;
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(body["fields"][0]["field"].as_str().unwrap(), "newly_recalled_point_keys");
+}
+
+#[tokio::test]
+async fn a_practice_review_is_not_rescored_afterwards() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mining").await;
+    let card_id = create_list_card(&app, deck_id, "the 2 types", "- alpha one\n- beta two").await;
+    let session_id = start_practice(&app, deck_id).await;
+
+    let keys = point_keys(&reveal(&app, session_id, card_id, "").await);
+    let (_, answered) = tick(&app, session_id, card_id, keys[..1].to_vec()).await;
+    let review_id = answered["review_id"].as_i64().unwrap();
+
+    let (status, body) = correct_points(&app, review_id, vec![keys[1].clone()]).await;
+    assert_eq!(status, 409, "practice already ticked its points as it answered: {body}");
+}
+
+#[tokio::test]
+async fn a_single_point_mock_answer_is_overridden_rather_than_rescored() {
+    let app = common::spawn_app().await;
+    let deck_id = create_deck(&app, "mining").await;
+    let card_id = create_list_card(&app, deck_id, "what is k-means", "k-means clustering").await;
+    let session_id = start_mock(&app, deck_id).await;
+    serve(&app, session_id).await;
+    answer_mock_by_typing(&app, session_id, card_id, "no idea").await;
+
+    let results = finish_and_read_results(&app, session_id).await;
+    let question = only_question(&results);
+    assert!(question["answer_points"].is_null());
+    assert!(
+        question["can_override"].as_bool().unwrap(),
+        "a single-answer mock question keeps the plain override: {question}",
+    );
+
+    let review_id = question["review_id"].as_i64().unwrap();
+    let (status, body) = correct_points(&app, review_id, vec!["k means clustering".to_string()]).await;
+    assert_eq!(status, 409, "{body}");
 }

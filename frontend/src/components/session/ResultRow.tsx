@@ -2,6 +2,7 @@ import { Check, X } from 'lucide-react'
 
 import { CardImage } from '@/components/CardImage'
 import { Markdown } from '@/components/Markdown'
+import { RecalledPointsCorrection } from '@/components/session/RecalledPointsCorrection'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { KIND_LABEL, type ResultQuestion } from '@/lib/api'
@@ -12,6 +13,8 @@ type ResultRowProps = {
   position: number
   onOverride: (reviewId: number) => void
   overriding: boolean
+  onCorrectPoints: (reviewId: number, newlyRecalledPointKeys: string[]) => void
+  correctingPoints: boolean
 }
 
 function verdictLabel(question: ResultQuestion): string {
@@ -19,8 +22,20 @@ function verdictLabel(question: ResultQuestion): string {
   return question.correct ? 'Correct' : 'Not quite'
 }
 
-export function ResultRow({ question, position, onOverride, overriding }: ResultRowProps) {
+export function ResultRow({
+  question,
+  position,
+  onOverride,
+  overriding,
+  onCorrectPoints,
+  correctingPoints,
+}: ResultRowProps) {
   const VerdictIcon = question.correct ? Check : X
+  const answerPoints = question.answer_points
+  const canCorrectPoints =
+    answerPoints !== null &&
+    !question.correct &&
+    answerPoints.points.some((point) => !point.recalled)
 
   return (
     <li
@@ -45,6 +60,11 @@ export function ResultRow({ question, position, onOverride, overriding }: Result
           {verdictLabel(question)}
         </span>
         <Badge variant="secondary">{KIND_LABEL[question.kind]}</Badge>
+        {answerPoints !== null && (
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {answerPoints.recalled} of {answerPoints.total} points
+          </span>
+        )}
       </div>
 
       <Markdown>{question.prompt_md}</Markdown>
@@ -88,6 +108,16 @@ export function ResultRow({ question, position, onOverride, overriding }: Result
         <Markdown className="border-t pt-3 text-sm text-muted-foreground">
           {question.explanation_md}
         </Markdown>
+      )}
+
+      {canCorrectPoints && (
+        <RecalledPointsCorrection
+          answerPoints={answerPoints}
+          onCorrect={(newlyRecalledPointKeys) =>
+            onCorrectPoints(question.review_id, newlyRecalledPointKeys)
+          }
+          correcting={correctingPoints}
+        />
       )}
 
       {question.can_override && !question.overridden && (

@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT point_key AS \"point_key!: String\",\n               point_text AS \"point_text!: String\",\n               recalled AS \"recalled!: bool\"\n        FROM review_answer_points\n        WHERE review_id = ?\n        ORDER BY rowid\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "point_key!: String",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "point_text!: String",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "recalled!: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0d7c1c17ee16a21c7ea95ff8ae13a77ddb6a83ed5d247eab9e4008deb954eb23"
+}

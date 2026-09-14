@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT reviews.id AS \"id!: i64\",\n               reviews.card_id AS \"card_id!: i64\",\n               reviews.points_total,\n               sessions.id AS \"session_id!: i64\",\n               sessions.mode,\n               sessions.started_at,\n               sessions.ended_at\n        FROM reviews\n        JOIN sessions ON sessions.id = reviews.session_id\n        WHERE reviews.id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "card_id!: i64",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "points_total",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "session_id!: i64",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mode",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "started_at",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "ended_at",
+        "ordinal": 6,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "55b13875d14185c91edffdf5c29d32588f67b0b624cf6ef124d0716499c7bfe6"
+}

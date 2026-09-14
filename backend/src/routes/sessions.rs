@@ -393,7 +393,14 @@ pub struct ResultQuestion {
 pub struct ResultAnswerPoints {
     pub recalled: i64,
     pub total: i64,
-    pub missed: Vec<String>,
+    pub points: Vec<ResultPoint>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct ResultPoint {
+    pub key: String,
+    pub text_md: String,
+    pub recalled: bool,
 }
 
 #[derive(Serialize)]
@@ -433,10 +440,10 @@ pub fn expected_for_kind(
     }
 }
 
-// A multi-point review is never overridden. Ticking the checklist already said which points
-// were recalled, so there is nothing left for "I was right" to add -- and for a text answer it
-// would write the whole typed list back as a new accepted wording, which is the pollution this
-// feature exists to remove.
+// A multi-point review is never overridden wholesale. Practice ticks the checklist as it
+// answers and a mock test is rescored point by point afterwards, and for a text answer an
+// override would write the whole typed list back as a new accepted wording, which is the
+// pollution this feature exists to remove.
 pub fn can_override_result(kind: &str, correct: bool, points_total: Option<i64>) -> bool {
     points_total.is_none() && !correct && matches!(kind, "text_answer" | "flashcard")
 }
@@ -445,7 +452,7 @@ pub fn assemble_results(
     rows: Vec<ResultReviewRow>,
     correct_choices_by_card: &std::collections::HashMap<i64, Vec<String>>,
     accepted_by_card: &std::collections::HashMap<i64, Vec<String>>,
-    missed_points_by_review: &std::collections::HashMap<i64, Vec<String>>,
+    points_by_review: &std::collections::HashMap<i64, Vec<ResultPoint>>,
 ) -> Vec<ResultQuestion> {
     let empty: Vec<String> = Vec::new();
     rows.into_iter()
@@ -462,10 +469,7 @@ pub fn assemble_results(
                 answer_points: row.points_total.map(|total| ResultAnswerPoints {
                     recalled: row.points_recalled.unwrap_or(0),
                     total,
-                    missed: missed_points_by_review
-                        .get(&row.review_id)
-                        .cloned()
-                        .unwrap_or_default(),
+                    points: points_by_review.get(&row.review_id).cloned().unwrap_or_default(),
                 }),
                 kind: row.kind,
                 prompt_md: row.prompt_md,
@@ -1537,11 +1541,14 @@ async fn answer(
         answer_points: graded.points.as_ref().map(|points| ResultAnswerPoints {
             recalled: points.recalled_count,
             total: points.total,
-            missed: points
+            points: points
                 .outcomes
                 .iter()
-                .filter(|(_, _, recalled)| !recalled)
-                .map(|(_, text, _)| text.clone())
+                .map(|(point_key, point_text, recalled)| ResultPoint {
+                    key: point_key.clone(),
+                    text_md: point_text.clone(),
+                    recalled: *recalled,
+                })
                 .collect(),
         }),
     })))
@@ -1846,6 +1853,171 @@ async fn override_review(
     }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecallCorrection {
+    pub newly_recalled_point_keys: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct RecallCorrectionResponse {
+    pub review_id: i64,
+    pub correct: bool,
+    pub overridden: bool,
+    pub answer_points: ResultAnswerPoints,
+    pub level_after: MasteryLevel,
+    pub mastery_direction: MovementDirection,
+    pub mastery_moved_up_count: i64,
+}
+
+async fn correct_recalled_points(
+    State(state): State<AppState>,
+    Path(review_id): Path<i64>,
+    AppJson(body): AppJson<RecallCorrection>,
+) -> AppResult<Json<RecallCorrectionResponse>> {
+    let review = sqlx::query!(
+        r#"
+        SELECT reviews.id AS "id!: i64",
+               reviews.card_id AS "card_id!: i64",
+               reviews.points_total,
+               sessions.id AS "session_id!: i64",
+               sessions.mode,
+               sessions.started_at,
+               sessions.ended_at
+        FROM reviews
+        JOIN sessions ON sessions.id = reviews.session_id
+        WHERE reviews.id = ?
+        "#,
+        review_id,
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound("review"))?;
+
+    if review.points_total.is_none() {
+        return Err(AppError::Conflict(
+            "That answer is not scored point by point".to_string(),
+        ));
+    }
+    if review.mode != "mock" {
+        return Err(AppError::Conflict(
+            "Only a mock test is rescored afterwards, because practice ticks the points as you answer"
+                .to_string(),
+        ));
+    }
+    if review.ended_at.is_none() {
+        return Err(AppError::Conflict(
+            "Submit the mock test before correcting an answer".to_string(),
+        ));
+    }
+
+    let recorded = sqlx::query!(
+        r#"
+        SELECT point_key AS "point_key!: String",
+               point_text AS "point_text!: String",
+               recalled AS "recalled!: bool"
+        FROM review_answer_points
+        WHERE review_id = ?
+        ORDER BY rowid
+        "#,
+        review_id,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut errors: Vec<FieldError> = Vec::new();
+    if body.newly_recalled_point_keys.is_empty() {
+        errors.push(FieldError {
+            field: "newly_recalled_point_keys".to_string(),
+            message: "Tick at least one point you recalled".to_string(),
+        });
+    }
+    for key in &body.newly_recalled_point_keys {
+        if !recorded.iter().any(|point| point.point_key == *key) {
+            errors.push(FieldError {
+                field: "newly_recalled_point_keys".to_string(),
+                message: "That point is not one this answer recorded".to_string(),
+            });
+            break;
+        }
+    }
+    if !errors.is_empty() {
+        return Err(AppError::Validation(errors));
+    }
+
+    let points: Vec<ResultPoint> = recorded
+        .into_iter()
+        .map(|point| ResultPoint {
+            recalled: point.recalled
+                || body.newly_recalled_point_keys.contains(&point.point_key),
+            key: point.point_key,
+            text_md: point.point_text,
+        })
+        .collect();
+
+    let recalled_count = points.iter().filter(|point| point.recalled).count();
+    let total = points.len();
+    let self_grade = self_grade_from_point_score(recalled_count, total, false);
+    let correct = correctness_of_self_grade(self_grade);
+    let stored_self_grade = self_grade_as_text(self_grade);
+    let recalled_count = recalled_count as i64;
+
+    let newly_recalled_keys_json = serde_json::to_string(&body.newly_recalled_point_keys)
+        .map_err(|_| AppError::Internal)?;
+    let mut transaction = state.pool.begin().await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE review_answer_points
+        SET recalled = 1
+        WHERE review_id = ?
+          AND point_key IN (SELECT value FROM json_each(?))
+        "#,
+        review_id,
+        newly_recalled_keys_json,
+    )
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE reviews
+        SET points_recalled = ?, self_grade = ?, correct = ?, overridden = 1
+        WHERE id = ?
+        "#,
+        recalled_count,
+        stored_self_grade,
+        correct,
+        review_id,
+    )
+    .execute(&mut *transaction)
+    .await?;
+
+    transaction.commit().await?;
+
+    let progress = card_mastery_progress(
+        &state.pool,
+        review.session_id,
+        &review.started_at,
+        review.card_id,
+    )
+    .await?;
+
+    Ok(Json(RecallCorrectionResponse {
+        review_id,
+        correct,
+        overridden: true,
+        answer_points: ResultAnswerPoints {
+            recalled: recalled_count,
+            total: total as i64,
+            points,
+        },
+        level_after: progress.level_after,
+        mastery_direction: progress.direction,
+        mastery_moved_up_count: progress.moved_up_count,
+    }))
+}
+
 fn accuracy_for(correct_count: i64, answered_count: i64) -> Option<f64> {
     if answered_count == 0 {
         return None;
@@ -2010,13 +2182,15 @@ async fn results(
         accepted_by_card.entry(row.card_id).or_default().push(row.text);
     }
 
-    let missed_point_rows = sqlx::query!(
+    let point_rows = sqlx::query!(
         r#"
         SELECT review_answer_points.review_id AS "review_id!: i64",
-               review_answer_points.point_text AS "point_text!: String"
+               review_answer_points.point_key AS "point_key!: String",
+               review_answer_points.point_text AS "point_text!: String",
+               review_answer_points.recalled AS "recalled!: bool"
         FROM review_answer_points
         JOIN reviews ON reviews.id = review_answer_points.review_id
-        WHERE reviews.session_id = ? AND review_answer_points.recalled = 0
+        WHERE reviews.session_id = ?
         ORDER BY review_answer_points.rowid
         "#,
         session_id,
@@ -2024,17 +2198,21 @@ async fn results(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut missed_points_by_review: std::collections::HashMap<i64, Vec<String>> =
+    let mut points_by_review: std::collections::HashMap<i64, Vec<ResultPoint>> =
         std::collections::HashMap::new();
-    for row in missed_point_rows {
-        missed_points_by_review.entry(row.review_id).or_default().push(row.point_text);
+    for row in point_rows {
+        points_by_review.entry(row.review_id).or_default().push(ResultPoint {
+            key: row.point_key,
+            text_md: row.point_text,
+            recalled: row.recalled,
+        });
     }
 
     let questions = assemble_results(
         rows,
         &correct_choices_by_card,
         &accepted_by_card,
-        &missed_points_by_review,
+        &points_by_review,
     );
     let summary = summarise(&state.pool, session_id).await?;
 
@@ -2050,6 +2228,7 @@ pub fn router() -> Router<AppState> {
         .route("/sessions/{id}/finish", post(finish))
         .route("/sessions/{id}/results", get(results))
         .route("/reviews/{id}/override", post(override_review))
+        .route("/reviews/{id}/points", post(correct_recalled_points))
 }
 
 #[cfg(test)]

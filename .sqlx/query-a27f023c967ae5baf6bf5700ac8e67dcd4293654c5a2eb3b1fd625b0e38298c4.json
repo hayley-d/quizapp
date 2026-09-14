@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE reviews\n        SET points_recalled = ?, self_grade = ?, correct = ?, overridden = 1\n        WHERE id = ?\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "a27f023c967ae5baf6bf5700ac8e67dcd4293654c5a2eb3b1fd625b0e38298c4"
+}

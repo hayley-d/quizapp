@@ -34,6 +34,7 @@ export function MockSessionPage() {
   const [ending, setEnding] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [overridingReviewId, setOverridingReviewId] = useState<number | null>(null)
+  const [correctingReviewId, setCorrectingReviewId] = useState<number | null>(null)
 
   const submitting = useRef(false)
   const inFlight = useRef<AbortController | null>(null)
@@ -162,6 +163,24 @@ export function MockSessionPage() {
     }
   }
 
+  async function correctPoints(reviewId: number, newlyRecalledPointKeys: string[]) {
+    if (sessionId === null) return
+    setCorrectingReviewId(reviewId)
+    try {
+      const correction = await api.correctRecalledPoints(reviewId, newlyRecalledPointKeys)
+      setResults(await api.sessionResults(sessionId))
+      toast.success(
+        correction.correct
+          ? `Counted as correct — ${correction.answer_points.recalled} of ${correction.answer_points.total} points`
+          : `Rescored to ${correction.answer_points.recalled} of ${correction.answer_points.total} points`,
+      )
+    } catch (error: unknown) {
+      toast.error(error instanceof ApiError ? error.message : 'Could not rescore that answer')
+    } finally {
+      setCorrectingReviewId(null)
+    }
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (busy || results !== null || card === null) return
 
@@ -202,6 +221,10 @@ export function MockSessionPage() {
         results={results}
         onOverride={(reviewId) => void override(reviewId)}
         overridingReviewId={overridingReviewId}
+        onCorrectPoints={(reviewId, newlyRecalledPointKeys) =>
+          void correctPoints(reviewId, newlyRecalledPointKeys)
+        }
+        correctingReviewId={correctingReviewId}
       />
     )
   }

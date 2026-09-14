@@ -279,10 +279,26 @@ export type SubmitAnswerInput = { card_id: number; ms?: number } & (
     }
 )
 
+export type ScoredPoint = {
+  key: string
+  text_md: string
+  recalled: boolean
+}
+
 export type AnswerPointScore = {
   recalled: number
   total: number
-  missed: string[]
+  points: ScoredPoint[]
+}
+
+export type RecallCorrectionResult = {
+  review_id: number
+  correct: boolean
+  overridden: boolean
+  answer_points: AnswerPointScore
+  level_after: MasteryLevel
+  mastery_direction: MovementDirection
+  mastery_moved_up_count: number
 }
 
 export type AnswerResult = {
@@ -509,6 +525,10 @@ export const api = {
     request<SessionResults>('GET', `/sessions/${sessionId}/results`, undefined, signal),
   overrideReview: (reviewId: number) =>
     request<OverrideResult>('POST', `/reviews/${reviewId}/override`, {}),
+  correctRecalledPoints: (reviewId: number, newlyRecalledPointKeys: string[]) =>
+    request<RecallCorrectionResult>('POST', `/reviews/${reviewId}/points`, {
+      newly_recalled_point_keys: newlyRecalledPointKeys,
+    }),
   finishSession: (sessionId: number) =>
     request<SessionSummary>('POST', `/sessions/${sessionId}/finish`, {}),
   uploadImage,
